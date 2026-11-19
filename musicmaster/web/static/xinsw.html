@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="心思维 AI 扒谱助手：上传主唱音轨，自动生成五线谱、简谱和 MIDI。">
+  <title>心思维 AI 扒谱助手</title>
+  <style>
+    :root{color-scheme:dark;--bg:#111116;--panel:#1b1a22;--line:#34313d;--text:#f4f0e9;--muted:#aaa4b2;--accent:#e7b65a;--ok:#73c69b;--bad:#e98585}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 50% -15%,#30263a 0,#17151d 48%,var(--bg) 100%);color:var(--text);font:16px/1.65 system-ui,-apple-system,"Microsoft YaHei",sans-serif}
+    main{width:min(100% - 32px,980px);margin:48px auto 72px}.brand{color:var(--accent);font-size:13px;letter-spacing:.16em}.title{font-size:clamp(28px,5vw,42px);font-weight:650;line-height:1.2;margin:12px 0}.intro{color:var(--muted);margin:0 0 28px}
+    .panel{background:rgba(27,26,34,.92);border:1px solid var(--line);border-radius:18px;padding:24px;margin:18px 0;box-shadow:0 18px 55px #0004}
+    .drop{display:block;border:1px dashed #71677b;border-radius:14px;padding:30px 18px;text-align:center;cursor:pointer;background:#ffffff05;transition:.18s}
+    .drop:hover,.drop.drag{border-color:var(--accent);background:#e7b65a0c}.drop strong{display:block;font-size:18px}.drop span{display:block;color:var(--muted);font-size:13px;margin-top:5px}
+    input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+    .file{display:none;margin-top:14px;padding:12px 14px;background:#ffffff08;border-radius:10px;color:var(--muted);overflow-wrap:anywhere}
+    audio{display:none;width:100%;margin-top:14px}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
+    button{border:0;border-radius:10px;padding:12px 22px;font:600 15px system-ui,-apple-system,\"Microsoft YaHei\",sans-serif;cursor:pointer}
+    #start{background:var(--accent);color:#20180b}#start:disabled{opacity:.45;cursor:not-allowed}#clear{background:#ffffff10;color:var(--text);border:1px solid var(--line)}
+    .hint{font-size:13px;color:var(--muted);margin-top:14px}.status{display:flex;justify-content:space-between;gap:12px;align-items:center}.stage{font-weight:600}.pct{font-variant-numeric:tabular-nums;color:var(--accent)}
+    .bar{height:9px;background:#ffffff12;border-radius:99px;overflow:hidden;margin:14px 0 8px}.fill{height:100%;width:0;background:var(--accent);transition:width .3s}
+    .message{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);font-size:14px}.message.error{color:var(--bad)}.result-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.result-head h2{margin:0;font-size:20px}
+    .score{background:#fff;border-radius:10px;padding:14px;overflow:auto;margin-top:14px;min-height:90px}.score svg{max-width:100%;height:auto}.downloads{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-top:14px}
+    .downloads a{display:block;padding:12px 14px;border:1px solid var(--line);border-radius:10px;color:var(--text);text-decoration:none;background:#ffffff06}.downloads a:hover{border-color:var(--accent)}.downloads small{display:block;color:var(--muted);margin-top:3px}
+    pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#100f15;border:1px solid var(--line);border-radius:10px;padding:14px;max-height:420px;overflow:auto;font:13px/1.6 ui-monospace,monospace}
+    .hidden{display:none!important}.foot{font-size:12px;color:#88818f;text-align:center;margin-top:30px}
+    @media(max-width:600px){main{margin-top:28px}.panel{padding:17px}.drop{padding:24px 12px}}
+  </style>
+</head>
+<body>
+<main>
+  <div class="brand">XINSW MUSIC · 独立验证页面</div>
+  <h1 class="title">心思维 AI 扒谱助手</h1>
+  <p class="intro">上传一段已经分离好的主唱音轨，自动识别旋律，生成五线谱、简谱和可编辑文件。</p>
+
+  <section class="panel">
+    <label class="drop" id="drop" for="audio">
+      <strong>选择或拖入主唱音频</strong>
+      <span>支持 MP3、WAV、M4A、FLAC 等常见音频格式</span>
+      <span>建议优先使用清晰、单声部的主唱音轨</span>
+    </label>
+    <input id="audio" type="file" accept="audio/*">
+    <div class="file" id="fileInfo"></div>
+    <audio id="preview" controls></audio>
+    <div class="actions">
+      <button id="start" disabled>开始自动扒谱</button>
+      <button id="clear" type="button">清空</button>
+    </div>
+    <p class="hint">本测试页固定使用 MusicMaster 的 CREPE 主唱识别流程，不需要选择算法。当前页面由本机服务提供，只能在运行服务的电脑上打开；首次运行前需准备好模型。</p>
+  </section>
+
+  <section class="panel hidden" id="progressPanel" aria-live="polite">
+    <div class="status"><span class="stage" id="stage">等待提交</span><span class="pct" id="pct">0%</span></div>
+    <div class="bar"><div class="fill" id="fill"></div></div>
+    <div class="message" id="progressMessage">任务状态会显示在这里。</div>
+  </section>
+
+  <section class="panel hidden" id="resultPanel">
+    <div class="result-head"><h2 id="resultTitle">识别结果</h2><span class="pct" id="confidence"></span></div>
+    <div class="message" id="resultMessage"></div>
+    <div class="score hidden" id="score"></div>
+    <h3 style="font-size:16px;margin:20px 0 8px">下载识别产物</h3>
+    <div class="downloads" id="downloads"></div>
+    <details style="margin-top:18px"><summary>查看完整识别报告</summary><pre id="report"></pre></details>
+  </section>
+  <div class="foot">独立测试环境 · 结果仅用于验证，不代表识别准确率已经达标</div>
+</main>
+<script src="js/xinsw.js"></script>
+</body>
+</html>
