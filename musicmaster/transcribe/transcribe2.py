@@ -77,8 +77,9 @@ def transcribe(path, *, offset=0.0, dur=None, fmin="C2", fmax="C5",
                 chunk, 16000, model_capacity="full", viterbi=False,
                 center=True, step_size=step_size, verbose=0)
             global_t = np.asarray(local_t, dtype=float) + start_sample / 16000.0
-            left_s = 0.0 if chunk_index == 0 else (starts[chunk_index-1] + start_sample) / (2.0 * 16000.0)
-            right_s = duration_s if chunk_index == len(starts)-1 else (start_sample + starts[chunk_index+1]) / (2.0 * 16000.0)
+            prev_end = min(starts[chunk_index-1] + chunk_samples, len(y)) if chunk_index > 0 else 0
+            left_s = 0.0 if chunk_index == 0 else (prev_end + start_sample) / (2.0 * 16000.0)
+            right_s = duration_s if chunk_index == len(starts)-1 else (end_sample + starts[chunk_index+1]) / (2.0 * 16000.0)
             if chunk_index == len(starts)-1:
                 keep = (global_t >= left_s) & (global_t <= right_s)
             else:
