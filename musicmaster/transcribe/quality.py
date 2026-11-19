@@ -74,7 +74,13 @@ def dynamic_range_db(y: np.ndarray, sr: int) -> float:
     return float(np.percentile(fe, 95) - np.percentile(fe, 5))
 
 
-def assess(path: str) -> dict:
+def assess(path: str, progress_callback=None) -> dict:
+    def report(pct: float, label: str) -> None:
+        if progress_callback:
+            try: progress_callback(pct, label)
+            except Exception: pass
+
+    report(31.0, "录音体检：读取音频与文件信息…")
     meta = ffprobe_meta(path)
     try:
         y, sr = librosa.load(path, sr=None, mono=True)
@@ -86,10 +92,12 @@ def assess(path: str) -> dict:
         return {"tier": "太差", "gate": "block", "score": 0.0,
                 "issues": [["严重", "空音频/读取失败", "换文件"]],
                 "metrics": {}, "meta": meta}
+    report(33.0, "录音体检：音频已读取，正在分析频谱与动态范围…")
     roll, _peak = effective_bandwidth(y, sr)
     eff_sr = 2.0 * roll
     clip = clipping_frac(y)
     dr = dynamic_range_db(y, sr)
+    report(38.0, "录音体检完成，准备识别主旋律…")
 
     issues = []  # (级别, 描述, 修法)
     # —— 主指标:真实有效带宽(扒谱需顶音~2-3 次谐波清晰,实践地板 roll≈5kHz)——
