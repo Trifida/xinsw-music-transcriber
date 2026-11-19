@@ -328,7 +328,11 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "") -
         argv = [str(audio_path), "--out", str(d), "--engine", engine]
         if key and key.strip():
             argv += ["--key", key.strip()]
-        rc = autopilot.main(argv)
+        def _on_transcribe_progress(progress: float, label: str) -> None:
+            # 体检与 CREPE 分段回调只推进 30%-49%；文件里程碑线程负责 50% 之后。
+            job.set_stage(label, min(49.0, max(30.0, float(progress))))
+
+        rc = autopilot.main(argv, progress_callback=_on_transcribe_progress)
         report = (d / "报告.md").read_text(encoding="utf-8") if (d / "报告.md").is_file() else "(无报告)"
         if rc != 0:
             report = f"> 扒谱以非零码({rc})结束,可能转录失败,详见下方报告。\n\n" + report
