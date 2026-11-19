@@ -37,9 +37,14 @@ def installed_crepe_dir() -> Path:
     return package_dir
 
 
-def main() -> int:
+def main(model_dir: Path | None = None) -> int:
     try:
-        model_dir = installed_crepe_dir()
+        # The notebook passes the directory of the already-imported crepe.core.
+        # This avoids resolving a different package through importlib after pip installs.
+        model_dir = Path(model_dir).resolve() if model_dir is not None else installed_crepe_dir()
+        if not (model_dir / "core.py").is_file():
+            raise RuntimeError(f"CREPE package path is unexpected: {model_dir}")
+        print(f"CREPE package directory (authoritative): {model_dir}", flush=True)
     except Exception as exc:
         print(f"ERROR locating installed CREPE package: {exc}", file=sys.stderr)
         return 2
