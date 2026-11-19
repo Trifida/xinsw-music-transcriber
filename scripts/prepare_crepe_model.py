@@ -1,33 +1,52 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Provision only the CREPE 'full' model required by MusicMaster's default path.
+"""Provision the CREPE full model in the *installed* package directory.
 
-Set CREPE_MODEL_URL to a trusted HTTPS mirror for deployments where GitHub is
-not reliably reachable. The URL must point to the upstream-compatible
-model-full.h5.bz2 file. The script never silently switches model capacities.
+The CREPE loader resolves model-full.h5 relative to crepe.core.__file__.
+Therefore the model must be written beside the installed crepe/core.py,
+not into the source checkout's vendor directory.
 """
 from __future__ import annotations
 
 import bz2
 import hashlib
+import importlib.util
 import os
 import sys
 import tempfile
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-MODEL_DIR = ROOT / "vendor" / "crepe" / "crepe"
-MODEL = MODEL_DIR / "model-full.h5"
 UPSTREAM_MODELS_COMMIT = "bb29b8d99a89924476d112d27ed470e4ac5617c0"
 EXPECTED_ARCHIVE_SIZE = 57689301
 EXPECTED_GIT_BLOB_SHA1 = "073f07dd696b851136d59c46b777c909502ad9a1"
 DEFAULT_URL = f"https://raw.githubusercontent.com/marl/crepe/{UPSTREAM_MODELS_COMMIT}/model-full.h5.bz2"
 
 
+def installed_crepe_dir() -> Path:
+    """Find the package directory used by the running Python interpreter."""
+    spec = importlib.util.find_spec("crepe")
+    if spec is None or not spec.origin:
+        raise RuntimeError(
+            "CREPE package is not installed in this Python environment. "
+            "Run the notebook dependency-install cell first."
+        )
+    package_dir = Path(spec.origin).resolve().parent
+    if not (package_dir / "core.py").is_file():
+        raise RuntimeError(f"CREPE package path is unexpected: {package_dir}")
+    return package_dir
+
+
 def main() -> int:
-    if MODEL.is_file() and MODEL.stat().st_size > 0:
-        print(f"CREPE full model already present: {MODEL.stat().st_size} bytes")
+    try:
+        model_dir = installed_crepe_dir()
+    except Exception as exc:
+        print(f"ERROR locating installed CREPE package: {exc}", file=sys.stderr)
+        return 2
+
+    model = model_dir / "model-full.h5"
+    if model.is_file() and model.stat().st_size > 10_000_000:
+        print(f"CREPE full model already present: {model} ({model.stat().st_size} bytes)")
         return 0
 
     url = os.environ.get("CREPE_MODEL_URL", DEFAULT_URL).strip()
@@ -35,31 +54,29 @@ def main() -> int:
         print("ERROR: CREPE_MODEL_URL must use HTTPS.", file=sys.stderr)
         return 2
 
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    fd, archive_name = tempfile.mkstemp(prefix="crepe-full-", suffix=".bz2", dir=str(MODEL_DIR))
+    fd, archive_name = tempfile.mkstemp(prefix="crepe-full-", suffix=".bz2", dir=str(model_dir))
     os.close(fd)
     archive = Path(archive_name)
-    tmp_model = MODEL.with_suffix(".h5.part")
+    tmp_model = model.with_suffix(".h5.part")
     try:
-        print("Downloading only CREPE full model (compressed upstream asset ~57.7 MB)...")
-        request = urllib.request.Request(url, headers={"User-Agent": "XinsW-MusicMaster-setup/1.0"})
+        print(f"CREPE package directory: {model_dir}", flush=True)
+        print("Downloading pinned CREPE full model archive (~57.7 MB)...", flush=True)
+        request = urllib.request.Request(url, headers={"User-Agent": "XinsW-MusicMaster-setup/1.1"})
         with urllib.request.urlopen(request, timeout=60) as response, archive.open("wb") as target:
             while True:
                 chunk = response.read(1024 * 1024)
                 if not chunk:
                     break
                 target.write(chunk)
+
         if archive.stat().st_size != EXPECTED_ARCHIVE_SIZE:
             raise RuntimeError(
                 f"Unexpected model archive size: {archive.stat().st_size}; "
                 f"expected {EXPECTED_ARCHIVE_SIZE}"
             )
 
-        # Verify Git's canonical blob SHA-1 for the pinned immutable upstream asset.
         blob_digest = hashlib.sha1()
-        blob_digest.update(
-            f"blob {archive.stat().st_size}".encode("ascii") + bytes([0])
-        )
+        blob_digest.update(f"blob {archive.stat().st_size}".encode("ascii") + bytes([0]))
         with archive.open("rb") as downloaded:
             for chunk in iter(lambda: downloaded.read(1024 * 1024), b""):
                 blob_digest.update(chunk)
@@ -70,20 +87,23 @@ def main() -> int:
 
         digest = hashlib.sha256()
         with bz2.open(archive, "rb") as source, tmp_model.open("wb") as target:
-            while True:
-                chunk = source.read(1024 * 1024)
-                if not chunk:
-                    break
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
                 digest.update(chunk)
                 target.write(chunk)
+
         if tmp_model.stat().st_size < 10_000_000:
             raise RuntimeError(f"Decompressed model unexpectedly small: {tmp_model.stat().st_size} bytes")
-        tmp_model.replace(MODEL)
-        print(f"CREPE full model ready: {MODEL.stat().st_size} bytes; sha256={digest.hexdigest()}")
+
+        tmp_model.replace(model)
+        print(
+            f"CREPE full model ready: {model} "
+            f"({model.stat().st_size} bytes); sha256={digest.hexdigest()}",
+            flush=True,
+        )
         return 0
     except Exception as exc:
         tmp_model.unlink(missing_ok=True)
-        print(f"ERROR preparing CREPE full model: {exc}", file=sys.stderr)
+        print(f"ERROR preparing CREPE model: {exc}", file=sys.stderr)
         return 1
     finally:
         archive.unlink(missing_ok=True)
