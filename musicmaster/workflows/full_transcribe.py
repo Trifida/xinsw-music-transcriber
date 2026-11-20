@@ -37,7 +37,15 @@ class _ProgressJob:
         self._span = span
 
     def set_stage(self, label: str, progress: Optional[float] = None) -> None:
-        value = self._start if progress is None else self._start + self._span * float(progress)
+        if progress is None:
+            fraction = 0.0
+        else:
+            fraction = float(progress)
+            # run_transcribe 的现有进度回调使用 30–49 的百分数；
+            # run_separate 和文件里程碑使用 0–1 的比例。
+            if fraction > 1.0:
+                fraction /= 100.0
+        value = self._start + self._span * max(0.0, min(1.0, fraction))
         _notify(self._callback, value, label)
 
     def set_progress(self, progress: float) -> None:
