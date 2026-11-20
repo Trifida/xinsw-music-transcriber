@@ -136,6 +136,8 @@ def test_crepe_autopilot_end_to_end_outputs_editable_scores(tmp_path):
     # LilyPond 是独立可选 CLI;未安装时至少必须保留可编辑的 .ly 源稿。
     if not (out / "jianpu.pdf").is_file():
         assert (out / "jianpu.ly").is_file()
+        report = (out / "报告.md").read_text(encoding="utf-8")
+        assert "服务器重新生成 PDF" in report
 
 
 def test_vendored_crepe_installs_only_full_model():
