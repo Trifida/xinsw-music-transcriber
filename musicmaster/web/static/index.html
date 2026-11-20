@@ -140,23 +140,25 @@ img,svg{display:block;max-width:100%}
 .topbar{position:sticky;top:0;z-index:50;backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);
   background:linear-gradient(180deg,rgba(11,10,13,.84),rgba(11,10,13,.42));border-bottom:1px solid var(--border)}
 .topbar .in{max-width:var(--maxw);margin:0 auto;padding:14px 28px;display:flex;align-items:center;gap:14px}
-.wordmark{font-family:var(--serif);font-size:21px;font-weight:500;letter-spacing:.01em;color:var(--t0);display:flex;align-items:center;gap:11px}
-.wordmark .seal{width:30px;height:30px;border-radius:50%;position:relative;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),0 2px 8px rgba(0,0,0,.5);
-  background:repeating-radial-gradient(circle at 50% 50%,#070709 0 1px,#23232a 1px 2.4px),radial-gradient(circle,#0a0a0c 0 99%)}
-.wordmark .seal::after{content:"心";position:absolute;inset:0;display:grid;place-items:center;border-radius:50%;background:none;color:#e5dcff;font-family:var(--sans);font-size:17px;font-weight:700;line-height:1}
-.topbar .sp{flex:1}
+.wordmark{font-family:var(--sans);font-size:20px;font-weight:650;letter-spacing:-.045em;color:var(--t0);display:flex;align-items:center;gap:8px;white-space:nowrap}
+.wordmark .seal{width:34px;height:34px;display:grid;place-items:center;flex:none;border-radius:11px;background:linear-gradient(145deg,#b69aff 0%,#8056e8 55%,#5b3ab5 100%);box-shadow:0 4px 14px rgba(124,58,237,.28),inset 0 1px 0 rgba(255,255,255,.35)}
+.wordmark .seal svg{width:25px;height:25px;display:block}
+.topbar .in{position:relative;justify-content:center}
+.topbar .sp{display:none}
+.topbar a.ghost{position:absolute;right:28px}
+@media(max-width:640px){.wordmark{font-size:17px;gap:7px}.wordmark .seal{width:30px;height:30px}.topbar a.ghost{right:18px;padding:7px 9px;font-size:12px}}
 .topbar a.ghost{font-size:13.5px;color:var(--t2);padding:8px 14px;border-radius:99px;border:1px solid var(--border);transition:.18s;display:inline-flex;align-items:center;gap:8px}
 .topbar a.ghost:hover{color:var(--t0);border-color:var(--border-2);background:var(--surface)}
 .topbar a.ghost svg{width:16px;height:16px}
 
-.atelier{padding:62px 0 26px;display:grid;grid-template-columns:auto 1fr;gap:56px;align-items:center}
-@media(max-width:760px){.atelier{grid-template-columns:1fr;gap:30px;padding:42px 0 14px;text-align:center}}
-.atelier .stage{position:relative;display:grid;place-items:center;justify-self:center;--vs:clamp(188px,60vw,264px);width:var(--vs)}
-@media(min-width:761px){.atelier .stage{--vs:clamp(216px,25vw,264px)}}
-.atelier .vinyl{width:var(--vs)}
-.atelier .platter{position:absolute;inset:-8%;border-radius:50%;border:1px solid var(--border);background:radial-gradient(circle,rgba(167,139,250,.07),transparent 70%);z-index:-1}
-.atelier .mm{font-family:var(--serif);font-size:clamp(38px,6vw,66px);font-weight:600;color:#fff;letter-spacing:-.012em;line-height:1}
-.atelier .feat{font-family:var(--serif-sc);font-size:clamp(15px,2vw,18px);color:var(--t1);margin-top:18px;line-height:1.6}
+.atelier{padding:58px 0 26px;display:grid;grid-template-columns:1fr;gap:18px;align-items:center;text-align:center}
+@media(max-width:760px){.atelier{grid-template-columns:1fr;gap:16px;padding:40px 0 14px;text-align:center}}
+.atelier .stage{position:relative;display:grid;place-items:center;justify-self:center;width:104px;height:104px}
+.atelier .brand-emblem{width:100%;height:100%;display:grid;place-items:center;border-radius:30px;background:linear-gradient(145deg,rgba(182,154,255,.18),rgba(91,58,181,.08));border:1px solid rgba(182,154,255,.24);box-shadow:0 16px 46px rgba(91,58,181,.2),inset 0 1px 0 rgba(255,255,255,.1)}
+.atelier .brand-emblem svg{width:72px;height:72px;display:block;filter:drop-shadow(0 5px 12px rgba(124,58,237,.25))}
+.atelier .intro{display:flex;flex-direction:column;align-items:center}
+.atelier .mm{font-family:var(--sans);font-size:clamp(34px,5vw,54px);font-weight:700;color:#fff;letter-spacing:-.065em;line-height:1.12;white-space:nowrap}
+.atelier .feat{font-family:var(--serif-sc);font-size:clamp(14px,2vw,17px);color:var(--t1);margin-top:15px;line-height:1.6}
 .atelier .ways{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
 @media(max-width:760px){.atelier .ways{justify-content:center}}
 .atelier .ways span{font-family:var(--serif-sc);font-size:14px;color:var(--t1);padding:7px 15px;border-radius:99px;border:1px solid var(--border);background:var(--surface);display:inline-flex;align-items:center;gap:8px}
@@ -325,15 +327,7 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
 .foot-top{display:flex;justify-content:space-between;gap:40px;flex-wrap:wrap;margin-bottom:40px}
 .foot-mani{max-width:440px}.foot-mani .wordmark{margin-bottom:16px}
 .foot-mani p{font-size:14px;color:var(--t2);line-height:1.7}
-.foot-credits h5{font-family:var(--serif-sc);font-size:13px;color:var(--t2);margin-bottom:14px;font-weight:500;letter-spacing:.03em}
-.foot-credits p{font-size:12.5px;color:var(--t3);line-height:1.9}.foot-credits b{color:var(--t2);font-weight:500}
-.foot-legal{padding:22px 0 0;border-top:1px solid var(--border);display:grid;gap:9px}
-.foot-legal p{font-size:12.5px;color:var(--t2);line-height:1.7;max-width:800px}
-.foot-legal b{color:var(--t1);font-weight:500}
-.foot-legal a{color:var(--brand);text-decoration:underline;text-underline-offset:2px}
-.foot-legal a:hover{color:#c4b5fd}
-.foot-bottom{margin-top:22px;padding-top:22px;border-top:1px solid var(--border);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--t3)}
-.foot-bottom a{color:var(--t2);text-decoration:underline;text-underline-offset:2px}.foot-bottom a:hover{color:var(--brand)}
+.foot-top{justify-content:center;margin-bottom:0}.foot-mani{max-width:620px;text-align:center}.foot-mani .wordmark{justify-content:center}
 
 @media(max-width:620px){
   .vc-ins,.vc-knobs{grid-template-columns:1fr!important;gap:16px!important}
@@ -380,7 +374,7 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
 
 <header class="topbar">
   <div class="in">
-    <div class="wordmark"><span class="seal" aria-hidden="true"></span>心思维 AI 智能曲谱</div>
+    <div class="wordmark"><span class="seal" aria-hidden="true"><svg viewBox="0 0 64 64" aria-hidden="true" focusable="false"><defs><linearGradient id="xinLogoLine" x1="8" y1="8" x2="56" y2="58" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#e5dcff"/></linearGradient></defs><path d="M12 19c8-7 17-7 25-1 5 4 9 4 15 0M9 31c9-7 18-7 26-1 6 4 11 4 19-1M12 43c7-5 14-5 21-1 7 5 13 5 20 0" fill="none" stroke="url(#xinLogoLine)" stroke-width="4.2" stroke-linecap="round"/><path d="M45 12v26.5a7.5 7.5 0 1 1-4-6.6V18l12-3v18" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="53" cy="13" r="3" fill="#fff"/></svg></span><span>心思维 AI 智能曲谱</span></div>
     <div class="sp"></div>
     <a class="ghost" href="https://github.com/Cohenjikan/MusicMaster" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.55-1.14-4.55-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.6.69.49A10.02 10.02 0 0 0 22 12.25C22 6.58 17.52 2 12 2Z"/></svg>开源</a>
   </div>
@@ -392,12 +386,7 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
   <!-- 招牌(无 slogan,纯名字 + 功能事实) -->
   <section class="atelier">
     <div class="stage">
-      <div class="platter" aria-hidden="true"></div>
-      <div class="vinyl spin" aria-hidden="true">
-        <div class="disc"></div><span class="gloss"></span>
-        <svg class="label" viewBox="0 0 100 100"><use href="#vlbl" width="100" height="100"></use></svg>
-        <div class="tonearm"><span class="pivot"></span><span class="arm"></span></div>
-      </div>
+      <div class="brand-emblem" aria-label="心思维音乐标志"><svg viewBox="0 0 64 64" aria-hidden="true" focusable="false"><defs><linearGradient id="xinLogoLine" x1="8" y1="8" x2="56" y2="58" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#e5dcff"/></linearGradient></defs><path d="M12 19c8-7 17-7 25-1 5 4 9 4 15 0M9 31c9-7 18-7 26-1 6 4 11 4 19-1M12 43c7-5 14-5 21-1 7 5 13 5 20 0" fill="none" stroke="url(#xinLogoLine)" stroke-width="4.2" stroke-linecap="round"/><path d="M45 12v26.5a7.5 7.5 0 1 1-4-6.6V18l12-3v18" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="53" cy="13" r="3" fill="#fff"/></svg></div>
     </div>
     <div class="intro">
       <h1 class="mm">心思维 AI 智能曲谱</h1>
@@ -691,22 +680,12 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
   <div class="wrap">
     <div class="foot-top">
       <div class="foot-mani">
-        <div class="wordmark"><span class="seal" aria-hidden="true"></span>心思维 AI 智能曲谱</div>
+        <div class="wordmark"><span class="seal" aria-hidden="true"><svg viewBox="0 0 64 64" aria-hidden="true" focusable="false"><defs><linearGradient id="xinLogoLine" x1="8" y1="8" x2="56" y2="58" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#e5dcff"/></linearGradient></defs><path d="M12 19c8-7 17-7 25-1 5 4 9 4 15 0M9 31c9-7 18-7 26-1 6 4 11 4 19-1M12 43c7-5 14-5 21-1 7 5 13 5 20 0" fill="none" stroke="url(#xinLogoLine)" stroke-width="4.2" stroke-linecap="round"/><path d="M45 12v26.5a7.5 7.5 0 1 1-4-6.6V18l12-3v18" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="53" cy="13" r="3" fill="#fff"/></svg></span><span>心思维 AI 智能曲谱</span></div>
         <p>一体化 AI 音乐处理与曲谱制作工具：人声分离 · 音频记谱 · 简谱⇄五线谱互译 · 修音与音色重塑。</p>
       </div>
-      <div class="foot-credits">
-        <h5>站在巨人的肩上</h5>
-        <p><b>拆声</b> audio-separator · BS-RoFormer · UVR<br><b>记谱</b> CREPE · basic-pitch · music21<br><b>誊谱</b> Verovio · jianpu-ly · LilyPond<br><b>重塑</b> DiffPitcher · BigVGAN · Seed-VC</p>
-      </div>
+
     </div>
-    <div class="foot-legal">
-      <p><b>授权</b>:MusicMaster 代码以 <a href="https://github.com/Cohenjikan/MusicMaster/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a> 开源。但部分<b>模型权重</b>(去和声 Karaoke RoFormer、钢琴 ByteDance MAESTRO、Demucs MUSDB18 等)为 <b>CC-BY-NC-SA(非商用)</b>——个人 / 研究可自由使用;<b>商用前须替换为可商用权重或单独取得授权</b>。完整组件、许可证与角色见 <a href="https://github.com/Cohenjikan/MusicMaster/blob/main/NOTICE" target="_blank" rel="noopener">NOTICE</a>。</p>
-      <p><b>使用须知</b>:请仅上传与处理你<b>拥有权利或已获授权</b>的音频。</p>
-    </div>
-    <div class="foot-bottom">
-      <span>MusicMaster · 开源项目 · 代码 <a href="https://github.com/Cohenjikan/MusicMaster/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a> · 权重见 <a href="https://github.com/Cohenjikan/MusicMaster/blob/main/NOTICE" target="_blank" rel="noopener">NOTICE</a></span>
-      <span>以众多优秀开源项目与模型为材料,在此一并致谢。</span>
-    </div>
+
   </div>
 </footer>
 
