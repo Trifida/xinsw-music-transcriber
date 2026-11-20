@@ -32,7 +32,7 @@
 - `jianpu.ly`：由 Python 端的 jianpu-ly 生成的可编辑排版源稿；即使 PDF 引擎暂不可用，也会保留。
 - `jianpu.pdf`：由服务器上的 LilyPond 命令行程序生成。LilyPond 作为独立进程调用，不作为 Python 库链接进主程序。
 
-仓库根目录的 `Dockerfile` 已把 LilyPond 放入服务器镜像。使用支持 Docker 的部署平台构建该镜像后，PDF 排版由服务器完成，客户设备无需安装额外软件。部署后访问 `/api/health`，查看 `pdf_export.ready` 是否为 `true`。本地 Windows 开发环境没有 LilyPond 时，扒谱仍会保留 `jianpu.ly` 源稿，不影响 MIDI、MusicXML 和五线谱产物。
+仓库根目录的 `Dockerfile` 已把 LilyPond 放入服务器镜像。使用支持 Docker 的部署平台构建该镜像后，PDF 排版由服务器完成，客户设备无需安装额外软件。部署后访问 `/api/health`，查看 `pdf_export.ready` 是否为 `true`。本地 Windows 开发环境没有 LilyPond 时，扒谱仍会保留 `jianpu.ly` 源稿，不影响 MIDI、MusicXML 和五线谱产物；部署好服务器排版环境后，重新提交扒谱任务即可自动生成 PDF。
 
 > 注意：当前 Dockerfile 面向 CPU 核心服务及 PDF 排版。GPU 拆声/重塑仍按项目独立 GPU 环境部署，不会因安装 LilyPond 而自动迁移到该容器。
 
