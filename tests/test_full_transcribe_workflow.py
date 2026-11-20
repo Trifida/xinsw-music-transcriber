@@ -77,6 +77,7 @@ def test_full_workflow_refuses_to_overwrite_existing_task_outputs(tmp_path):
     source = tmp_path / "song.wav"
     source.write_bytes(b"audio")
     output = tmp_path / "job"
-    (output / "separation").mkdir(parents=True)
+    output.mkdir()
+    (output / "separation").mkdir()
     with pytest.raises(FileExistsError):
         full_transcribe.run_full_transcription(source, output)
