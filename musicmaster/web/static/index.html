@@ -143,24 +143,20 @@ img,svg{display:block;max-width:100%}
 .wordmark{font-family:var(--sans);font-size:20px;font-weight:650;letter-spacing:-.045em;color:var(--t0);display:flex;align-items:center;gap:8px;white-space:nowrap}
 .wordmark .seal{width:34px;height:34px;display:grid;place-items:center;flex:none;border-radius:11px;background:linear-gradient(145deg,#b69aff 0%,#8056e8 55%,#5b3ab5 100%);box-shadow:0 4px 14px rgba(124,58,237,.28),inset 0 1px 0 rgba(255,255,255,.35)}
 .wordmark .seal svg{width:25px;height:25px;display:block}
-.topbar .in{position:relative;justify-content:center}
+.topbar .in{position:relative;justify-content:flex-start}
 .topbar .sp{display:none}
-.topbar a.ghost{position:absolute;right:28px}
-@media(max-width:640px){.wordmark{font-size:17px;gap:7px}.wordmark .seal{width:30px;height:30px}.topbar a.ghost{right:18px;padding:7px 9px;font-size:12px}}
-.topbar a.ghost{font-size:13.5px;color:var(--t2);padding:8px 14px;border-radius:99px;border:1px solid var(--border);transition:.18s;display:inline-flex;align-items:center;gap:8px}
-.topbar a.ghost:hover{color:var(--t0);border-color:var(--border-2);background:var(--surface)}
-.topbar a.ghost svg{width:16px;height:16px}
+@media(max-width:640px){.wordmark{font-size:17px;gap:7px}.wordmark .seal{width:30px;height:30px}}
 
-.atelier{padding:58px 0 26px;display:grid;grid-template-columns:1fr;gap:18px;align-items:center;text-align:center}
-@media(max-width:760px){.atelier{grid-template-columns:1fr;gap:16px;padding:40px 0 14px;text-align:center}}
-.atelier .stage{position:relative;display:grid;place-items:center;justify-self:center;width:104px;height:104px}
+.atelier{padding:58px 0 26px;display:grid;grid-template-columns:104px minmax(0,1fr);gap:24px;align-items:center;text-align:left}
+@media(max-width:760px){.atelier{grid-template-columns:1fr;gap:16px;padding:40px 0 14px;text-align:left}}
+.atelier .stage{position:relative;display:grid;place-items:center;justify-self:start;width:104px;height:104px}
 .atelier .brand-emblem{width:100%;height:100%;display:grid;place-items:center;border-radius:30px;background:linear-gradient(145deg,rgba(182,154,255,.18),rgba(91,58,181,.08));border:1px solid rgba(182,154,255,.24);box-shadow:0 16px 46px rgba(91,58,181,.2),inset 0 1px 0 rgba(255,255,255,.1)}
 .atelier .brand-emblem svg{width:72px;height:72px;display:block;filter:drop-shadow(0 5px 12px rgba(124,58,237,.25))}
-.atelier .intro{display:flex;flex-direction:column;align-items:center}
+.atelier .intro{display:flex;flex-direction:column;align-items:flex-start;min-width:0}
 .atelier .mm{font-family:var(--sans);font-size:clamp(34px,5vw,54px);font-weight:700;color:#fff;letter-spacing:-.065em;line-height:1.12;white-space:nowrap}
 .atelier .feat{font-family:var(--serif-sc);font-size:clamp(14px,2vw,17px);color:var(--t1);margin-top:15px;line-height:1.6}
 .atelier .ways{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
-@media(max-width:760px){.atelier .ways{justify-content:center}}
+@media(max-width:760px){.atelier .ways{justify-content:flex-start}}
 .atelier .ways span{font-family:var(--serif-sc);font-size:14px;color:var(--t1);padding:7px 15px;border-radius:99px;border:1px solid var(--border);background:var(--surface);display:inline-flex;align-items:center;gap:8px}
 .atelier .ways .wic{width:16px;height:16px;color:var(--brand)}
 .atelier .meta{font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;color:var(--t3);margin-top:20px}
@@ -375,8 +371,7 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
 <header class="topbar">
   <div class="in">
     <div class="wordmark"><span class="seal" aria-hidden="true"><svg viewBox="0 0 64 64" aria-hidden="true" focusable="false"><defs><linearGradient id="xinLogoLine" x1="8" y1="8" x2="56" y2="58" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#e5dcff"/></linearGradient></defs><path d="M12 19c8-7 17-7 25-1 5 4 9 4 15 0M9 31c9-7 18-7 26-1 6 4 11 4 19-1M12 43c7-5 14-5 21-1 7 5 13 5 20 0" fill="none" stroke="url(#xinLogoLine)" stroke-width="4.2" stroke-linecap="round"/><path d="M45 12v26.5a7.5 7.5 0 1 1-4-6.6V18l12-3v18" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="53" cy="13" r="3" fill="#fff"/></svg></span><span>心思维 AI 智能曲谱</span></div>
-    <div class="sp"></div>
-    <a class="ghost" href="https://github.com/Cohenjikan/MusicMaster" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.55-1.14-4.55-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.6.69.49A10.02 10.02 0 0 0 22 12.25C22 6.58 17.52 2 12 2Z"/></svg>开源</a>
+
   </div>
 </header>
 
