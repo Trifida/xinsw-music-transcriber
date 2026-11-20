@@ -50,15 +50,51 @@ def scale_set(tonic, steps):
 def transcribe(path, *, offset=0.0, dur=None, fmin="C2", fmax="C5",
                conf=0.0, min_ms=90.0, jump=0.7, snap="auto", snap_tol=0.65,
                smooth=False, smooth_max_ms=90.0, simplify=False, f0_method="pyin",
-               crepe_conf=0.5, hop_ms=10.0):
+               crepe_conf=0.5, hop_ms=10.0, progress_callback=None):
     lo=float(librosa.note_to_hz(fmin)); hi=float(librosa.note_to_hz(fmax))
     if f0_method=="crepe":
-        import crepe
+        from crepe import core
         y, sr = librosa.load(str(path), sr=16000, mono=True, offset=offset, duration=dur)
         if y.size==0: return {"tempo":120.0,"notes":[]}, {"info":"empty"}
-        _t, fz, cf, _ = crepe.predict(np.ascontiguousarray(y,dtype="float32"), 16000,
-                                      viterbi=False, step_size=int(round(hop_ms)), verbose=0)
-        fz=np.asarray(fz,dtype=float); cf=np.asarray(cf,dtype=float)
+        # 模型在 core 内部缓存；显式预加载一次，后续每个音频块复用同一模型。
+        if progress_callback:
+            try: progress_callback(39.0, "录音体检完成，正在加载 CREPE 模型…")
+            except Exception: pass
+        core.build_and_load_model("full")
+        step_size = int(round(hop_ms))
+        chunk_samples = 12 * 16000
+        overlap_samples = int(0.5 * 16000)
+        stride_samples = chunk_samples - overlap_samples
+        starts = [0]
+        while starts[-1] + chunk_samples < len(y):
+            starts.append(starts[-1] + stride_samples)
+        duration_s = len(y) / 16000.0
+        f_parts=[]; c_parts=[]
+        for chunk_index, start_sample in enumerate(starts):
+            end_sample = min(start_sample + chunk_samples, len(y))
+            chunk = np.ascontiguousarray(y[start_sample:end_sample], dtype="float32")
+            local_t, local_f, local_c, _ = core.predict(
+                chunk, 16000, model_capacity="full", viterbi=False,
+                center=True, step_size=step_size, verbose=0)
+            global_t = np.asarray(local_t, dtype=float) + start_sample / 16000.0
+            prev_end = min(starts[chunk_index-1] + chunk_samples, len(y)) if chunk_index > 0 else 0
+            left_s = 0.0 if chunk_index == 0 else (prev_end + start_sample) / (2.0 * 16000.0)
+            right_s = duration_s if chunk_index == len(starts)-1 else (end_sample + starts[chunk_index+1]) / (2.0 * 16000.0)
+            if chunk_index == len(starts)-1:
+                keep = (global_t >= left_s) & (global_t <= right_s)
+            else:
+                keep = (global_t >= left_s) & (global_t < right_s)
+            if np.any(keep):
+                f_parts.append(np.asarray(local_f, dtype=float)[keep])
+                c_parts.append(np.asarray(local_c, dtype=float)[keep])
+            if progress_callback:
+                try:
+                    pct = 40.0 + 9.0 * (chunk_index + 1) / len(starts)
+                    progress_callback(pct, f"CREPE 主旋律识别中：第 {chunk_index+1}/{len(starts)} 段")
+                except Exception: pass
+        if not f_parts:
+            return {"tempo":120.0,"notes":[]}, {"info":"empty CREPE output"}
+        fz=np.concatenate(f_parts); cf=np.concatenate(c_parts)
         midi_f = librosa.hz_to_midi(np.where(fz<=0,1.0,fz))
         voiced = (cf>=crepe_conf) & (fz>=lo) & (fz<=hi)
         hop_s = hop_ms/1000.0

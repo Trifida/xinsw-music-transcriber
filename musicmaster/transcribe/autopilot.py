@@ -33,9 +33,10 @@ ENGINES = {
 }
 
 
-def run_engine(engine, inp, fmin, fmax):
+def run_engine(engine, inp, fmin, fmax, progress_callback=None):
     if engine == "crepe":
-        target, _ = transcribe2.transcribe(inp, fmin=fmin, fmax=fmax, snap="off", f0_method="crepe")
+        target, _ = transcribe2.transcribe(inp, fmin=fmin, fmax=fmax, snap="off",
+                                           f0_method="crepe", progress_callback=progress_callback)
         return target
     if engine == "basic-pitch":
         return eng_t.transcribe(inp, instrument=True)
@@ -44,7 +45,7 @@ def run_engine(engine, inp, fmin, fmax):
     raise ValueError("unknown engine: " + engine)
 
 
-def main(argv=None):
+def main(argv=None, progress_callback=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("input")
     ap.add_argument("--out", required=True)
@@ -64,7 +65,7 @@ def main(argv=None):
     # 任一阶段失败都不应让整页崩 + 吞掉报告:各阶段独立 try,报告.md 在 finally 一定落盘(修审计 H3/H4)
     try:
         # ===== L1 入口质量门 =====
-        q = quality_gate.assess(a.input)
+        q = quality_gate.assess(a.input, progress_callback=progress_callback)
         qr = quality_gate.human_report(q)
         print(qr)
         rep.append("## ① 录音体检(L1 质量门)\n```\n" + qr + "\n```\n")
@@ -76,7 +77,14 @@ def main(argv=None):
 
         # ===== L2 选引擎转录 =====
         try:
-            target = run_engine(engine, a.input, a.fmin, a.fmax)
+            if progress_callback:
+                try: progress_callback(39.0, "录音体检完成，准备加载识别模型…")
+                except Exception: pass
+            target = run_engine(engine, a.input, a.fmin, a.fmax,
+                                progress_callback=progress_callback)
+            if progress_callback:
+                try: progress_callback(49.0, "主旋律识别完成，正在生成音符与乐谱…")
+                except Exception: pass
         except Exception as e:
             msg = (f"引擎「{engine}」转录失败:{type(e).__name__}: {e}\n"
                    f"提示:basic-pitch 需 TensorFlow 2.15 干净环境;bytedance 需 torch + 首次联网下权重。"

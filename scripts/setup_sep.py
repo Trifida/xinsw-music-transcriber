@@ -18,6 +18,7 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
 ROOT = Path(__file__).resolve().parents[1]
+SEP_REQUIREMENTS = ROOT / "requirements" / "requirements-sep.txt"
 
 
 def venv_python(d: Path) -> Path:
@@ -32,6 +33,9 @@ def main():
     vdir = Path(a.venv)
     vdir.parent.mkdir(parents=True, exist_ok=True)
 
+    if not SEP_REQUIREMENTS.is_file():
+        raise FileNotFoundError(f"分离依赖清单不存在：{SEP_REQUIREMENTS}")
+
     print(f"[1/4] 建 {vdir}")
     venv.create(vdir, with_pip=True)
     py = str(venv_python(vdir))
@@ -44,7 +48,7 @@ def main():
     print(f"[3/4] 装 CUDA torch({a.cuda})")
     run("install", "torch", "torchaudio", "--index-url", f"https://download.pytorch.org/whl/{a.cuda}")
     print("[4/4] 装 audio-separator + 本包(供 -m musicmaster.separate.pipeline)")
-    run("install", "-r", str(ROOT / "requirements-sep.txt"))
+    run("install", "-r", str(SEP_REQUIREMENTS))
     run("install", "-e", str(ROOT), "--no-deps")
 
     print("\n[OK] 完成。把这个加进你的环境变量(GUI/CLI 用它找分离 venv):")
