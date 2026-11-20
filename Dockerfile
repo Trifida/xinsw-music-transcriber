@@ -10,7 +10,7 @@ WORKDIR /app
 
 # LilyPond provides server-side Jianpu PDF/SVG rendering.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      lilypond fonts-dejavu-core libsndfile1 ffmpeg \
+      lilypond fonts-dejavu-core libsndfile1 libgomp1 ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY . /app
@@ -18,7 +18,7 @@ COPY . /app
 RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
     && python -m pip install --no-cache-dir tensorflow==2.15.0 \
     && python -m pip install --no-cache-dir --no-build-isolation --no-deps ./vendor/crepe \
-    && python scripts/prepare_crepe_model.py \
+    && if [ -n "$CREPE_MODEL_URL" ]; then CREPE_MODEL_URL="$CREPE_MODEL_URL" python scripts/prepare_crepe_model.py; else python scripts/prepare_crepe_model.py; fi \
     && python -m pip install --no-cache-dir -r requirements/requirements-core.txt \
     && python -m pip install --no-cache-dir -e .
 
