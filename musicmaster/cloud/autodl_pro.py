@@ -31,9 +31,14 @@ class AutoDLProClient:
         if not self._token:
             raise ValueError("缺少 AutoDL Pro Token；请在服务端设置 AUTODL_PRO_TOKEN。")
         self._base_url = (base_url or self.API_BASE).rstrip("/")
+        if not self._base_url.startswith("https://"):
+            raise ValueError("AutoDL Pro API 必须通过 HTTPS 访问。")
         self._timeout = float(timeout)
         if self._timeout <= 0:
             raise ValueError("timeout 必须大于 0。")
+
+    def _redact(self, value: str) -> str:
+        return value.replace(self._token, "[REDACTED]")
 
     def _request(self, method: str, path: str, payload: dict | None = None) -> Any:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
@@ -52,9 +57,12 @@ class AutoDLProClient:
                 raw = response.read()
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:1000]
-            raise AutoDLProError(f"AutoDL Pro HTTP {exc.code}: {detail}") from None
+            raise AutoDLProError(
+                self._redact(f"AutoDL Pro HTTP {exc.code}: {detail}")
+            ) from None
         except URLError as exc:
-            raise AutoDLProError(f"AutoDL Pro 网络请求失败：{exc.reason}") from None
+            reason = self._redact(str(exc.reason))
+            raise AutoDLProError(f"AutoDL Pro 网络请求失败：{reason}") from None
         except TimeoutError:
             raise AutoDLProError("AutoDL Pro 请求超时。") from None
 
@@ -66,7 +74,7 @@ class AutoDLProClient:
             raise AutoDLProError("AutoDL Pro 返回格式异常：响应不是对象。")
         if result.get("code") != "Success":
             code = result.get("code", "Unknown")
-            message = str(result.get("msg") or "未提供错误说明")[:500]
+            message = self._redact(str(result.get("msg") or "未提供错误说明")[:500])
             raise AutoDLProError(f"AutoDL Pro API 错误({code})：{message}")
         return result.get("data")
 
