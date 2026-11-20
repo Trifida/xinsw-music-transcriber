@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import json
-from io import BytesIO
 
 import pytest
 
@@ -25,6 +24,11 @@ def test_requires_token(monkeypatch):
     monkeypatch.delenv("AUTODL_PRO_TOKEN", raising=False)
     with pytest.raises(ValueError, match="AUTODL_PRO_TOKEN"):
         AutoDLProClient()
+
+
+def test_requires_https():
+    with pytest.raises(ValueError, match="HTTPS"):
+        AutoDLProClient("secret", base_url="http://api.example.test")
 
 
 def test_create_instance_uses_configured_4090d_and_auth_header(monkeypatch):
@@ -75,15 +79,19 @@ def test_power_on_and_status_use_documented_payloads(monkeypatch):
     assert calls[1][2] == {"instance_uuid": "pro-test123"}
 
 
-def test_api_error_is_reported_without_token(monkeypatch):
+def test_api_error_is_redacted(monkeypatch):
     def fake_urlopen(request, timeout):
-        return FakeResponse({"code": "InvalidToken", "data": None, "msg": "bad token"})
+        return FakeResponse({
+            "code": "InvalidToken",
+            "data": None,
+            "msg": "rejected test-secret",
+        })
 
     monkeypatch.setattr("musicmaster.cloud.autodl_pro.urlopen", fake_urlopen)
-    client = AutoDLProClient("very-secret-token")
+    client = AutoDLProClient("test-secret")
     with pytest.raises(AutoDLProError, match="InvalidToken") as exc:
         client.get_status("pro-test123")
-    assert "very-secret-token" not in str(exc.value)
+    assert "test-secret" not in str(exc.value)
 
 
 def test_rejects_release_with_malformed_id_before_network(monkeypatch):
