@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""建主环境(CPU):GUI + 扒谱 + 互转 + 渲染。
+"""建主环境(CPU): GUI + 扒谱 + 互转 + 渲染。
 
     python scripts/setup_core.py [--venv .venv]
 
-安装流程:建 venv → TensorFlow → CREPE full 单一模型 → 本地 CREPE 精简包
+安装流程: 建 venv → TensorFlow → 本地 CREPE 精简包 → CREPE full 单一模型
 → MusicMaster 核心依赖 → MusicMaster 本体。不会下载 CREPE 其他四种规格。
 """
 from __future__ import annotations
@@ -47,11 +47,11 @@ def main():
     print("[3/7] 安装 TensorFlow 2.15.0")
     pip("install", "tensorflow==2.15.0")
 
-    print("[4/7] 下载并解压 CREPE full 模型（只下载这一种规格）")
-    subprocess.check_call([py, str(ROOT / "scripts" / "prepare_crepe_model.py")])
-
-    print("[5/7] 安装本地 CREPE 精简包")
+    print("[4/7] 安装本地 CREPE 精简包")
     pip("install", "--no-build-isolation", "--no-deps", str(ROOT / "vendor" / "crepe"))
+
+    print("[5/7] 下载并解压 CREPE full 模型（只下载这一种规格）")
+    subprocess.check_call([py, str(ROOT / "scripts" / "prepare_crepe_model.py")])
 
     print("[6/7] 安装 MusicMaster 核心依赖")
     pip("install", "-r", str(ROOT / "requirements" / "requirements-core.txt"))
