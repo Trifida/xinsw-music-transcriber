@@ -8,7 +8,19 @@
 
 当前流程面向**已经分离好的人声主唱音轨**，尝试提取主旋律并生成 MIDI、MusicXML 等结果；不会自动从整首混音中分离人声。
 
-### 使用前请注意
+### AutoDL Pro Linux GPU 工作节点（开发中）
+
+在已创建并开机的 AutoDL Pro Linux 实例中，克隆本仓库后可运行：
+
+```bash
+bash scripts/run_autodl_full_transcribe.sh /path/to/song.mp3 --out /path/to/job-output
+```
+
+脚本首次运行会分别准备核心 CPU 虚拟环境和 CUDA 人声分离虚拟环境，后续复用已有环境；分离模型缓存默认放在仓库 `.cache/audio-separator-models/`。需要 Python 3.10+，默认安装 PyTorch CUDA 12.4，可通过 `MUSICMASTER_TORCH_CUDA` 调整。输出包含人声、伴奏、MIDI、MusicXML 和 `job_result.json`。
+
+**注意：此脚本只负责已启动 GPU 实例内的环境准备与单曲处理，不会自动创建/关停 AutoDL 实例，也尚未接入网页上传、持久化对象存储和任务调度。**
+
+## 使用前请注意
 
 - Colab 免费 CPU/GPU 是否可用、运行速度和会话时长由 Google 决定，不保证每次都有免费 GPU。
 - 首次运行需要安装 Python 依赖，并下载约 57.7 MB 的 CREPE full 模型。
