@@ -20,6 +20,15 @@ def test_parse_stages_requires_separation_first():
         full_transcribe._parse_stages("1,1")
 
 
+def test_runner_progress_accepts_fraction_and_percent():
+    job = full_transcribe._ProgressJob(Path("unused"), None, 0.58, 0.40)
+    fractions = []
+    job._callback = lambda progress, label: fractions.append(progress)
+    job.set_stage("fraction", 0.5)
+    job.set_stage("percent", 49)
+    assert fractions == pytest.approx([0.78, 0.776])
+
+
 def test_full_workflow_separates_then_transcribes_and_writes_manifest(tmp_path, monkeypatch):
     source = tmp_path / "song.mp3"
     source.write_bytes(b"test audio")
@@ -46,6 +55,7 @@ def test_full_workflow_separates_then_transcribes_and_writes_manifest(tmp_path, 
         d = Path(job.job_dir)
         for name in ("notes.json", "out.mid", "out.musicxml"):
             (d / name).write_bytes(b"artifact")
+        job.set_stage("CREPE progress", 49)
         return {"ok": True}
 
     fake_runners = SimpleNamespace(
@@ -71,6 +81,7 @@ def test_full_workflow_separates_then_transcribes_and_writes_manifest(tmp_path, 
     assert result["transcription"]["files"]["out.mid"] == "transcription/out.mid"
     assert json.loads((output / "job_result.json").read_text(encoding="utf-8")) == result
     assert progress[-1][0] == 1.0
+    assert all(p <= 1.0 for p, _ in progress)
 
 
 def test_full_workflow_refuses_to_overwrite_existing_task_outputs(tmp_path):
