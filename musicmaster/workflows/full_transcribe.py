@@ -29,7 +29,9 @@ def _notify(callback: ProgressCallback, progress: float, label: str) -> None:
 class _ProgressJob:
     """把现有 runner 的 Job 进度映射到整首工作流的阶段区间。"""
 
-    def __init__(self, callback: ProgressCallback, start: float, span: float) -> None:
+    def __init__(self, job_dir: Path, callback: ProgressCallback,
+                 start: float, span: float) -> None:
+        self.job_dir = str(job_dir)
         self._callback = callback
         self._start = start
         self._span = span
@@ -89,7 +91,7 @@ def run_full_transcription(
     runners = importlib.import_module("musicmaster.web.runners")
     _notify(progress_callback, 0.03, "准备分离整首歌曲…")
     separated = runners.run_separate(
-        _ProgressJob(progress_callback, 0.03, 0.55),
+        _ProgressJob(separation_dir, progress_callback, 0.03, 0.55),
         str(source),
         ",".join(selected_stages),
         denoise,
@@ -122,7 +124,7 @@ def run_full_transcription(
     _notify(progress_callback, 0.58, "人声与伴奏已分离，开始识别主旋律…")
     transcription_dir.mkdir()
     transcribed = runners.run_transcribe(
-        _ProgressJob(progress_callback, 0.58, 0.40),
+        _ProgressJob(transcription_dir, progress_callback, 0.58, 0.40),
         str(vocal),
         engine,
         key,
