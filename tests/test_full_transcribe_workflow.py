@@ -25,10 +25,11 @@ def test_full_workflow_separates_then_transcribes_and_writes_manifest(tmp_path, 
     source.write_bytes(b"test audio")
     output = tmp_path / "job"
     calls = []
+    real_import_module = importlib.import_module
 
     def fake_separate_main(argv):
         calls.append(("separate", argv))
-        args = dict(zip(argv[::2], argv[1::2]))
+        args = dict(zip(argv[1::2], argv[2::2]))
         sep_root = Path(args["--out-dir"])
         (sep_root / "1_分离").mkdir(parents=True)
         (sep_root / "1_分离" / "accomp.wav").write_bytes(b"accompaniment")
@@ -56,7 +57,7 @@ def test_full_workflow_separates_then_transcribes_and_writes_manifest(tmp_path, 
             return fake_separator
         if name == "musicmaster.transcribe.autopilot":
             return fake_autopilot
-        return importlib.import_module(name)
+        return real_import_module(name)
 
     monkeypatch.setattr(full_transcribe.importlib, "import_module", fake_import)
     progress = []
