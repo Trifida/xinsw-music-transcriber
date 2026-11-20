@@ -25,6 +25,17 @@
 - `tests/`：基础测试
 - `LICENSE`、`NOTICE`：项目与第三方许可声明
 
+## 简谱 PDF：由服务器统一排版
+
+普通用户不需要在自己的电脑上安装 LilyPond。项目保留两级输出保障：
+
+- `jianpu.ly`：由 Python 端的 jianpu-ly 生成的可编辑排版源稿；即使 PDF 引擎暂不可用，也会保留。
+- `jianpu.pdf`：由服务器上的 LilyPond 命令行程序生成。LilyPond 作为独立进程调用，不作为 Python 库链接进主程序。
+
+仓库根目录的 `Dockerfile` 已把 LilyPond 放入服务器镜像。使用支持 Docker 的部署平台构建该镜像后，PDF 排版由服务器完成，客户设备无需安装额外软件。部署后访问 `/api/health`，查看 `pdf_export.ready` 是否为 `true`。本地 Windows 开发环境没有 LilyPond 时，扒谱仍会保留 `jianpu.ly` 源稿，不影响 MIDI、MusicXML 和五线谱产物。
+
+> 注意：当前 Dockerfile 面向 CPU 核心服务及 PDF 排版。GPU 拆声/重塑仍按项目独立 GPU 环境部署，不会因安装 LilyPond 而自动迁移到该容器。
+
 ## 许可
 
 项目代码许可见 [LICENSE](LICENSE)，第三方组件声明见 [NOTICE](NOTICE)，CREPE 上游许可见 [vendor/crepe/LICENSE](vendor/crepe/LICENSE)。模型权重由运行时单独下载，不随仓库分发。商用前应逐项核查代码、模型权重和训练数据的许可。
