@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """整首歌曲工作流：混音 → 人声/伴奏分离 → 主旋律扒谱。
 
-此入口供后续云 GPU worker 和本地验收共同调用。它只负责编排现有算法，
-不复制或改写 separate.pipeline / transcribe.autopilot 的核心处理逻辑。
+此入口供后续云 GPU worker 和端到端验收共同调用。它复用现有 runners，
+由 GPU 分离虚拟环境执行拆声、由核心虚拟环境执行 CREPE/记谱，不复制核心算法。
 """
 from __future__ import annotations
 
@@ -24,6 +24,22 @@ def _notify(callback: ProgressCallback, progress: float, label: str) -> None:
         callback(max(0.0, min(1.0, float(progress))), label)
     except Exception:  # noqa: BLE001 — 进度通知不能中断音频任务
         pass
+
+
+class _ProgressJob:
+    """把现有 runner 的 Job 进度映射到整首工作流的阶段区间。"""
+
+    def __init__(self, callback: ProgressCallback, start: float, span: float) -> None:
+        self._callback = callback
+        self._start = start
+        self._span = span
+
+    def set_stage(self, label: str, progress: Optional[float] = None) -> None:
+        value = self._start if progress is None else self._start + self._span * float(progress)
+        _notify(self._callback, value, label)
+
+    def set_progress(self, progress: float) -> None:
+        _notify(self._callback, self._start + self._span * float(progress), "处理中…")
 
 
 def _relative(path: Path, root: Path) -> str:
@@ -70,44 +86,49 @@ def run_full_transcription(
         raise FileExistsError("任务输出目录已包含 separation/transcription，拒绝覆盖已有结果。")
 
     separation_dir.mkdir()
+    runners = importlib.import_module("musicmaster.web.runners")
     _notify(progress_callback, 0.03, "准备分离整首歌曲…")
-
-    separator = importlib.import_module("musicmaster.separate.pipeline")
-    separation_rc = separator.main([
+    separated = runners.run_separate(
+        _ProgressJob(progress_callback, 0.03, 0.55),
         str(source),
-        "--stages", ",".join(selected_stages),
-        "--denoise", denoise,
-        "--out-dir", str(separation_dir),
-    ])
-    if separation_rc != 0:
-        raise RuntimeError(f"人声分离失败，退出码：{separation_rc}")
+        ",".join(selected_stages),
+        denoise,
+    )
+    if not separated.get("ok"):
+        raise RuntimeError(separated.get("message") or "人声分离失败。")
 
-    # pipeline 的正式输出约定：第一段保留伴奏，顶层“最终_*.wav”为级联处理后的人声。
-    vocal = separation_dir / f"最终_{source.stem}.wav"
-    accompaniment = separation_dir / "1_分离" / "accomp.wav"
-    if not vocal.is_file():
+    tracks = separated.get("tracks") or []
+    final_track = next(
+        (item for item in tracks
+         if Path(item.get("name", "")).name.startswith("最终_")
+         and Path(item.get("name", "")).suffix.lower() == ".wav"),
+        None,
+    )
+    accompaniment_track = next(
+        (item for item in tracks
+         if Path(item.get("name", "")).as_posix().endswith("1_分离/accomp.wav")),
+        None,
+    )
+    if final_track is None:
         raise RuntimeError("分离程序未生成最终主唱音轨，不能继续扒谱。")
-    if not accompaniment.is_file():
+    if accompaniment_track is None:
         raise RuntimeError("分离程序未生成伴奏音轨，M1 产物不完整。")
+
+    vocal = separation_dir / final_track["name"]
+    accompaniment = separation_dir / accompaniment_track["name"]
+    if not vocal.is_file() or not accompaniment.is_file():
+        raise RuntimeError("分离任务返回的音轨文件不存在，拒绝继续。")
 
     _notify(progress_callback, 0.58, "人声与伴奏已分离，开始识别主旋律…")
     transcription_dir.mkdir()
-    autopilot = importlib.import_module("musicmaster.transcribe.autopilot")
-    if engine not in autopilot.ENGINES:
-        raise ValueError(f"未知扒谱引擎「{engine}」，可选：{', '.join(autopilot.ENGINES)}。")
-
-    argv = [str(vocal), "--out", str(transcription_dir), "--engine", engine]
-    if key and key.strip():
-        argv.extend(["--key", key.strip()])
-
-    def _transcribe_progress(value: float, label: str) -> None:
-        # autopilot 回传 0–100 的阶段进度；把它映射到整条工作流的后 40%。
-        mapped = 0.58 + 0.40 * max(0.0, min(100.0, float(value))) / 100.0
-        _notify(progress_callback, mapped, label)
-
-    transcription_rc = autopilot.main(argv, progress_callback=_transcribe_progress)
-    if transcription_rc != 0:
-        raise RuntimeError(f"主旋律扒谱失败，退出码：{transcription_rc}")
+    transcribed = runners.run_transcribe(
+        _ProgressJob(progress_callback, 0.58, 0.40),
+        str(vocal),
+        engine,
+        key,
+    )
+    if not transcribed.get("ok"):
+        raise RuntimeError(transcribed.get("message") or "主旋律扒谱失败。")
 
     required = ("notes.json", "out.mid", "out.musicxml")
     missing = [name for name in required if not (transcription_dir / name).is_file()]
