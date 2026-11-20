@@ -137,7 +137,7 @@ def main(argv=None):
         if (out / "jianpu.pdf").is_file():
             flist.append("jianpu.pdf 简谱")
         elif (out / "jianpu.ly").is_file():
-            flist.append("jianpu.ly 简谱源(装 LilyPond 后可渲染成图)")
+            flist.append("jianpu.ly 简谱排版源稿(已保留，可由服务器重新生成 PDF)")
         if (out / "confidence.json").is_file():
             flist.append("confidence.json 逐音可信度")
         rep.append("## ④ 文件清单\n" + "\n".join(f"- {x}" for x in flist) + "\n")

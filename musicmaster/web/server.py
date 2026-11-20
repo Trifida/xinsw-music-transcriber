@@ -68,7 +68,25 @@ def _save_upload(up: UploadFile | None) -> str | None:
 # ─────────────────────────── API ─────────────────────────── #
 @app.get("/api/health")
 def health() -> dict:
-    return {"ok": True, "service": "musicmaster", "static": STATIC.is_dir()}
+    # 排版引擎属于服务器能力，不要求客户设备安装。健康检查同时报告 PDF 是否就绪；
+    # 即使 LilyPond 暂缺，API 仍健康，简谱 .ly 源稿照常保留。
+    try:
+        from musicmaster.core.render import lilypond_executable, is_jianpu_source_available
+        lilypond = lilypond_executable()
+        source_ready = is_jianpu_source_available()
+    except Exception:
+        lilypond = None
+        source_ready = False
+    return {
+        "ok": True,
+        "service": "musicmaster",
+        "static": STATIC.is_dir(),
+        "pdf_export": {
+            "ready": bool(lilypond and source_ready),
+            "engine": "LilyPond" if lilypond and source_ready else None,
+            "source_fallback": source_ready,
+        },
+    }
 
 
 @app.post("/api/convert")
