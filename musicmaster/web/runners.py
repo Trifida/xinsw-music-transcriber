@@ -180,7 +180,7 @@ def _friendly(name: str) -> dict:
             return {"label": "简谱 PDF", "download": "jianpu.pdf", "desc": "可打印的数字简谱(1234567)。"}
         if ext == ".ly":
             return {"label": "简谱源码(LilyPond)", "download": "jianpu_source.ly",
-                    "desc": "可编辑的简谱排版源稿。即使 PDF 暂时无法生成，源稿也会保留，服务端配置排版引擎后可重新导出。"}
+                    "desc": "可编辑的简谱排版源稿。即使 PDF 暂时无法生成，源稿也会保留；服务器配置排版引擎后，重新提交扒谱任务即可生成 PDF。"}
         return {"label": "简谱文本", "download": "jianpu.txt", "desc": "译出的数字简谱(纯文本)。"}
     if ext in (".musicxml", ".xml", ".mxl"):
         return {"label": "五线谱(MusicXML)", "download": "sheet.musicxml",
