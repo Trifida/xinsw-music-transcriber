@@ -8,6 +8,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# Optional HTTPS mirror for the pinned CREPE model archive.
+ARG CREPE_MODEL_URL
+
 # LilyPond provides server-side Jianpu PDF/SVG rendering.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       lilypond fonts-dejavu-core libsndfile1 libgomp1 ffmpeg \
