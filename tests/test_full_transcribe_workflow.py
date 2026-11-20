@@ -27,36 +27,35 @@ def test_full_workflow_separates_then_transcribes_and_writes_manifest(tmp_path, 
     calls = []
     real_import_module = importlib.import_module
 
-    def fake_separate_main(argv):
-        calls.append(("separate", argv))
-        args = dict(zip(argv[1::2], argv[2::2]))
-        sep_root = Path(args["--out-dir"])
-        (sep_root / "1_分离").mkdir(parents=True)
-        (sep_root / "1_分离" / "accomp.wav").write_bytes(b"accompaniment")
-        (sep_root / "最终_song.wav").write_bytes(b"lead vocal")
-        return 0
+    def fake_separate(job, audio_path, stages, denoise):
+        calls.append(("separate", audio_path, stages, denoise))
+        d = Path(job.job_dir)
+        (d / "1_分离").mkdir()
+        (d / "1_分离" / "accomp.wav").write_bytes(b"accompaniment")
+        (d / "最终_song.wav").write_bytes(b"lead vocal")
+        return {
+            "ok": True,
+            "tracks": [
+                {"name": "1_分离/accomp.wav"},
+                {"name": "最终_song.wav"},
+            ],
+        }
 
-    def fake_autopilot_main(argv, progress_callback=None):
-        calls.append(("transcribe", argv))
-        args = dict(zip(argv[1::2], argv[2::2]))
-        out = Path(args["--out"])
+    def fake_transcribe(job, audio_path, engine, key):
+        calls.append(("transcribe", audio_path, engine, key))
+        d = Path(job.job_dir)
         for name in ("notes.json", "out.mid", "out.musicxml"):
-            (out / name).write_bytes(b"artifact")
-        if progress_callback:
-            progress_callback(49, "识别完成")
-        return 0
+            (d / name).write_bytes(b"artifact")
+        return {"ok": True}
 
-    fake_separator = SimpleNamespace(main=fake_separate_main)
-    fake_autopilot = SimpleNamespace(
-        ENGINES={"crepe": "CREPE"},
-        main=fake_autopilot_main,
+    fake_runners = SimpleNamespace(
+        run_separate=fake_separate,
+        run_transcribe=fake_transcribe,
     )
 
     def fake_import(name):
-        if name == "musicmaster.separate.pipeline":
-            return fake_separator
-        if name == "musicmaster.transcribe.autopilot":
-            return fake_autopilot
+        if name == "musicmaster.web.runners":
+            return fake_runners
         return real_import_module(name)
 
     monkeypatch.setattr(full_transcribe.importlib, "import_module", fake_import)
@@ -66,7 +65,8 @@ def test_full_workflow_separates_then_transcribes_and_writes_manifest(tmp_path, 
     )
 
     assert [call[0] for call in calls] == ["separate", "transcribe"]
-    assert calls[1][1][0] == str(output / "separation" / "最终_song.wav")
+    assert calls[0][2:] == ("1,2,3", "dereverb")
+    assert calls[1][1] == str(output / "separation" / "最终_song.wav")
     assert result["separation"]["accompaniment"] == "separation/1_分离/accomp.wav"
     assert result["transcription"]["files"]["out.mid"] == "transcription/out.mid"
     assert json.loads((output / "job_result.json").read_text(encoding="utf-8")) == result
