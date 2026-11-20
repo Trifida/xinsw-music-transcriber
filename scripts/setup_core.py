@@ -61,7 +61,7 @@ def main():
 
     print("\n[完成] 启动界面: 双击 启动.bat")
     print(f"       或运行: {py} -m musicmaster.web.server")
-    print("简谱 PDF/SVG 出图还需独立安装 LilyPond CLI（见 README）。")
+    print("简谱源稿无需 LilyPond；本机若未配置 LilyPond，PDF 将由部署服务器提供排版服务。")
 
 
 if __name__ == "__main__":
