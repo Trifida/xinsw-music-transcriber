@@ -26,9 +26,24 @@ def test_convert_roundtrip_lossless():
 
     score = cv.load_any(EXAMPLES / "twinkle.jianpu")
     back = cv.score_to_jianpu(score, key_name="C")
+    # 导出的文本必须是简谱语法，不得把 music21 对象摘要当作简谱文件。
+    lines = back.splitlines()
+    assert lines[0] == "1=C"
+    assert lines[1] == "4/4"
+    assert lines[2].startswith("tempo=")
+    assert "Music21 Fragment" not in back
     seq = " ".join(t for t in back.replace("|", " ").split() if t and not t.startswith(("1=", "4/", "tempo")))
     # 小星星开头 1 1 5 5 6 6 5
     assert seq.split()[:7] == ["1", "1", "5", "5", "6", "6", "5"]
+
+
+def test_jianpu_pdf_download_labels_distinguish_engines():
+    """下载列表必须区分 Dolce 主版、当前主 PDF 与旧版 LilyPond 备用 PDF。"""
+    from musicmaster.web.runners import _friendly
+
+    assert _friendly("jianpu-dolce.pdf")["label"] == "简谱 PDF（Dolce 新版）"
+    assert _friendly("jianpu.pdf")["label"] == "简谱 PDF（当前主文件）"
+    assert _friendly("jianpu-lilypond-fallback.pdf")["label"] == "简谱 PDF（旧版 LilyPond 备用）"
 
 
 def test_transcribe_synthetic_scale(tmp_path):
