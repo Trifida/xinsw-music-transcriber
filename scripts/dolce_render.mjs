@@ -25,6 +25,9 @@ async function main() {
   const session = new HeadlessSession(meta);
 
   session.load(bytes, path.basename(input));
+  // Dolce defaults to a continuous long image; the product needs printable pages.
+  const paper = process.env.DOLCE_JIANPU_PAPER || "A4";
+  await session.applyRenderSettings({ jpPaper: paper });
   await session.setViewMode("original");
 
   const pages = session.pages();
