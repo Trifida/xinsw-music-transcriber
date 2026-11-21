@@ -382,7 +382,13 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "") -
         staff_svg = _read_svg(d / "staff.svg")
         jianpu_svg = None
         if dolce_info and dolce_info.get("svg_files"):
-            jianpu_svg = _read_svg(d / dolce_info["svg_files"][0])
+            # 将每一页 SVG 都内联给前端，不能只展示第一页。
+            rendered_pages = [
+                _read_svg(d / name)
+                for name in dolce_info["svg_files"]
+            ]
+            rendered_pages = [page for page in rendered_pages if page]
+            jianpu_svg = "\\n".join(rendered_pages) if rendered_pages else None
         confidence_pct, spots = _parse_confidence(d)
         wanted = ["notes.json", "out.mid", "out.musicxml", "jianpu.pdf", "jianpu.ly",
                   "jianpu-lilypond-fallback.pdf", "confidence.json", "staff.svg"]
