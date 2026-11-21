@@ -89,9 +89,9 @@
             sheet.style.display = '';
             var count = Number(r.jianpu_page_count) || 1;
             sheet.innerHTML = '<div class="tt">简谱 · 原版排版</div>' +
-              '<div class="st">原版 jianpu-ly + LilyPond · 第 1 页预览' + (count > 1 ? ' · 共 ' + count + ' 页' : '') + '</div>' +
-              '<div class="dolce-jianpu">' + r.jianpu_svg + '</div>';
-            var jpSvgs = sheet.querySelectorAll('.dolce-jianpu svg');
+              '<div class="st">原版 jianpu-ly + LilyPond 排版预览' + (count > 1 ? ' · 共 ' + count + ' 页' : '') + '</div>' +
+              '<div class="jianpu-rendered">' + r.jianpu_svg + '</div>';
+            var jpSvgs = sheet.querySelectorAll('.jianpu-rendered svg');
             Array.prototype.forEach.call(jpSvgs, function (svg) {
               svg.style.width = '100%';
               svg.style.height = 'auto';
