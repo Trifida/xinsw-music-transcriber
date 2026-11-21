@@ -180,11 +180,11 @@ def _friendly(name: str) -> dict:
             return {"label": "旧版简谱 PDF（备用）", "download": "jianpu_lilypond_fallback.pdf",
                     "desc": "原有 LilyPond 排版结果，作为悦谱 Dolce 的备用版本保留。"}
         if ext == ".pdf":
-            return {"label": "简谱 PDF", "download": "jianpu.pdf", "desc": "由悦谱 Dolce 排版，可打印的数字简谱。"}
+            return {"label": "简谱 PDF", "download": "jianpu.pdf", "desc": "可打印的数字简谱；本次使用的排版引擎见任务报告。"}
         if ext == ".svg":
-            return {"label": "简谱排版图", "download": "jianpu_page.svg", "desc": "悦谱 Dolce 生成的矢量简谱页面。"}
+            page_no = re.search(r"jianpu-dolce-(\\d+)", low)\n            suffix = f"_{page_no.group(1)}" if page_no else ""\n            return {"label": "简谱排版图", "download": f"jianpu_page{suffix}.svg", "desc": "悦谱 Dolce 生成的矢量简谱页面。"}
         if ext == ".png":
-            return {"label": "简谱高清图片", "download": "jianpu_page.png", "desc": "悦谱 Dolce 排版页的高清 PNG 预览。"}
+            page_no = re.search(r"jianpu-dolce-(\\d+)", low)\n            suffix = f"_{page_no.group(1)}" if page_no else ""\n            return {"label": "简谱高清图片", "download": f"jianpu_page{suffix}.png", "desc": "悦谱 Dolce 排版页的高清 PNG 预览。"}
         if ext == ".ly":
             return {"label": "简谱源码(LilyPond)", "download": "jianpu_source.ly",
                     "desc": "原有排版备用源稿；Dolce 排版不可用时仍可保留。"}
@@ -314,7 +314,9 @@ def run_convert(job, file_path: str, direction: str, key: str = "") -> dict:
                 from musicmaster.core.dolce import render_dolce
                 dolce_info = render_dolce(xml_out, d)
                 if dolce_info.get("svg_files"):
-                    jianpu_svg = _read_svg(d / dolce_info["svg_files"][0])
+                    pages = [_read_svg(d / name) for name in dolce_info["svg_files"]]
+                    pages = [page for page in pages if page]
+                    jianpu_svg = "\\n".join(pages) if pages else None
             except Exception as de:  # noqa: BLE001 — 简谱文本仍然可用
                 print(f"[convert] Dolce 排版跳过，保留简谱文本: {type(de).__name__}: {de}", flush=True)
 
