@@ -232,6 +232,10 @@
 
     MM.clearButton(panel, function () {
       if (getFile.clear) getFile.clear();
+      var lyricsEl = panel.querySelector('.lyric-input');
+      var autoLyricsEl = panel.querySelector('.auto-lyrics');
+      if (lyricsEl) lyricsEl.value = '';
+      if (autoLyricsEl) autoLyricsEl.checked = true;
       if (btn && btn._mmProg) btn._mmProg.hide();
       if (paneTake) MM.renderDownloads(paneTake.querySelector('.dl-grid'), '', []);
       var au = panel.querySelectorAll('audio');
