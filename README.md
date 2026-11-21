@@ -25,19 +25,14 @@
 - `tests/`：基础测试
 - `LICENSE`、`NOTICE`：项目与第三方许可声明
 
-## 简谱排版：悦谱 Dolce（主引擎）
+## 简谱排版：原版 jianpu-ly + LilyPond
 
-单旋律扒谱生成 MusicXML 后，服务器先调用 Dolce 自带的 **ScoreDoc → JLY（jianpu-ly）转换器**，再通过 Dolce 的 JLY 适配器完成每行四小节重排与无头排版；不另写音符排版算法：
+简谱统一使用项目原有的 **jianpu-ly + LilyPond** 排版链路：
 
-- JLY 源稿由 Dolce 从 MusicXML 生成，沿用它自己的歌词、音符、时值和记号映射；不支持的内容会作为警告写入任务报告。
-- 服务端默认按 **A4 分页纸**排版（Dolce 原生缺省是连续长图）；可通过 `DOLCE_JIANPU_PAPER` 指定 A4、A5、B5、Letter 等受支持纸张。
-- Dolce 输出 SVG 矢量谱页；服务器再用 librsvg 从这些 SVG 生成高清 PNG 与可打印 PDF。
-- `jianpu.pdf` 是 Dolce 排版后的主 PDF；各页 SVG / PNG 和可继续编辑的 `jianpu-dolce.jly` 源稿也会作为下载文件提供。
-- 原有 `jianpu-ly + LilyPond` 流程保留作备用。Dolce 未安装、转换失败或输入不受支持时，不会让扒谱任务整体失败，原有排版产物仍可用。
-- 五线谱渲染、音高识别、MIDI 与 MusicXML 生成逻辑不变；复音转录引擎仍按原规则不自动生成单旋律简谱。
-- Node.js 20、Dolce CLI 与字体只加入现有 Docker 镜像，不新增 Render 服务，也不要求用户电脑安装 Node 或悦谱。
-
-Dolce 上游版本固定为 `defb7594b00a42cda8030cdf68baa61e3b562b72`，避免构建时跟随上游变化。项目代码采用 MIT 许可；随附 Bravura 字体另按 SIL OFL 1.1 授权，详见 [NOTICE-DOLCE.md](NOTICE-DOLCE.md)。
+- MusicXML 转换为 jianpu-ly / LilyPond 源稿，再由 LilyPond 生成 SVG 预览和可打印 PDF。
+- 简谱 PDF 与 SVG 使用同一套原版排版器，避免多个排版引擎输出不一致。
+- 五线谱渲染、音高识别、MIDI 与 MusicXML 生成逻辑保持独立，不因简谱排版器调整而改变。
+- Docker 镜像只安装 Python 音频服务、LilyPond 和必要字体；不再构建或携带额外的 Node.js 记谱排版运行时。
 
 ## 许可
 
