@@ -34,12 +34,12 @@ async function main() {
   const files = [];
   for (let i = 0; i < pages.length; i++) {
     let svg = pages[i];
-    svg = svg.replace(/<svg\\b([^>]*)>/, (_whole, rawAttrs) => {
+    svg = svg.replace(/<svg\b([^>]*)>/, (_whole, rawAttrs) => {
       let attrs = rawAttrs;
-      const viewBox = /viewBox=["']\\s*0\\s+0\\s+([\\d.]+)\\s+([\\d.]+)\\s*["']/i.exec(attrs);
-      if (!/\\bxmlns=/.test(attrs)) attrs += ' xmlns="http://www.w3.org/2000/svg"';
-      if (viewBox && !/\\bwidth=/.test(attrs)) attrs += ` width="${viewBox[1]}"`;
-      if (viewBox && !/\\bheight=/.test(attrs)) attrs += ` height="${viewBox[2]}"`;
+      const viewBox = /viewBox=["']\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*["']/i.exec(attrs);
+      if (!/\bxmlns=/.test(attrs)) attrs += ' xmlns="http://www.w3.org/2000/svg"';
+      if (viewBox && !/\bwidth=/.test(attrs)) attrs += ` width="${viewBox[1]}"`;
+      if (viewBox && !/\bheight=/.test(attrs)) attrs += ` height="${viewBox[2]}"`;
       return `<svg${attrs}>`;
     });
     const name = `jianpu-dolce-${i + 1}.svg`;
