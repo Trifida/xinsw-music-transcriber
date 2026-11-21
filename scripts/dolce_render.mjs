@@ -47,6 +47,10 @@ async function main() {
   const layout = session.painter.original;
   const placedPageCount = layout?.placed?.pages?.length ?? 0;
   const placedGroupCount = layout?.placed?.pages?.reduce((sum, page) => sum + page.groups.length, 0) ?? 0;
+  const lineStartCount = layout?.lineStarts?.length ?? 0;
+  const actualNoteSize = layout?.metrics?.style?.size?.note ?? null;
+  const svgLength = pages[0]?.length ?? 0;
+  const svgTextCount = (pages[0]?.match(/<text\\b/g) ?? []).length;
   const activeStyle = session.style.styleOf("original");
   const pageSizes = pages.map((_, index) => session.painter.pageSize(index));
 
@@ -80,6 +84,10 @@ async function main() {
     barline_count: barlineCount,
     placed_page_count: placedPageCount,
     placed_group_count: placedGroupCount,
+    line_start_count: lineStartCount,
+    actual_note_size: actualNoteSize,
+    svg_length: svgLength,
+    svg_text_count: svgTextCount,
     svg_files: files,
     status: session.status || "Dolce headless engraving completed"
   }));
