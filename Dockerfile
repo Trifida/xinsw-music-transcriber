@@ -30,8 +30,8 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      lilypond fonts-dejavu-core fonts-noto-cjk fontconfig libatomic1 libstdc++6 \
-      libsndfile1 libgomp1 ffmpeg librsvg2-bin poppler-utils \
+      fonts-dejavu-core fonts-noto-cjk fontconfig libatomic1 libstdc++6 \
+      librsvg2-bin poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Reuse the exact Node runtime and built headless package; no extra Render service.
@@ -62,6 +62,10 @@ RUN node /app/scripts/dolce_render.mjs /app/tests/fixtures/dolce-smoke.musicxml 
 # Only the final application stage installs the heavier transcription stack and CREPE weights.
 FROM dolce-runtime-check AS final
 ARG CREPE_MODEL_URL
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      lilypond libsndfile1 libgomp1 ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
     && python -m pip install --no-cache-dir tensorflow==2.15.0 \
