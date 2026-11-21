@@ -345,15 +345,15 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "") -
 
         report = (d / "报告.md").read_text(encoding="utf-8") if (d / "报告.md").is_file() else "(无报告)"
         if rc != 0:
-            report = f"> 扒谱以非零码({rc})结束,可能转录失败,详见下方报告。\\n\\n" + report
+            report = f"> 扒谱以非零码({rc})结束,可能转录失败,详见下方报告。\n\n" + report
         if dolce_info:
             report += (
-                "\\n\\n## ⑤ 悦谱 Dolce 简谱排版\\n"
-                f"- 已排版 {dolce_info['page_count']} 页\\n"
-                "- 简谱预览与下载文件已附在「谱面 / 带走」中。\\n"
+                "\n\n## ⑤ 悦谱 Dolce 简谱排版\n"
+                f"- 已排版 {dolce_info['page_count']} 页\n"
+                "- 简谱预览与下载文件已附在「谱面 / 带走」中。\n"
             )
         elif dolce_error:
-            report += f"\\n\\n> 悦谱 Dolce 本次排版未完成：{dolce_error}。原有排版产物仍保留。\\n"
+            report += f"\n\n> 悦谱 Dolce 本次排版未完成：{dolce_error}。原有排版产物仍保留。\n"
 
         staff_svg = _read_svg(d / "staff.svg")
         jianpu_svg = None
