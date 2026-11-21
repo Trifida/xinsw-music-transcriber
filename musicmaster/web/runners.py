@@ -176,6 +176,9 @@ def _friendly(name: str) -> dict:
         return {"label": "文字报告", "download": "report.md",
                 "desc": "整体把握 + 逐音存疑处的说明(建议先看这个)。"}
     if "jianpu" in low or "简谱" in base or ext == ".jianpu":
+        if ext == ".pdf" and "fallback" in low:
+            return {"label": "旧版简谱 PDF（备用）", "download": "jianpu_lilypond_fallback.pdf",
+                    "desc": "原有 LilyPond 排版结果，作为悦谱 Dolce 的备用版本保留。"}
         if ext == ".pdf":
             return {"label": "简谱 PDF", "download": "jianpu.pdf", "desc": "由悦谱 Dolce 排版，可打印的数字简谱。"}
         if ext == ".svg":
