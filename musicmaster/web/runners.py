@@ -179,7 +179,7 @@ def _friendly(name: str) -> dict:
         if ext == ".pdf":
             return {"label": "简谱 PDF（原版排版）", "download": "jianpu.pdf", "desc": "由原有 jianpu-ly + LilyPond 排版器生成的可打印简谱。"}
         if ext == ".svg":
-            return {"label": "简谱排版图", "download": "jianpu.svg", "desc": "由原有 jianpu-ly + LilyPond 排版器生成的矢量简谱预览。"}
+            return {"label": "简谱排版图（原版）", "download": "jianpu.svg", "desc": "由原有 jianpu-ly + LilyPond 排版器生成的矢量简谱预览。"}
         if ext == ".ly":
             return {"label": "简谱源码(LilyPond)", "download": "jianpu_source.ly",
                     "desc": "简谱排版源稿，可用 LilyPond 继续编辑。"}
