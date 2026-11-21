@@ -8,6 +8,8 @@ RUN git init \
     && git remote add origin https://github.com/lodebar2026/dolce.git \
     && git fetch --depth=1 origin defb7594b00a42cda8030cdf68baa61e3b562b72 \
     && git checkout --detach FETCH_HEAD
+# Expose Dolce's existing ScoreDoc -> jianpu-ly serializer to the headless adapter.
+RUN sed -i '/export { HeadlessSession, type HeadlessView }/a export { emitJly } from "../jly/tojly";' src/cli/engrave.ts
 RUN npm install --no-audit --no-fund --package-lock=false \
     && npm run build:cli
 
