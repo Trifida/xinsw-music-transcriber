@@ -11,6 +11,13 @@ RUN git init \
 RUN npm install --no-audit --no-fund --package-lock=false \
     && npm run build:cli
 
+# Build-time smoke test: exercise the real MusicXML -> Dolce SVG headless path.
+ENV DOLCE_CLI_ENTRY=/opt/dolce/out/cli/engrave.js
+COPY scripts/dolce_render.mjs /tmp/dolce_render.mjs
+COPY tests/fixtures/dolce-smoke.musicxml /tmp/dolce-smoke.musicxml
+RUN node /tmp/dolce_render.mjs /tmp/dolce-smoke.musicxml /tmp/dolce-smoke-output \
+    && test -s /tmp/dolce-smoke-output/jianpu-dolce-1.svg
+
 # Main CPU service. Dolce's SVG pages are converted to PNG/PDF by librsvg.
 FROM python:3.11-slim-bookworm
 ENV PYTHONUNBUFFERED=1 \
