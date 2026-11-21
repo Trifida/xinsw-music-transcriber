@@ -212,6 +212,10 @@
         fd.append('audio', file);
         fd.append('engine', engine);
         fd.append('key', key);
+        var lyricsEl = panel.querySelector('.lyric-input');
+        var autoLyricsEl = panel.querySelector('.auto-lyrics');
+        fd.append('lyrics', lyricsEl ? lyricsEl.value : '');
+        fd.append('auto_lyrics', autoLyricsEl && autoLyricsEl.checked ? 'true' : 'false');
 
         var restore = MM.setBusy(btn, '提交中…');
         prog.start();
