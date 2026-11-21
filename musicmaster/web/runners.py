@@ -182,9 +182,13 @@ def _friendly(name: str) -> dict:
         if ext == ".pdf":
             return {"label": "简谱 PDF", "download": "jianpu.pdf", "desc": "可打印的数字简谱；本次使用的排版引擎见任务报告。"}
         if ext == ".svg":
-            page_no = re.search(r"jianpu-dolce-(\\d+)", low)\n            suffix = f"_{page_no.group(1)}" if page_no else ""\n            return {"label": "简谱排版图", "download": f"jianpu_page{suffix}.svg", "desc": "悦谱 Dolce 生成的矢量简谱页面。"}
+            page_no = re.search(r"jianpu-dolce-(\d+)", low)
+            suffix = f"_{page_no.group(1)}" if page_no else ""
+            return {"label": "简谱排版图", "download": f"jianpu_page{suffix}.svg", "desc": "悦谱 Dolce 生成的矢量简谱页面。"}
         if ext == ".png":
-            page_no = re.search(r"jianpu-dolce-(\\d+)", low)\n            suffix = f"_{page_no.group(1)}" if page_no else ""\n            return {"label": "简谱高清图片", "download": f"jianpu_page{suffix}.png", "desc": "悦谱 Dolce 排版页的高清 PNG 预览。"}
+            page_no = re.search(r"jianpu-dolce-(\d+)", low)
+            suffix = f"_{page_no.group(1)}" if page_no else ""
+            return {"label": "简谱高清图片", "download": f"jianpu_page{suffix}.png", "desc": "悦谱 Dolce 排版页的高清 PNG 预览。"}
         if ext == ".ly":
             return {"label": "简谱源码(LilyPond)", "download": "jianpu_source.ly",
                     "desc": "原有排版备用源稿；Dolce 排版不可用时仍可保留。"}
