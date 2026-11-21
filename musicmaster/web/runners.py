@@ -172,6 +172,10 @@ def _friendly(name: str) -> dict:
                     "desc": "从混音里分出的完整人声,仍带着和声 / 合音 —— 信息最全。"}
         return {"label": base, "download": base, "desc": "音频文件。"}  # 其它音频兜底
     # ── 记谱 / 互译(按文件类型)──
+    if base.lower() == "lyrics.txt":
+        return {"label": "识别歌词文本", "download": "lyrics.txt", "desc": "语音识别或手动提供的歌词原文，便于校对。"}
+    if base.lower() == "lyrics_alignment.json":
+        return {"label": "歌词对齐数据", "download": "lyrics_alignment.json", "desc": "歌词单位与旋律音符的对齐统计。"}
     if ext == ".md" or base == "报告.md":
         return {"label": "文字报告", "download": "report.md",
                 "desc": "整体把握 + 逐音存疑处的说明(建议先看这个)。"}
@@ -376,7 +380,7 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                     )
                     asr_status = get_asr_status()
                     if asr_status.get("available"):
-                        job.set_stage("旋律已识别，正在识别歌词…", 0.91)
+                        job.set_stage("旋律已识别，正在识别歌词…", 0.935)
                         try:
                             asr_result = transcribe_lyrics(audio_path)
                             lyric_text = asr_result["text"]
@@ -404,6 +408,15 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                         "alignmentStatus": "not-attempted", "tokenCount": 0,
                         "assignedCount": 0, "unassignedCount": 0,
                         "message": "本次未启用自动歌词识别；可粘贴歌词后重新记谱。",
+                    }
+
+                if not lyric_text and "lyrics_source" in locals() and lyrics_source == "automatic-asr-empty":
+                    lyrics_info = {
+                        "source": "automatic-asr-empty", "status": "empty-transcript",
+                        "alignmentStatus": "not-attempted", "tokenCount": 0,
+                        "assignedCount": 0, "unassignedCount": 0,
+                        "provider": lyrics_provider, "model": lyrics_model,
+                        "message": "语音识别服务没有识别到清晰歌词；可粘贴歌词后重新记谱。",
                     }
 
                 if lyric_text:
