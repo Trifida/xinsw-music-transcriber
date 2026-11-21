@@ -320,7 +320,7 @@ def run_convert(job, file_path: str, direction: str, key: str = "") -> dict:
                 if dolce_info.get("svg_files"):
                     pages = [_read_svg(d / name) for name in dolce_info["svg_files"]]
                     pages = [page for page in pages if page]
-                    jianpu_svg = "\\n".join(pages) if pages else None
+                    jianpu_svg = "".join(pages) if pages else None
             except Exception as de:  # noqa: BLE001 — 简谱文本仍然可用
                 print(f"[convert] Dolce 排版跳过，保留简谱文本: {type(de).__name__}: {de}", flush=True)
 
@@ -394,7 +394,7 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "") -
                 for name in dolce_info["svg_files"]
             ]
             rendered_pages = [page for page in rendered_pages if page]
-            jianpu_svg = "\\n".join(rendered_pages) if rendered_pages else None
+            jianpu_svg = "".join(rendered_pages) if rendered_pages else None
         confidence_pct, spots = _parse_confidence(d)
         wanted = ["notes.json", "out.mid", "out.musicxml", "jianpu.pdf", "jianpu.ly",
                   "jianpu-lilypond-fallback.pdf", "confidence.json", "staff.svg"]
