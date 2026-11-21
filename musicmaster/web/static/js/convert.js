@@ -85,14 +85,31 @@
           if (sheet) { sheet.style.display = ''; sheet.innerHTML = r.staff_svg; MM.fitSheetSvg(sheet); }
           if (jianpu) jianpu.style.display = 'none';
         } else if (!isJ2s) {
-          if (sheet) sheet.style.display = 'none'; // 隐藏 mockup 五线谱
-          if (jianpu) {
-            jianpu.style.display = '';
-            jianpu.innerHTML = '';
-            var pre = document.createElement('pre');
-            pre.style.whiteSpace = 'pre-wrap';
-            pre.textContent = r.jianpu_text || '';
-            jianpu.appendChild(pre);
+          if (r.jianpu_svg && sheet) {
+            sheet.style.display = '';
+            var count = Number(r.jianpu_page_count) || 1;
+            sheet.innerHTML = '<div class="tt">简谱 · 悦谱 Dolce</div>' +
+              '<div class="st">自动排版 · 第 1 页预览' + (count > 1 ? ' · 共 ' + count + ' 页' : '') + '</div>' +
+              '<div class="dolce-jianpu">' + r.jianpu_svg + '</div>';
+            var jpSvgs = sheet.querySelectorAll('.dolce-jianpu svg');
+            Array.prototype.forEach.call(jpSvgs, function (svg) {
+              svg.style.width = '100%';
+              svg.style.height = 'auto';
+              svg.style.display = 'block';
+              svg.style.background = '#fff';
+              svg.style.marginBottom = '14px';
+            });
+            if (jianpu) jianpu.style.display = 'none';
+          } else {
+            if (sheet) sheet.style.display = 'none';
+            if (jianpu) {
+              jianpu.style.display = '';
+              jianpu.innerHTML = '';
+              var pre = document.createElement('pre');
+              pre.style.whiteSpace = 'pre-wrap';
+              pre.textContent = r.jianpu_text || '';
+              jianpu.appendChild(pre);
+            }
           }
         }
       }
@@ -103,7 +120,7 @@
       }
 
       // 有五线谱预览就跳到「谱面」,否则停在「誊写」
-      MM.switchOut(panel, r.staff_svg ? 1 : 0);
+      MM.switchOut(panel, (r.staff_svg || r.jianpu_svg) ? 1 : 0);
     }
   }
 
