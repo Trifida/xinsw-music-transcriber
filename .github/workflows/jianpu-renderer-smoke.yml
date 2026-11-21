@@ -8,7 +8,7 @@ on:
       - "musicmaster/web/runners.py"
       - "tests/test_musicmaster.py"
       - "examples/twinkle.jianpu"
-      - ".github/workflows/dolce-smoke.yml"
+      - ".github/workflows/jianpu-renderer-smoke.yml"
 permissions:
   contents: read
 
