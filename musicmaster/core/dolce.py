@@ -90,32 +90,47 @@ def render_dolce(
 
         if rsvg:
             png_name = svg.with_suffix(".png").name
-            _run([rsvg, "-f", "png", "-d", "192", "-p", "192", "-o",
-                  str(destination / png_name), str(svg)], timeout=60)
-            png_files.append(png_name)
+            try:
+                _run([rsvg, "-f", "png", "-d", "192", "-p", "192", "-o",
+                      str(destination / png_name), str(svg)], timeout=60)
+                if (destination / png_name).is_file():
+                    png_files.append(png_name)
+            except Exception as exc:  # noqa: BLE001 — SVG remains the source of truth
+                print(f"[Dolce] PNG conversion skipped for {name}: {exc}", flush=True)
 
             page_pdf = destination / f".{svg.stem}.pdf"
-            _run([rsvg, "-f", "pdf", "-o", str(page_pdf), str(svg)], timeout=60)
-            pdf_pages.append(page_pdf)
+            try:
+                _run([rsvg, "-f", "pdf", "-o", str(page_pdf), str(svg)], timeout=60)
+                if page_pdf.is_file() and page_pdf.stat().st_size > 100:
+                    pdf_pages.append(page_pdf)
+            except Exception as exc:  # noqa: BLE001 — keep the legacy PDF if conversion fails
+                print(f"[Dolce] PDF conversion skipped for {name}: {exc}", flush=True)
 
     pdf_name: str | None = None
-    if pdf_pages:
-        combined = destination / "jianpu-dolce.pdf"
-        if len(pdf_pages) == 1:
-            shutil.copyfile(pdf_pages[0], combined)
-        else:
-            pdfunite = shutil.which("pdfunite")
-            if pdfunite:
-                _run([pdfunite, *[str(p) for p in pdf_pages], str(combined)], timeout=60)
+    try:
+        # Only replace the legacy PDF when every page converted and the pages can be merged.
+        if pdf_pages and len(pdf_pages) == len(svg_files):
+            combined = destination / "jianpu-dolce.pdf"
+            if len(pdf_pages) == 1:
+                shutil.copyfile(pdf_pages[0], combined)
             else:
-                combined = pdf_pages[0]
-        if combined.is_file() and combined.stat().st_size > 100:
-            primary = destination / "jianpu.pdf"
-            legacy = destination / "jianpu-lilypond-fallback.pdf"
-            if primary.is_file() and not legacy.exists():
-                shutil.copyfile(primary, legacy)
-            shutil.copyfile(combined, primary)
-            pdf_name = primary.name
+                pdfunite = shutil.which("pdfunite")
+                if pdfunite:
+                    try:
+                        _run([pdfunite, *[str(p) for p in pdf_pages], str(combined)], timeout=60)
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"[Dolce] PDF page merge skipped: {exc}", flush=True)
+                else:
+                    print("[Dolce] pdfunite unavailable; keeping the legacy PDF.", flush=True)
+
+            if combined.is_file() and combined.stat().st_size > 100:
+                primary = destination / "jianpu.pdf"
+                legacy = destination / "jianpu-lilypond-fallback.pdf"
+                if primary.is_file() and not legacy.exists():
+                    shutil.copyfile(primary, legacy)
+                shutil.copyfile(combined, primary)
+                pdf_name = primary.name
+    finally:
         for page in pdf_pages:
             page.unlink(missing_ok=True)
 
