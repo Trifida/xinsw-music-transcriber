@@ -1,20 +1,40 @@
-# Server image: LilyPond is installed here, not on customer devices.
-# LilyPond is invoked only as a separate CLI process by musicmaster.core.render.
-FROM python:3.11-slim-bookworm
+# Build Dolce's documented headless engraving entry from a pinned upstream revision.
+# The renderer is TypeScript/Node; the transcription service remains Python.
+FROM node:20-bookworm-slim AS dolce-build
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/dolce
+RUN git init \
+    && git remote add origin https://github.com/lodebar2026/dolce.git \
+    && git fetch --depth=1 origin defb7594b00a42cda8030cdf68baa61e3b562b72 \
+    && git checkout --detach FETCH_HEAD
+RUN npm install --no-audit --no-fund --package-lock=false \
+    && npm run build:cli
 
+# Main CPU service. Dolce's SVG pages are converted to PNG/PDF by librsvg.
+FROM python:3.11-slim-bookworm
 ENV PYTHONUNBUFFERED=1 \
     PYTHONUTF8=1 \
-    MUSICMASTER_HOST=0.0.0.0
+    MUSICMASTER_HOST=0.0.0.0 \
+    DOLCE_CLI_ENTRY=/opt/dolce/out/cli/engrave.js
 
 WORKDIR /app
 
 # Optional HTTPS mirror for the pinned CREPE model archive.
 ARG CREPE_MODEL_URL
 
-# LilyPond provides server-side Jianpu PDF/SVG rendering.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      lilypond fonts-dejavu-core libsndfile1 libgomp1 ffmpeg \
+      lilypond fonts-dejavu-core fonts-noto-cjk fontconfig \
+      libsndfile1 libgomp1 ffmpeg librsvg2-bin poppler-utils \
     && rm -rf /var/lib/apt/lists/*
+
+# Reuse the exact Node runtime and built headless package; no extra Render service.
+COPY --from=dolce-build /usr/local/bin/node /usr/local/bin/node
+COPY --from=dolce-build /opt/dolce /opt/dolce
+RUN mkdir -p /usr/local/share/fonts/dolce \
+    && cp /opt/dolce/public/redist/Bravura.otf /usr/local/share/fonts/dolce/ \
+    && cp /opt/dolce/public/redist/BravuraText.otf /usr/local/share/fonts/dolce/ \
+    && fc-cache -f
 
 COPY . /app
 
