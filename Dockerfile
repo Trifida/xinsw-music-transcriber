@@ -15,8 +15,10 @@ RUN npm install --no-audit --no-fund --package-lock=false \
 ENV DOLCE_CLI_ENTRY=/opt/dolce/out/cli/engrave.js
 COPY scripts/dolce_render.mjs /tmp/dolce_render.mjs
 COPY tests/fixtures/dolce-smoke.musicxml /tmp/dolce-smoke.musicxml
-RUN node /tmp/dolce_render.mjs /tmp/dolce-smoke.musicxml /tmp/dolce-smoke-output \
-    && test -s /tmp/dolce-smoke-output/jianpu-dolce-1.svg
+RUN node /tmp/dolce_render.mjs /tmp/dolce-smoke.musicxml /tmp/dolce-smoke-output > /tmp/dolce-smoke-result.json \
+    && node -e 'const r=JSON.parse(require("fs").readFileSync("/tmp/dolce-smoke-result.json","utf8")); if(r.page_count < 2) throw new Error("Expected multi-page output, got " + r.page_count)' \
+    && test -s /tmp/dolce-smoke-output/jianpu-dolce-2.svg \
+    && grep -q '春' /tmp/dolce-smoke-output/jianpu-dolce-1.svg
 
 # Main CPU service. Dolce's SVG pages are converted to PNG/PDF by librsvg.
 FROM python:3.11-slim-bookworm AS dolce-runtime-check
@@ -46,10 +48,16 @@ RUN mkdir -p /app/musicmaster/web/static/fonts/dolce \
     && cp /opt/dolce/public/redist/BravuraText.otf /app/musicmaster/web/static/fonts/dolce/
 
 # Runtime smoke test: the copied Node binary, Bravura fonts and librsvg must work together.
-RUN node /app/scripts/dolce_render.mjs /app/tests/fixtures/dolce-smoke.musicxml /tmp/dolce-runtime-smoke \
-    && test -s /tmp/dolce-runtime-smoke/jianpu-dolce-1.svg \
-    && rsvg-convert -f pdf -o /tmp/dolce-runtime-smoke.pdf /tmp/dolce-runtime-smoke/jianpu-dolce-1.svg \
-    && test -s /tmp/dolce-runtime-smoke.pdf
+RUN node /app/scripts/dolce_render.mjs /app/tests/fixtures/dolce-smoke.musicxml /tmp/dolce-runtime-smoke > /tmp/dolce-runtime-result.json \
+    && node -e 'const r=JSON.parse(require("fs").readFileSync("/tmp/dolce-runtime-result.json","utf8")); if(r.page_count < 2) throw new Error("Expected multi-page output, got " + r.page_count)' \
+    && test -s /tmp/dolce-runtime-smoke/jianpu-dolce-2.svg \
+    && grep -q '春' /tmp/dolce-runtime-smoke/jianpu-dolce-1.svg \
+    && rsvg-convert -f png -d 192 -p 192 -b white -o /tmp/dolce-runtime-smoke-1.png /tmp/dolce-runtime-smoke/jianpu-dolce-1.svg \
+    && rsvg-convert -f pdf -o /tmp/dolce-runtime-smoke-1.pdf /tmp/dolce-runtime-smoke/jianpu-dolce-1.svg \
+    && rsvg-convert -f pdf -o /tmp/dolce-runtime-smoke-2.pdf /tmp/dolce-runtime-smoke/jianpu-dolce-2.svg \
+    && pdfunite /tmp/dolce-runtime-smoke-1.pdf /tmp/dolce-runtime-smoke-2.pdf /tmp/dolce-runtime-smoke.pdf \
+    && test -s /tmp/dolce-runtime-smoke-1.png \
+    && pdfinfo /tmp/dolce-runtime-smoke.pdf | grep -Eq 'Pages:[[:space:]]+2'
 
 # Only the final application stage installs the heavier transcription stack and CREPE weights.
 FROM dolce-runtime-check AS final
