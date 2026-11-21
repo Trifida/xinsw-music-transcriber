@@ -27,7 +27,12 @@ async function main() {
   session.load(bytes, path.basename(input));
   // Dolce defaults to a continuous long image; the product needs printable pages.
   const paper = process.env.DOLCE_JIANPU_PAPER || "A4";
-  await session.applyRenderSettings({ jpPaper: paper });
+  await session.setProfile(false);
+  const fontSize = Number(process.env.DOLCE_JIANPU_FONT_SIZE || 0);
+  await session.applyRenderSettings({
+    jpPaper: paper,
+    ...(Number.isFinite(fontSize) && fontSize > 0 ? { fontSize } : {})
+  });
   await session.setViewMode("original");
 
   const pages = session.pages();
@@ -61,7 +66,7 @@ async function main() {
     ok: true,
     page_count: files.length,
     paper,
-    applied_paper: activeStyle.page.paper ?? null,
+    applied_paper: activeStyle.page.paper ?? null,\n    font_size: session.style.fontSize,
     layout_page: session.style.layoutPage,
     page_sizes: pageSizes,
     measure_count: measureCount,
