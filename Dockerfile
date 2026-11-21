@@ -24,7 +24,7 @@ WORKDIR /app
 ARG CREPE_MODEL_URL
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      lilypond fonts-dejavu-core fonts-noto-cjk fontconfig \
+      lilypond fonts-dejavu-core fonts-noto-cjk fontconfig libatomic1 libstdc++6 \
       libsndfile1 libgomp1 ffmpeg librsvg2-bin poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
@@ -37,6 +37,9 @@ RUN mkdir -p /usr/local/share/fonts/dolce \
     && fc-cache -f
 
 COPY . /app
+RUN mkdir -p /app/musicmaster/web/static/fonts/dolce \
+    && cp /opt/dolce/public/redist/Bravura.woff2 /app/musicmaster/web/static/fonts/dolce/ \
+    && cp /opt/dolce/public/redist/BravuraText.otf /app/musicmaster/web/static/fonts/dolce/
 
 RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
     && python -m pip install --no-cache-dir tensorflow==2.15.0 \
