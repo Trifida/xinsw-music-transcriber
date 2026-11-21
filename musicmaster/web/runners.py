@@ -311,26 +311,25 @@ def run_convert(job, file_path: str, direction: str, key: str = "") -> dict:
             out = d / (src.stem + ".jianpu")
             out.write_text(text, encoding="utf-8")
 
-            # 互译得到的标准 MusicXML 也交给 Dolce 排版，保持扒谱与手动互译使用同一套简谱版面。
+            # 恢复原有 jianpu-ly + LilyPond 排版；Dolce 暂停参与正式输出。
             jianpu_svg = None
-            dolce_info = None
+            xml_out = d / (src.stem + ".musicxml")
+            score.write("musicxml", fp=str(xml_out))
             try:
-                job.set_stage("悦谱 Dolce 正在排版简谱…", 0.78)
-                xml_out = d / (src.stem + ".dolce.musicxml")
-                score.write("musicxml", fp=str(xml_out))
-                from musicmaster.core.dolce import render_dolce
-                dolce_info = render_dolce(xml_out, d)
-                if dolce_info.get("svg_files"):
-                    pages = [_read_svg(d / name) for name in dolce_info["svg_files"]]
-                    pages = [page for page in pages if page]
-                    jianpu_svg = "".join(pages) if pages else None
-            except Exception as de:  # noqa: BLE001 — 简谱文本仍然可用
-                print(f"[convert] Dolce 排版跳过，保留简谱文本: {type(de).__name__}: {de}", flush=True)
+                job.set_stage("原版简谱引擎正在排版…", 0.78)
+                from musicmaster.core.render import render as render_score
+                rendered = render_score(str(xml_out), str(d), formats=("jianpu",), jianpu_format="svg")
+                if rendered.get("jianpu"):
+                    jianpu_svg = _read_svg(Path(rendered["jianpu"]))
+                # 同时生成可打印 PDF；SVG 预览与 PDF 来自同一套原版排版器。
+                render_score(str(xml_out), str(d), formats=("jianpu",), jianpu_format="pdf")
+            except Exception as re:  # noqa: BLE001 — 文本与 MusicXML 仍可下载
+                print(f"[convert] 原版简谱图形排版未完成，保留文本与 MusicXML: {type(re).__name__}: {re}", flush=True)
 
-            return {"ok": True, "message": "已译回简谱文本并完成悦谱排版。" if dolce_info else "已译回简谱文本。",
+            return {"ok": True, "message": "已译回简谱文本并尝试使用原版简谱引擎排版。",
                     "direction": direction, "staff_svg": None, "jianpu_text": text,
                     "jianpu_svg": jianpu_svg,
-                    "jianpu_page_count": dolce_info.get("page_count") if dolce_info else None,
+                    "jianpu_page_count": 1 if jianpu_svg else None,
                     "downloads": _downloads(d)}
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "message": f"转换失败:{type(e).__name__}: {e}"}
@@ -363,54 +362,35 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "") -
             argv += ["--key", key.strip()]
         rc = autopilot.main(argv)
 
-        # 单旋律 MusicXML 交给悦谱 Dolce 的无头排版器；扒谱识别逻辑与五线谱渲染不变。
-        dolce_info = None
-        dolce_error = None
+        # 暂停 Dolce 正式输出，恢复 autopilot 原有 jianpu-ly + LilyPond 排版。
         mx = d / "out.musicxml"
+        jianpu_svg = None
         if rc == 0 and engine == "crepe" and mx.is_file():
-            job.set_stage("悦谱 Dolce 正在进行简谱排版…", 0.94)
             try:
-                from musicmaster.core.dolce import render_dolce
-                dolce_info = render_dolce(mx, d)
-            except Exception as de:  # noqa: BLE001 — 保留原有 LilyPond 产物作回退
-                dolce_error = f"{type(de).__name__}: {str(de)[:240]}"
-                print(f"[Dolce] 排版跳过，保留原有简谱产物: {dolce_error}", flush=True)
+                job.set_stage("原版简谱引擎正在生成预览…", 0.94)
+                from musicmaster.core.render import render as render_score
+                rendered = render_score(str(mx), str(d), formats=("jianpu",), jianpu_format="svg")
+                if rendered.get("jianpu"):
+                    jianpu_svg = _read_svg(Path(rendered["jianpu"]))
+            except Exception as re:  # noqa: BLE001 — autopilot 已生成的 PDF/LY 不受影响
+                print(f"[Jianpu] 原版 SVG 预览未完成，保留原有 PDF/LY: {type(re).__name__}: {re}", flush=True)
 
         report = (d / "报告.md").read_text(encoding="utf-8") if (d / "报告.md").is_file() else "(无报告)"
         if rc != 0:
             report = f"> 扒谱以非零码({rc})结束,可能转录失败,详见下方报告。\n\n" + report
-        if dolce_info:
-            report += (
-                "\n\n## ⑤ 悦谱 Dolce 简谱排版\n"
-                f"- 已排版 {dolce_info['page_count']} 页（A4 默认纸张）\n"
-                "- 使用 Dolce 原生 JLY 转换与排版；预览、PDF 和源稿已附在「谱面 / 带走」中。\n"
-            )
-            if dolce_info.get("warnings"):
-                report += "- 排版提示： " + "；".join(dolce_info["warnings"]) + "\n"
-        elif dolce_error:
-            report += f"\n\n> 悦谱 Dolce 本次排版未完成：{dolce_error}。原有排版产物仍保留。\n"
+        if jianpu_svg:
+            report += "\n\n## ⑤ 简谱排版\n- 使用原有 jianpu-ly + LilyPond 排版器生成简谱预览；PDF 由原有流程生成。\n"
 
         staff_svg = _read_svg(d / "staff.svg")
-        jianpu_svg = None
-        if dolce_info and dolce_info.get("svg_files"):
-            # 将每一页 SVG 都内联给前端，不能只展示第一页。
-            rendered_pages = [
-                _read_svg(d / name)
-                for name in dolce_info["svg_files"]
-            ]
-            rendered_pages = [page for page in rendered_pages if page]
-            jianpu_svg = "".join(rendered_pages) if rendered_pages else None
         confidence_pct, spots = _parse_confidence(d)
-        wanted = ["notes.json", "out.mid", "out.musicxml", "jianpu.pdf", "jianpu.ly", "jianpu-dolce.jly",
-                  "jianpu-lilypond-fallback.pdf", "confidence.json", "staff.svg"]
-        if dolce_info:
-            wanted += dolce_info.get("svg_files", []) + dolce_info.get("png_files", [])
+        wanted = ["notes.json", "out.mid", "out.musicxml", "jianpu.pdf", "jianpu.ly", "jianpu.svg",
+                  "confidence.json", "staff.svg"]
         downloads = _downloads(d, only=wanted)
         if not downloads:
             downloads = _downloads(d)
         return {"ok": rc == 0, "report_md": report, "staff_svg": staff_svg,
                 "jianpu_svg": jianpu_svg,
-                "jianpu_page_count": dolce_info.get("page_count") if dolce_info else None,
+                "jianpu_page_count": 1 if jianpu_svg else None,
                 "confidence_pct": confidence_pct, "spots": spots, "downloads": downloads}
     except Exception as e:  # noqa: BLE001
         hint = ""
