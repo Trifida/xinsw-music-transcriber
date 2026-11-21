@@ -1,0 +1,31 @@
+name: Dolce renderer smoke test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "scripts/dolce_render.mjs"
+      - "tests/fixtures/dolce-smoke.musicxml"
+      - "musicmaster/core/dolce.py"
+      - "musicmaster/web/runners.py"
+      - ".github/workflows/dolce-smoke.yml"
+permissions:
+  contents: read
+
+jobs:
+  dolce-headless:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build runtime image and verify SVG/PDF export
+        run: docker build --target dolce-runtime-check --tag xinsw-dolce-smoke .
+      - name: Check Python syntax
+        run: python -m compileall -q musicmaster
+      - name: Check frontend JavaScript syntax
+        run: |
+          node --check musicmaster/web/static/js/transcribe.js
+          node --check musicmaster/web/static/js/convert.js

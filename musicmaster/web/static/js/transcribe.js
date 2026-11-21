@@ -132,7 +132,36 @@
     function renderSheet(result) {
       if (!paneSheet) return;
       var sheet = paneSheet.querySelector('.sheet');
-      if (sheet && result.staff_svg) { sheet.innerHTML = result.staff_svg; MM.fitSheetSvg(sheet); }
+      if (!sheet) return;
+
+      // Dolce 简谱是首要谱面预览；五线谱预览仍保留在同一面板下方。
+      if (result.jianpu_svg) {
+        var count = Number(result.jianpu_page_count) || 1;
+        var html = '<div class="tt">简谱 · 悦谱 Dolce</div>' +
+          '<div class="st">自动排版 · 第 1 页预览' + (count > 1 ? ' · 共 ' + count + ' 页' : '') + '</div>' +
+          '<div class="dolce-jianpu">' + result.jianpu_svg + '</div>';
+        if (result.staff_svg) {
+          html += '<div class="tt" style="margin-top:28px">五线谱</div>' +
+            '<div class="st">原有五线谱预览</div><div class="staff-preview">' + result.staff_svg + '</div>';
+        }
+        sheet.innerHTML = html;
+        var jpSvgs = sheet.querySelectorAll('.dolce-jianpu svg');
+        Array.prototype.forEach.call(jpSvgs, function (svg) {
+          svg.style.width = '100%';
+          svg.style.height = 'auto';
+          svg.style.display = 'block';
+          svg.style.background = '#fff';
+          svg.style.marginBottom = '14px';
+        });
+        var staff = sheet.querySelector('.staff-preview');
+        if (staff) MM.fitSheetSvg(staff);
+        return;
+      }
+
+      if (result.staff_svg) {
+        sheet.innerHTML = result.staff_svg;
+        MM.fitSheetSvg(sheet);
+      }
     }
 
     // 带走 pane:下载网格
