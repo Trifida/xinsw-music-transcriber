@@ -364,6 +364,9 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
             "message": "尚未配置自动歌词识别服务；可粘贴歌词后重新记谱。",
         }
         lyric_text = ""
+        lyrics_source = None
+        lyrics_provider = None
+        lyrics_model = None
         if rc == 0 and engine == "crepe" and mx.is_file():
             try:
                 from musicmaster.transcribe.lyrics import (
@@ -410,7 +413,7 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                         "message": "本次未启用自动歌词识别；可粘贴歌词后重新记谱。",
                     }
 
-                if not lyric_text and "lyrics_source" in locals() and lyrics_source == "automatic-asr-empty":
+                if not lyric_text and lyrics_source == "automatic-asr-empty":
                     lyrics_info = {
                         "source": "automatic-asr-empty", "status": "empty-transcript",
                         "alignmentStatus": "not-attempted", "tokenCount": 0,
