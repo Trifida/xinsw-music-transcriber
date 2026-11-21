@@ -19,16 +19,13 @@ RUN node /tmp/dolce_render.mjs /tmp/dolce-smoke.musicxml /tmp/dolce-smoke-output
     && test -s /tmp/dolce-smoke-output/jianpu-dolce-1.svg
 
 # Main CPU service. Dolce's SVG pages are converted to PNG/PDF by librsvg.
-FROM python:3.11-slim-bookworm
+FROM python:3.11-slim-bookworm AS dolce-runtime-check
 ENV PYTHONUNBUFFERED=1 \
     PYTHONUTF8=1 \
     MUSICMASTER_HOST=0.0.0.0 \
     DOLCE_CLI_ENTRY=/opt/dolce/out/cli/engrave.js
 
 WORKDIR /app
-
-# Optional HTTPS mirror for the pinned CREPE model archive.
-ARG CREPE_MODEL_URL
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       lilypond fonts-dejavu-core fonts-noto-cjk fontconfig libatomic1 libstdc++6 \
@@ -47,6 +44,16 @@ COPY . /app
 RUN mkdir -p /app/musicmaster/web/static/fonts/dolce \
     && cp /opt/dolce/public/redist/Bravura.woff2 /app/musicmaster/web/static/fonts/dolce/ \
     && cp /opt/dolce/public/redist/BravuraText.otf /app/musicmaster/web/static/fonts/dolce/
+
+# Runtime smoke test: the copied Node binary, Bravura fonts and librsvg must work together.
+RUN node /app/scripts/dolce_render.mjs /app/tests/fixtures/dolce-smoke.musicxml /tmp/dolce-runtime-smoke \
+    && test -s /tmp/dolce-runtime-smoke/jianpu-dolce-1.svg \
+    && rsvg-convert -f pdf -o /tmp/dolce-runtime-smoke.pdf /tmp/dolce-runtime-smoke/jianpu-dolce-1.svg \
+    && test -s /tmp/dolce-runtime-smoke.pdf
+
+# Only the final application stage installs the heavier transcription stack and CREPE weights.
+FROM dolce-runtime-check AS final
+ARG CREPE_MODEL_URL
 
 RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
     && python -m pip install --no-cache-dir tensorflow==2.15.0 \
