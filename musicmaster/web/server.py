@@ -77,10 +77,6 @@ def health() -> dict:
     except Exception:
         lilypond = None
         source_ready = False
-    dolce_entry = Path(os.environ.get("DOLCE_CLI_ENTRY", "/opt/dolce/out/cli/engrave.js"))
-    dolce_ready = bool(shutil.which("node") and dolce_entry.is_file())
-    svg_converter_ready = bool(shutil.which("rsvg-convert"))
-    pdf_merger_ready = bool(shutil.which("pdfunite"))
     return {
         "ok": True,
         "service": "musicmaster",
@@ -89,12 +85,6 @@ def health() -> dict:
             "ready": bool(lilypond and source_ready),
             "engine": "LilyPond" if lilypond and source_ready else None,
             "source_fallback": source_ready,
-        },
-        "dolce_jianpu": {
-            "ready": dolce_ready,
-            "engine": "Dolce" if dolce_ready else None,
-            "svg_to_png_pdf": svg_converter_ready,
-            "multi_page_pdf": pdf_merger_ready,
         },
     }
 
