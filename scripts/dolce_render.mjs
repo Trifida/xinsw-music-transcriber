@@ -39,9 +39,14 @@ async function main() {
   if (!pages.length) throw new Error("Dolce returned no numbered-notation pages.");
   const score = session.currentScoreDoc();
   const measureCount = score?.songs?.[0]?.parts?.[0]?.measures?.length ?? 0;
-  const noteCount = score?.songs?.[0]?.parts?.[0]?.measures?.reduce(
+  const measures = score?.songs?.[0]?.parts?.[0]?.measures ?? [];
+  const noteCount = measures.reduce(
     (sum, measure) => sum + measure.elements.filter((element) => element.kind === "chord").length, 0
-  ) ?? 0;
+  );
+  const barlineCount = measures.reduce((sum, measure) => sum + (measure.barlines?.length ?? 0), 0);
+  const layout = session.painter.original;
+  const placedPageCount = layout?.placed?.pages?.length ?? 0;
+  const placedGroupCount = layout?.placed?.pages?.reduce((sum, page) => sum + page.groups.length, 0) ?? 0;
   const activeStyle = session.style.styleOf("original");
   const pageSizes = pages.map((_, index) => session.painter.pageSize(index));
 
@@ -72,6 +77,9 @@ async function main() {
     page_sizes: pageSizes,
     measure_count: measureCount,
     note_count: noteCount,
+    barline_count: barlineCount,
+    placed_page_count: placedPageCount,
+    placed_group_count: placedGroupCount,
     svg_files: files,
     status: session.status || "Dolce headless engraving completed"
   }));
