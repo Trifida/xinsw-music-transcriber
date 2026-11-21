@@ -189,6 +189,9 @@ def _friendly(name: str) -> dict:
             page_no = re.search(r"jianpu-dolce-(\d+)", low)
             suffix = f"_{page_no.group(1)}" if page_no else ""
             return {"label": "简谱高清图片", "download": f"jianpu_page{suffix}.png", "desc": "悦谱 Dolce 排版页的高清 PNG 预览。"}
+        if ext == ".jly":
+            return {"label": "Dolce 简谱源稿(JLY)", "download": "jianpu_dolce.jly",
+                    "desc": "由 Dolce 从 MusicXML 转换的简谱源稿，可用支持 jianpu-ly 的工具继续编辑。"}
         if ext == ".ly":
             return {"label": "简谱源码(LilyPond)", "download": "jianpu_source.ly",
                     "desc": "原有排版备用源稿；Dolce 排版不可用时仍可保留。"}
@@ -379,9 +382,11 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "") -
         if dolce_info:
             report += (
                 "\n\n## ⑤ 悦谱 Dolce 简谱排版\n"
-                f"- 已排版 {dolce_info['page_count']} 页\n"
-                "- 简谱预览与下载文件已附在「谱面 / 带走」中。\n"
+                f"- 已排版 {dolce_info['page_count']} 页（A4 默认纸张）\n"
+                "- 使用 Dolce 原生 JLY 转换与排版；预览、PDF 和源稿已附在「谱面 / 带走」中。\n"
             )
+            if dolce_info.get("warnings"):
+                report += "- 排版提示： " + "；".join(dolce_info["warnings"]) + "\n"
         elif dolce_error:
             report += f"\n\n> 悦谱 Dolce 本次排版未完成：{dolce_error}。原有排版产物仍保留。\n"
 
@@ -396,7 +401,7 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "") -
             rendered_pages = [page for page in rendered_pages if page]
             jianpu_svg = "".join(rendered_pages) if rendered_pages else None
         confidence_pct, spots = _parse_confidence(d)
-        wanted = ["notes.json", "out.mid", "out.musicxml", "jianpu.pdf", "jianpu.ly",
+        wanted = ["notes.json", "out.mid", "out.musicxml", "jianpu.pdf", "jianpu.ly", "jianpu-dolce.jly",
                   "jianpu-lilypond-fallback.pdf", "confidence.json", "staff.svg"]
         if dolce_info:
             wanted += dolce_info.get("svg_files", []) + dolce_info.get("png_files", [])
