@@ -31,6 +31,7 @@
 
 - Dolce 输出 SVG 矢量谱页；服务器再用 librsvg 从这些 SVG 生成高清 PNG 与可打印 PDF。
 - `jianpu.pdf` 是 Dolce 排版后的主 PDF；各页 SVG / PNG 也会作为下载文件提供。
+- 服务端默认按 **A4 分页纸**排版（Dolce 原生缺省是连续长图）；可通过 `DOLCE_JIANPU_PAPER` 指定 A4、A5、B5、Letter 等受支持纸张。
 - 原有 `jianpu-ly + LilyPond` 流程保留作备用。Dolce 未安装、转换失败或输入不受支持时，不会让扒谱任务整体失败，原有排版产物仍可用。
 - 五线谱渲染、音高识别、MIDI 与 MusicXML 生成逻辑不变；复音转录引擎仍按原规则不自动生成单旋律简谱。
 - Node.js 20、Dolce CLI 与字体只加入现有 Docker 镜像，不新增 Render 服务，也不要求用户电脑安装 Node 或悦谱。
