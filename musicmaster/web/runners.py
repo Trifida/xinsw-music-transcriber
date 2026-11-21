@@ -296,8 +296,25 @@ def run_convert(job, file_path: str, direction: str, key: str = "") -> dict:
             text = cv.score_to_jianpu(score, key_name=(norm_key or None))
             out = d / (src.stem + ".jianpu")
             out.write_text(text, encoding="utf-8")
-            return {"ok": True, "message": "已译回简谱文本。",
+
+            # 互译得到的标准 MusicXML 也交给 Dolce 排版，保持扒谱与手动互译使用同一套简谱版面。
+            jianpu_svg = None
+            dolce_info = None
+            try:
+                job.set_stage("悦谱 Dolce 正在排版简谱…", 0.78)
+                xml_out = d / (src.stem + ".dolce.musicxml")
+                score.write("musicxml", fp=str(xml_out))
+                from musicmaster.core.dolce import render_dolce
+                dolce_info = render_dolce(xml_out, d)
+                if dolce_info.get("svg_files"):
+                    jianpu_svg = _read_svg(d / dolce_info["svg_files"][0])
+            except Exception as de:  # noqa: BLE001 — 简谱文本仍然可用
+                print(f"[convert] Dolce 排版跳过，保留简谱文本: {type(de).__name__}: {de}", flush=True)
+
+            return {"ok": True, "message": "已译回简谱文本并完成悦谱排版。" if dolce_info else "已译回简谱文本。",
                     "direction": direction, "staff_svg": None, "jianpu_text": text,
+                    "jianpu_svg": jianpu_svg,
+                    "jianpu_page_count": dolce_info.get("page_count") if dolce_info else None,
                     "downloads": _downloads(d)}
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "message": f"转换失败:{type(e).__name__}: {e}"}
