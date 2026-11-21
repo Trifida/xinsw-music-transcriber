@@ -48,3 +48,24 @@ def test_unassigned_lyrics_are_reported(tmp_path: Path):
     result = attach_lyrics_to_musicxml(source, ["一", "二"])
     assert result["assignedCount"] == 1
     assert result["unassignedCount"] == 1
+
+
+def test_jianpu_ly_import_keeps_musicxml_lyrics(tmp_path: Path):
+    from music21 import note, stream
+    from musicmaster.core.render import musicxml_to_lilypond
+
+    part = stream.Part()
+    first = note.Note("C4", quarterLength=1)
+    first.lyric = "春"
+    second = note.Note("D4", quarterLength=1)
+    second.lyric = "风"
+    part.append(first)
+    part.append(second)
+    score = stream.Score()
+    score.append(part)
+    source = tmp_path / "lyrics.musicxml"
+    score.write("musicxml", fp=str(source))
+
+    lilypond_source = musicxml_to_lilypond(source)
+    assert "春" in lilypond_source
+    assert "风" in lilypond_source
