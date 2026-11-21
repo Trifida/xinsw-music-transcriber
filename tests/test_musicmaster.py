@@ -31,6 +31,17 @@ def test_convert_roundtrip_lossless():
     assert seq.split()[:7] == ["1", "1", "5", "5", "6", "6", "5"]
 
 
+def test_jianpu_download_labels_reflect_legacy_renderer():
+    from musicmaster.web.runners import _friendly
+
+    pdf = _friendly("jianpu.pdf")
+    svg = _friendly("jianpu.svg")
+    assert pdf["label"] == "简谱 PDF（原版排版）"
+    assert "jianpu-ly + LilyPond" in pdf["desc"]
+    assert svg["label"] == "简谱排版图（原版）"
+    assert "Dolce" not in svg["desc"]
+
+
 def test_transcribe_synthetic_scale(tmp_path):
     """合成 C 大调音阶 → pyin 扒谱 → 精确还原音高。"""
     import librosa
