@@ -42,6 +42,31 @@ def test_jianpu_download_labels_reflect_legacy_renderer():
     assert "Dolce" not in svg["desc"]
 
 
+def test_original_jianpu_renderer_generates_svg_and_pdf(tmp_path):
+    """Use the original jianpu-ly + LilyPond path to create real SVG and PDF files."""
+    import shutil
+    from musicmaster.convert import convert as cv
+    from musicmaster.core.render import render as render_score
+
+    if not shutil.which("lilypond"):
+        pytest.skip("LilyPond CLI is not installed")
+    score = cv.load_any(EXAMPLES / "twinkle.jianpu")
+    musicxml = tmp_path / "twinkle.musicxml"
+    score.write("musicxml", fp=str(musicxml))
+
+    svg_result = render_score(
+        str(musicxml), str(tmp_path), formats=("jianpu",), jianpu_format="svg"
+    )
+    pdf_result = render_score(
+        str(musicxml), str(tmp_path), formats=("jianpu",), jianpu_format="pdf"
+    )
+    svg = svg_result["jianpu"]
+    pdf = pdf_result["jianpu"]
+    assert svg.is_file() and svg.stat().st_size > 500
+    assert "<svg" in svg.read_text(encoding="utf-8")[:500]
+    assert pdf.is_file() and pdf.read_bytes().startswith(b"%PDF")
+
+
 def test_transcribe_synthetic_scale(tmp_path):
     """合成 C 大调音阶 → pyin 扒谱 → 精确还原音高。"""
     import librosa
