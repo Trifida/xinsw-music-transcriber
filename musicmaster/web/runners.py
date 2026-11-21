@@ -177,10 +177,14 @@ def _friendly(name: str) -> dict:
                 "desc": "整体把握 + 逐音存疑处的说明(建议先看这个)。"}
     if "jianpu" in low or "简谱" in base or ext == ".jianpu":
         if ext == ".pdf":
-            return {"label": "简谱 PDF", "download": "jianpu.pdf", "desc": "可打印的数字简谱(1234567)。"}
+            return {"label": "简谱 PDF", "download": "jianpu.pdf", "desc": "由悦谱 Dolce 排版，可打印的数字简谱。"}
+        if ext == ".svg":
+            return {"label": "简谱排版图", "download": "jianpu_page.svg", "desc": "悦谱 Dolce 生成的矢量简谱页面。"}
+        if ext == ".png":
+            return {"label": "简谱高清图片", "download": "jianpu_page.png", "desc": "悦谱 Dolce 排版页的高清 PNG 预览。"}
         if ext == ".ly":
             return {"label": "简谱源码(LilyPond)", "download": "jianpu_source.ly",
-                    "desc": "可编辑的简谱排版源稿。即使 PDF 暂时无法生成，源稿也会保留；服务器配置排版引擎后，重新提交扒谱任务即可生成 PDF。"}
+                    "desc": "原有排版备用源稿；Dolce 排版不可用时仍可保留。"}
         return {"label": "简谱文本", "download": "jianpu.txt", "desc": "译出的数字简谱(纯文本)。"}
     if ext in (".musicxml", ".xml", ".mxl"):
         return {"label": "五线谱(MusicXML)", "download": "sheet.musicxml",
