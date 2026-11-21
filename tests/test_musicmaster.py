@@ -39,7 +39,7 @@ def test_jianpu_download_labels_reflect_legacy_renderer():
     assert pdf["label"] == "简谱 PDF（原版排版）"
     assert "jianpu-ly + LilyPond" in pdf["desc"]
     assert svg["label"] == "简谱排版图（原版）"
-    assert "Dolce" not in svg["desc"]
+    assert "jianpu-ly + LilyPond" in svg["desc"]
 
 
 def test_original_jianpu_renderer_generates_svg_and_pdf(tmp_path):
