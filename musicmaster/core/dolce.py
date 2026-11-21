@@ -91,7 +91,7 @@ def render_dolce(
         if rsvg:
             png_name = svg.with_suffix(".png").name
             try:
-                _run([rsvg, "-f", "png", "-d", "192", "-p", "192", "-o",
+                _run([rsvg, "-f", "png", "-d", "192", "-p", "192", "-b", "white", "-o",
                       str(destination / png_name), str(svg)], timeout=60)
                 if (destination / png_name).is_file():
                     png_files.append(png_name)
