@@ -15,7 +15,7 @@ RUN npm install --no-audit --no-fund --package-lock=false \
 ENV DOLCE_CLI_ENTRY=/opt/dolce/out/cli/engrave.js
 COPY scripts/dolce_render.mjs /tmp/dolce_render.mjs
 COPY tests/fixtures/dolce-smoke.musicxml /tmp/dolce-smoke.musicxml
-RUN DOLCE_JIANPU_FONT_SIZE=24 node /tmp/dolce_render.mjs /tmp/dolce-smoke.musicxml /tmp/dolce-smoke-output > /tmp/dolce-smoke-result.json \
+RUN DOLCE_JIANPU_FONT_SIZE=48 node /tmp/dolce_render.mjs /tmp/dolce-smoke.musicxml /tmp/dolce-smoke-output > /tmp/dolce-smoke-result.json \
     && node -e 'const r=JSON.parse(require("fs").readFileSync("/tmp/dolce-smoke-result.json","utf8")); if(r.page_count < 2) throw new Error("Expected multi-page output: " + JSON.stringify(r))' \
     && test -s /tmp/dolce-smoke-output/jianpu-dolce-2.svg \
     && grep -q '春' /tmp/dolce-smoke-output/jianpu-dolce-1.svg
@@ -48,7 +48,7 @@ RUN mkdir -p /app/musicmaster/web/static/fonts/dolce \
     && cp /opt/dolce/public/redist/BravuraText.otf /app/musicmaster/web/static/fonts/dolce/
 
 # Runtime smoke test: the copied Node binary, Bravura fonts and librsvg must work together.
-RUN DOLCE_JIANPU_FONT_SIZE=24 node /app/scripts/dolce_render.mjs /app/tests/fixtures/dolce-smoke.musicxml /tmp/dolce-runtime-smoke > /tmp/dolce-runtime-result.json \
+RUN DOLCE_JIANPU_FONT_SIZE=48 node /app/scripts/dolce_render.mjs /app/tests/fixtures/dolce-smoke.musicxml /tmp/dolce-runtime-smoke > /tmp/dolce-runtime-result.json \
     && node -e 'const r=JSON.parse(require("fs").readFileSync("/tmp/dolce-runtime-result.json","utf8")); if(r.page_count < 2) throw new Error("Expected multi-page output, got " + r.page_count)' \
     && test -s /tmp/dolce-runtime-smoke/jianpu-dolce-2.svg \
     && grep -q '春' /tmp/dolce-runtime-smoke/jianpu-dolce-1.svg \
