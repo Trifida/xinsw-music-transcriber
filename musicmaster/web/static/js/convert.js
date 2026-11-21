@@ -88,8 +88,8 @@
           if (r.jianpu_svg && sheet) {
             sheet.style.display = '';
             var count = Number(r.jianpu_page_count) || 1;
-            sheet.innerHTML = '<div class="tt">简谱 · 悦谱 Dolce</div>' +
-              '<div class="st">自动排版 · 第 1 页预览' + (count > 1 ? ' · 共 ' + count + ' 页' : '') + '</div>' +
+            sheet.innerHTML = '<div class="tt">简谱 · 原版排版</div>' +
+              '<div class="st">原版 jianpu-ly + LilyPond · 第 1 页预览' + (count > 1 ? ' · 共 ' + count + ' 页' : '') + '</div>' +
               '<div class="dolce-jianpu">' + r.jianpu_svg + '</div>';
             var jpSvgs = sheet.querySelectorAll('.dolce-jianpu svg');
             Array.prototype.forEach.call(jpSvgs, function (svg) {
