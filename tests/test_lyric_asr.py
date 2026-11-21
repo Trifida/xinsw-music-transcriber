@@ -94,7 +94,7 @@ class LyricASRRequestTests(unittest.TestCase):
                 "ASR_MODEL": "whisper-test",
                 "ASR_LANGUAGE": "zh",
                 "ASR_PROMPT": "请按实际听到的内容转写中文歌词。",
-            }, clear=True), patch("app.lyric_asr.httpx.post", return_value=response) as post:
+            }, clear=True), patch("musicmaster.transcribe.lyric_asr.httpx.post", return_value=response) as post:
                 result = transcribe_lyrics(str(audio_path))
         self.assertEqual(result["text"], "春风又绿江南岸")
         self.assertEqual(result["provider"], "openai-compatible")
@@ -116,7 +116,7 @@ class LyricASRRequestTests(unittest.TestCase):
             with patch.dict(os.environ, {
                 "ASR_PROVIDER": "funasr",
                 "ASR_BASE_URL": "https://speech.example/v1",
-            }, clear=True), patch("app.lyric_asr.httpx.post", return_value=response) as post:
+            }, clear=True), patch("musicmaster.transcribe.lyric_asr.httpx.post", return_value=response) as post:
                 result = transcribe_lyrics(str(audio_path))
         self.assertEqual(result, {
             "text": "春风又绿江南岸",
@@ -143,7 +143,7 @@ class LyricASRRequestTests(unittest.TestCase):
                 "ASR_PROVIDER": "funasr",
                 "ASR_BASE_URL": "https://speech.example/v1",
                 "ASR_API_KEY": "gateway-secret",
-            }, clear=True), patch("app.lyric_asr.httpx.post", return_value=response) as post:
+            }, clear=True), patch("musicmaster.transcribe.lyric_asr.httpx.post", return_value=response) as post:
                 transcribe_lyrics(str(audio_path))
         self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer gateway-secret")
 
@@ -154,7 +154,7 @@ class LyricASRRequestTests(unittest.TestCase):
             with patch.dict(os.environ, {
                 "ASR_PROVIDER": "openai-compatible",
                 "ASR_API_KEY": "test-secret",
-            }, clear=True), patch("app.lyric_asr.httpx.post", side_effect=httpx.TimeoutException("private details")):
+            }, clear=True), patch("musicmaster.transcribe.lyric_asr.httpx.post", side_effect=httpx.TimeoutException("private details")):
                 with self.assertRaises(ASRRequestError):
                     transcribe_lyrics(str(audio_path))
 
