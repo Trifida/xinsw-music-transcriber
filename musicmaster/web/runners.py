@@ -176,11 +176,18 @@ def _friendly(name: str) -> dict:
         return {"label": "文字报告", "download": "report.md",
                 "desc": "整体把握 + 逐音存疑处的说明(建议先看这个)。"}
     if "jianpu" in low or "简谱" in base or ext == ".jianpu":
-        if ext == ".pdf" and "fallback" in low:
-            return {"label": "旧版简谱 PDF（备用）", "download": "jianpu_lilypond_fallback.pdf",
-                    "desc": "原有 LilyPond 排版结果，作为悦谱 Dolce 的备用版本保留。"}
+        if ext == ".pdf" and ("fallback" in low or "lilypond" in low):
+            return {"label": "简谱 PDF（旧版 LilyPond 备用）", "download": "jianpu_lilypond_fallback.pdf",
+                    "desc": "原有 LilyPond 排版结果；仅作备用，与 Dolce 新版分开保留。"}
+        if ext == ".pdf" and "dolce" in low:
+            return {"label": "简谱 PDF（Dolce 新版）", "download": "jianpu_dolce.pdf",
+                    "desc": "悦谱 Dolce 排版生成的可打印简谱 PDF。"}
+        if ext == ".pdf" and low == "jianpu.pdf":
+            return {"label": "简谱 PDF（当前主文件）", "download": "jianpu.pdf",
+                    "desc": "当前任务目录中的主简谱 PDF；请结合任务报告确认排版引擎。"}
         if ext == ".pdf":
-            return {"label": "简谱 PDF", "download": "jianpu.pdf", "desc": "可打印的数字简谱；本次使用的排版引擎见任务报告。"}
+            return {"label": "简谱 PDF（其他版本）", "download": base,
+                    "desc": "简谱 PDF；保留原始文件名以便区分不同版本。"}
         if ext == ".svg":
             page_no = re.search(r"jianpu-dolce-(\d+)", low)
             suffix = f"_{page_no.group(1)}" if page_no else ""
