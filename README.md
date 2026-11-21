@@ -37,3 +37,25 @@
 ## 许可
 
 项目代码许可见 [LICENSE](LICENSE)，第三方组件声明见 [NOTICE](NOTICE)，CREPE 上游许可见 [vendor/crepe/LICENSE](vendor/crepe/LICENSE)。模型权重由运行时单独下载，不随仓库分发。商用前应逐项核查代码、模型权重和训练数据的许可。
+
+## 歌词识别与简谱排版
+
+音频记谱支持可选的歌词识别与逐字排版：
+
+- 可在网页中粘贴歌词；有手动歌词时优先使用，不再调用自动识别服务。
+- 留空时可启用自动识别。歌词先按音符顺序初步对齐：中文按单字、连续英文按单词，休止符和跨小节延音的续音不占歌词位置。
+- 歌词写入 MusicXML，再交给原版 jianpu-ly + LilyPond 排版；简谱 PDF/SVG 和 Verovio 五线谱预览均从带歌词的 MusicXML 生成。
+- 自动识别是可选服务，未配置时扒谱和无歌词排版照常工作。自动识别会将音频发送到你配置的语音识别服务，部署前请确认服务商与隐私要求。
+
+### 自动识别服务配置
+
+在部署服务的环境变量中配置以下项目（不要把密钥写入代码或提交到 Git）：
+
+- `ASR_PROVIDER=openai-compatible`：使用 OpenAI 兼容的语音转写接口；需设置 `ASR_API_KEY`。
+- `ASR_BASE_URL`：接口基础地址，默认使用 Groq OpenAI-compatible API。
+- `ASR_MODEL`：模型名称，默认 `whisper-large-v3-turbo`。
+- 或设置 `ASR_PROVIDER=funasr`、`ASR_BASE_URL=https://你的语音识别服务/v1`；FunASR 默认模型为 `sensevoice`，可不设 API Key（若网关要求鉴权仍可设置 `ASR_API_KEY`）。
+
+可选参数：`ASR_LANGUAGE`（默认 zh）、`ASR_TIMEOUT_SECONDS`（默认 90，范围 5–240）、`ASR_MAX_FILE_MB`（默认 24）。`GET /api/health` 会返回歌词识别服务是否已配置；配置完成但尚未实际请求时，不代表服务端点已验证可用。
+
+歌词自动排词目前是**按旋律音符顺序初排**，不是带时间戳的强制对齐；请试听并核对每字位置，尤其是拖腔、衬词、重复段和多音节英文。

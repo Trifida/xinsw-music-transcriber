@@ -172,6 +172,10 @@ def _friendly(name: str) -> dict:
                     "desc": "从混音里分出的完整人声,仍带着和声 / 合音 —— 信息最全。"}
         return {"label": base, "download": base, "desc": "音频文件。"}  # 其它音频兜底
     # ── 记谱 / 互译(按文件类型)──
+    if base.lower() == "lyrics.txt":
+        return {"label": "识别歌词文本", "download": "lyrics.txt", "desc": "语音识别或手动提供的歌词原文，便于校对。"}
+    if base.lower() == "lyrics_alignment.json":
+        return {"label": "歌词对齐数据", "download": "lyrics_alignment.json", "desc": "歌词单位与旋律音符的对齐统计。"}
     if ext == ".md" or base == "报告.md":
         return {"label": "文字报告", "download": "report.md",
                 "desc": "整体把握 + 逐音存疑处的说明(建议先看这个)。"}
@@ -324,7 +328,8 @@ def run_convert(job, file_path: str, direction: str, key: str = "") -> dict:
 
 
 # ─────────────────────────── 记谱 ─────────────────────────── #
-def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "") -> dict:
+def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
+                   lyrics_text: str = "", auto_lyrics: bool = True) -> dict:
     if not audio_path:
         return {"ok": False, "message": "请先上传清唱音频。"}
     from musicmaster.transcribe import autopilot
@@ -350,35 +355,151 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "") -
             argv += ["--key", key.strip()]
         rc = autopilot.main(argv)
 
-        # 使用 autopilot 原有 jianpu-ly + LilyPond 排版器。
+        # Lyrics are optional and must never turn a successful melody transcription into a failed job.
         mx = d / "out.musicxml"
+        lyrics_info = {
+            "source": "not-configured", "status": "not-configured",
+            "alignmentStatus": "not-attempted", "tokenCount": 0,
+            "assignedCount": 0, "unassignedCount": 0,
+            "message": "尚未配置自动歌词识别服务；可粘贴歌词后重新记谱。",
+        }
+        lyric_text = ""
+        lyrics_source = None
+        lyrics_provider = None
+        lyrics_model = None
+        if rc == 0 and engine == "crepe" and mx.is_file():
+            try:
+                from musicmaster.transcribe.lyrics import (
+                    tokenize_lyrics, attach_lyrics_to_musicxml,
+                )
+                if lyrics_text and lyrics_text.strip():
+                    lyric_text = lyrics_text.strip()
+                    lyrics_source = "user-provided"
+                    lyrics_provider = None
+                    lyrics_model = None
+                elif auto_lyrics:
+                    from musicmaster.transcribe.lyric_asr import (
+                        ASRNotConfigured, ASRRequestError, get_asr_status, transcribe_lyrics,
+                    )
+                    asr_status = get_asr_status()
+                    if asr_status.get("available"):
+                        job.set_stage("旋律已识别，正在识别歌词…", 0.935)
+                        try:
+                            asr_result = transcribe_lyrics(audio_path)
+                            lyric_text = asr_result["text"]
+                            lyrics_source = "automatic-asr" if lyric_text else "automatic-asr-empty"
+                            lyrics_provider = asr_result.get("provider")
+                            lyrics_model = asr_result.get("model")
+                        except (ASRNotConfigured, ASRRequestError) as asr_error:
+                            lyrics_info = {
+                                "source": "unavailable", "status": "request-failed",
+                                "alignmentStatus": "not-attempted", "tokenCount": 0,
+                                "assignedCount": 0, "unassignedCount": 0,
+                                "message": f"歌词识别服务暂不可用：{type(asr_error).__name__}",
+                            }
+                    else:
+                        lyrics_info = {
+                            "source": "not-configured", "status": "not-configured",
+                            "alignmentStatus": "not-attempted", "tokenCount": 0,
+                            "assignedCount": 0, "unassignedCount": 0,
+                            "message": "自动歌词识别服务尚未配置；可先粘贴歌词使用逐字排版。",
+                            "reason": asr_status.get("status"),
+                        }
+                else:
+                    lyrics_info = {
+                        "source": "not-configured", "status": "not-configured",
+                        "alignmentStatus": "not-attempted", "tokenCount": 0,
+                        "assignedCount": 0, "unassignedCount": 0,
+                        "message": "本次未启用自动歌词识别；可粘贴歌词后重新记谱。",
+                    }
+
+                if not lyric_text and lyrics_source == "automatic-asr-empty":
+                    lyrics_info = {
+                        "source": "automatic-asr-empty", "status": "empty-transcript",
+                        "alignmentStatus": "not-attempted", "tokenCount": 0,
+                        "assignedCount": 0, "unassignedCount": 0,
+                        "provider": lyrics_provider, "model": lyrics_model,
+                        "message": "语音识别服务没有识别到清晰歌词；可粘贴歌词后重新记谱。",
+                    }
+
+                if lyric_text:
+                    tokens = tokenize_lyrics(lyric_text)
+                    aligned = attach_lyrics_to_musicxml(mx, tokens)
+                    assigned = aligned["assignedCount"]
+                    total = aligned["tokenCount"]
+                    lyrics_info = {
+                        "source": lyrics_source, "status": "completed",
+                        "alignmentStatus": (
+                            "aligned" if assigned == total and total else
+                            "partially-aligned" if assigned else
+                            "unmatched" if total else "not-attempted"
+                        ),
+                        "tokenCount": total, "assignedCount": assigned,
+                        "unassignedCount": max(0, total - assigned),
+                        "provider": lyrics_provider, "model": lyrics_model,
+                        "message": "歌词按旋律音符顺序初步对齐，请核对识别文字与每字对应位置。",
+                    }
+                    (d / "lyrics.txt").write_text(lyric_text, encoding="utf-8")
+                    import json
+                    (d / "lyrics_alignment.json").write_text(
+                        json.dumps(lyrics_info, ensure_ascii=False, indent=2), encoding="utf-8"
+                    )
+            except Exception as lyric_error:  # noqa: BLE001 — lyrics are best-effort
+                lyrics_info = {
+                    "source": "unavailable", "status": "request-failed",
+                    "alignmentStatus": "not-attempted", "tokenCount": 0,
+                    "assignedCount": 0, "unassignedCount": 0,
+                    "message": f"歌词处理未完成：{type(lyric_error).__name__}",
+                }
+                print(f"[Lyrics] optional lyric step skipped: {type(lyric_error).__name__}: {lyric_error}", flush=True)
+        elif engine != "crepe":
+            lyrics_info = {
+                "source": "unavailable", "status": "not-configured",
+                "alignmentStatus": "not-attempted", "tokenCount": 0,
+                "assignedCount": 0, "unassignedCount": 0,
+                "message": "当前使用的是多音符/钢琴识别引擎，暂不自动对齐单旋律歌词。",
+            }
+
+        # Re-render from the lyric-enriched MusicXML so both numbered and staff scores carry lyrics.
         jianpu_svg = None
         if rc == 0 and engine == "crepe" and mx.is_file():
             try:
-                job.set_stage("原版简谱引擎正在生成预览…", 0.94)
+                job.set_stage("正在排版带歌词的简谱与五线谱…", 0.94)
                 from musicmaster.core.render import render as render_score
-                rendered = render_score(str(mx), str(d), formats=("jianpu",), jianpu_format="svg")
+                rendered = render_score(
+                    str(mx), str(d), formats=("staff", "jianpu"), jianpu_format="svg"
+                )
                 if rendered.get("jianpu"):
                     jianpu_svg = _read_svg(Path(rendered["jianpu"]))
-            except Exception as re:  # noqa: BLE001 — autopilot 已生成的 PDF/LY 不受影响
-                print(f"[Jianpu] 原版 SVG 预览未完成，保留原有 PDF/LY: {type(re).__name__}: {re}", flush=True)
+                # PDF and SVG must come from the same lyric-enriched MusicXML.
+                render_score(str(mx), str(d), formats=("jianpu",), jianpu_format="pdf")
+            except Exception as re:  # noqa: BLE001 — keep editable MusicXML and original outputs
+                print(f"[Jianpu] lyric-aware score rendering incomplete: {type(re).__name__}: {re}", flush=True)
 
         report = (d / "报告.md").read_text(encoding="utf-8") if (d / "报告.md").is_file() else "(无报告)"
         if rc != 0:
             report = f"> 扒谱以非零码({rc})结束,可能转录失败,详见下方报告。\n\n" + report
+        report += "\n\n## ⑤ 歌词识别与对齐\n"
+        report += f"- 来源：{lyrics_info.get('source')}\n"
+        report += f"- 对齐：{lyrics_info.get('assignedCount', 0)}/{lyrics_info.get('tokenCount', 0)} 个歌词单位\n"
+        if lyrics_info.get("message"):
+            report += f"- 说明：{lyrics_info['message']}\n"
+        if lyrics_info.get("unassignedCount"):
+            report += f"- 尚未对应音符：{lyrics_info['unassignedCount']} 个，请检查歌词长度或旋律识别结果。\n"
         if jianpu_svg:
-            report += "\n\n## ⑤ 简谱排版\n- 使用原有 jianpu-ly + LilyPond 排版器生成简谱预览；PDF 由原有流程生成。\n"
+            report += "\n## ⑥ 简谱排版\n- 使用原版 jianpu-ly + LilyPond；歌词从 MusicXML 写入，并与旋律音符一起排版。\n"
 
         staff_svg = _read_svg(d / "staff.svg")
         confidence_pct, spots = _parse_confidence(d)
         wanted = ["notes.json", "out.mid", "out.musicxml", "jianpu.pdf", "jianpu.ly", "jianpu.svg",
-                  "confidence.json", "staff.svg"]
+                  "lyrics.txt", "lyrics_alignment.json", "confidence.json", "staff.svg"]
         downloads = _downloads(d, only=wanted)
         if not downloads:
             downloads = _downloads(d)
         return {"ok": rc == 0, "report_md": report, "staff_svg": staff_svg,
                 "jianpu_svg": jianpu_svg,
                 "jianpu_page_count": 1 if jianpu_svg else None,
+                "lyrics_text": lyric_text, "lyrics_info": lyrics_info,
                 "confidence_pct": confidence_pct, "spots": spots, "downloads": downloads}
     except Exception as e:  # noqa: BLE001
         hint = ""

@@ -509,6 +509,15 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
               <div class="field"><div class="label">调<span class="opt-mark">选填</span></div>
                 <input class="input" placeholder="如 C / G / D · 升号 F# · 降号 Bb · 留空自动定调">
                 <div class="help">大调写主音:<b>C D E F G A B</b>;<b>升号</b>加 #(F#、C#、G#…),<b>降号</b>加 b(Bb、Eb、Ab…)。拿不准就<b>留空</b>,它会自己听出调来,并把定的调写在谱头。</div></div>
+              <div class="field">
+                <div class="label">歌词 <span class="opt-mark">可选 · 可粘贴原词</span></div>
+                <textarea class="lyric-input" rows="3" placeholder="可先粘贴歌词；留空时尝试自动识别。中文按字、英文按词初步对应旋律音符。" style="width:100%;min-height:84px;resize:vertical;padding:12px;border:1px solid var(--border-2);border-radius:var(--r-sm);background:var(--surface);color:var(--t1);font:13px/1.7 var(--sans)"></textarea>
+                <label style="display:flex;align-items:center;gap:9px;margin-top:10px;font-size:12px;color:var(--t2)">
+                  <input class="auto-lyrics" type="checkbox" checked>
+                  自动识别歌词（服务配置完成后生效）
+                </label>
+                <div class="help">歌词会先按旋律音符顺序初步对齐，识别文字和每个字的位置仍需核对。启用自动识别时，音频会发送给配置的语音识别服务处理。</div>
+              </div>
               <button class="cast"><span class="shine"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4" stroke-linecap="round"/></svg>记谱</button>
             </div>
             <details class="help"><summary><span class="q">?</span>它怎么知道该用哪种耳朵<span class="chev">⌄</span></summary>
