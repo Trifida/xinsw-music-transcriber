@@ -18,7 +18,7 @@ SCRIPT = REPO / "scripts" / "dolce_render.mjs"
 DEFAULT_ENTRY = Path("/opt/dolce/out/cli/engrave.js")
 
 
-def _run(command: list[str], *, timeout: float = 90.0) -> subprocess.CompletedProcess[str]:
+def _run(command: list[str], *, timeout: float = 90.0, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
         check=True,
@@ -27,6 +27,7 @@ def _run(command: list[str], *, timeout: float = 90.0) -> subprocess.CompletedPr
         encoding="utf-8",
         errors="replace",
         timeout=timeout,
+        env=env,
     )
 
 
@@ -62,7 +63,7 @@ def render_dolce(
     destination.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
     env["DOLCE_CLI_ENTRY"] = entry
-    proc = _run([node, str(SCRIPT), str(source), str(destination)], timeout=timeout)
+    proc = _run([node, str(SCRIPT), str(source), str(destination)], timeout=timeout, env=env)
     try:
         manifest = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
