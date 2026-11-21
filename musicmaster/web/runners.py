@@ -329,17 +329,47 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "") -
         if key and key.strip():
             argv += ["--key", key.strip()]
         rc = autopilot.main(argv)
+
+        # 单旋律 MusicXML 交给悦谱 Dolce 的无头排版器；扒谱识别逻辑与五线谱渲染不变。
+        dolce_info = None
+        dolce_error = None
+        mx = d / "out.musicxml"
+        if rc == 0 and engine == "crepe" and mx.is_file():
+            job.set_stage("悦谱 Dolce 正在进行简谱排版…", 0.94)
+            try:
+                from musicmaster.core.dolce import render_dolce
+                dolce_info = render_dolce(mx, d)
+            except Exception as de:  # noqa: BLE001 — 保留原有 LilyPond 产物作回退
+                dolce_error = f"{type(de).__name__}: {str(de)[:240]}"
+                print(f"[Dolce] 排版跳过，保留原有简谱产物: {dolce_error}", flush=True)
+
         report = (d / "报告.md").read_text(encoding="utf-8") if (d / "报告.md").is_file() else "(无报告)"
         if rc != 0:
-            report = f"> 扒谱以非零码({rc})结束,可能转录失败,详见下方报告。\n\n" + report
+            report = f"> 扒谱以非零码({rc})结束,可能转录失败,详见下方报告。\\n\\n" + report
+        if dolce_info:
+            report += (
+                "\\n\\n## ⑤ 悦谱 Dolce 简谱排版\\n"
+                f"- 已排版 {dolce_info['page_count']} 页\\n"
+                "- 简谱预览与下载文件已附在「谱面 / 带走」中。\\n"
+            )
+        elif dolce_error:
+            report += f"\\n\\n> 悦谱 Dolce 本次排版未完成：{dolce_error}。原有排版产物仍保留。\\n"
+
         staff_svg = _read_svg(d / "staff.svg")
+        jianpu_svg = None
+        if dolce_info and dolce_info.get("svg_files"):
+            jianpu_svg = _read_svg(d / dolce_info["svg_files"][0])
         confidence_pct, spots = _parse_confidence(d)
-        downloads = _downloads(d, only=["notes.json", "out.mid", "out.musicxml",
-                                        "jianpu.pdf", "jianpu.ly", "confidence.json", "staff.svg"])
-        # 若白名单一个都没命中(产物命名变化),退回全量
+        wanted = ["notes.json", "out.mid", "out.musicxml", "jianpu.pdf", "jianpu.ly",
+                  "jianpu-lilypond-fallback.pdf", "confidence.json", "staff.svg"]
+        if dolce_info:
+            wanted += dolce_info.get("svg_files", []) + dolce_info.get("png_files", [])
+        downloads = _downloads(d, only=wanted)
         if not downloads:
             downloads = _downloads(d)
         return {"ok": rc == 0, "report_md": report, "staff_svg": staff_svg,
+                "jianpu_svg": jianpu_svg,
+                "jianpu_page_count": dolce_info.get("page_count") if dolce_info else None,
                 "confidence_pct": confidence_pct, "spots": spots, "downloads": downloads}
     except Exception as e:  # noqa: BLE001
         hint = ""
