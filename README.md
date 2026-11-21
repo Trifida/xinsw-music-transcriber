@@ -25,16 +25,17 @@
 - `tests/`：基础测试
 - `LICENSE`、`NOTICE`：项目与第三方许可声明
 
-## 简谱 PDF：由服务器统一排版
+## 简谱排版：悦谱 Dolce（主引擎）
 
-普通用户不需要在自己的电脑上安装 LilyPond。项目保留两级输出保障：
+单旋律扒谱生成 MusicXML 后，服务器会调用固定版本的 **Dolce（悦谱）无头排版入口**，直接使用与悦谱编辑器相同的简谱排版代码：
 
-- `jianpu.ly`：由 Python 端的 jianpu-ly 生成的可编辑排版源稿；即使 PDF 引擎暂不可用，也会保留。
-- `jianpu.pdf`：由服务器上的 LilyPond 命令行程序生成。LilyPond 作为独立进程调用，不作为 Python 库链接进主程序。
+- Dolce 输出 SVG 矢量谱页；服务器再用 librsvg 从这些 SVG 生成高清 PNG 与可打印 PDF。
+- `jianpu.pdf` 是 Dolce 排版后的主 PDF；各页 SVG / PNG 也会作为下载文件提供。
+- 原有 `jianpu-ly + LilyPond` 流程保留作备用。Dolce 未安装、转换失败或输入不受支持时，不会让扒谱任务整体失败，原有排版产物仍可用。
+- 五线谱渲染、音高识别、MIDI 与 MusicXML 生成逻辑不变；复音转录引擎仍按原规则不自动生成单旋律简谱。
+- Node.js 20、Dolce CLI 与字体只加入现有 Docker 镜像，不新增 Render 服务，也不要求用户电脑安装 Node 或悦谱。
 
-仓库根目录的 `Dockerfile` 已把 LilyPond 放入服务器镜像。使用支持 Docker 的部署平台构建该镜像后，PDF 排版由服务器完成，客户设备无需安装额外软件。部署后访问 `/api/health`，查看 `pdf_export.ready` 是否为 `true`。本地 Windows 开发环境没有 LilyPond 时，扒谱仍会保留 `jianpu.ly` 源稿，不影响 MIDI、MusicXML 和五线谱产物；部署好服务器排版环境后，重新提交扒谱任务即可自动生成 PDF。
-
-> 注意：当前 Dockerfile 面向 CPU 核心服务及 PDF 排版。GPU 拆声/重塑仍按项目独立 GPU 环境部署，不会因安装 LilyPond 而自动迁移到该容器。
+Dolce 上游版本固定为 `defb7594b00a42cda8030cdf68baa61e3b562b72`，避免构建时跟随上游变化。项目代码采用 MIT 许可；随附 Bravura 字体另按 SIL OFL 1.1 授权，详见 [NOTICE-DOLCE.md](NOTICE-DOLCE.md)。
 
 ## 许可
 
