@@ -16,7 +16,7 @@ ENV DOLCE_CLI_ENTRY=/opt/dolce/out/cli/engrave.js
 COPY scripts/dolce_render.mjs /tmp/dolce_render.mjs
 COPY tests/fixtures/dolce-smoke.musicxml /tmp/dolce-smoke.musicxml
 RUN node /tmp/dolce_render.mjs /tmp/dolce-smoke.musicxml /tmp/dolce-smoke-output > /tmp/dolce-smoke-result.json \
-    && node -e 'const r=JSON.parse(require("fs").readFileSync("/tmp/dolce-smoke-result.json","utf8")); if(r.page_count < 2) throw new Error("Expected multi-page output, got " + r.page_count)' \
+    && node -e 'const r=JSON.parse(require("fs").readFileSync("/tmp/dolce-smoke-result.json","utf8")); if(r.page_count < 2) throw new Error("Expected multi-page output: " + JSON.stringify(r))' \
     && test -s /tmp/dolce-smoke-output/jianpu-dolce-2.svg \
     && grep -q '春' /tmp/dolce-smoke-output/jianpu-dolce-1.svg
 
