@@ -25,3 +25,7 @@ jobs:
         run: docker build --target dolce-runtime-check --tag xinsw-dolce-smoke .
       - name: Check Python syntax
         run: python -m compileall -q musicmaster
+      - name: Check frontend JavaScript syntax
+        run: |
+          node --check musicmaster/web/static/js/transcribe.js
+          node --check musicmaster/web/static/js/convert.js
