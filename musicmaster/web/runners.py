@@ -180,15 +180,15 @@ def _friendly(name: str) -> dict:
             return {"label": "旧版简谱 PDF（备用）", "download": "jianpu_lilypond_fallback.pdf",
                     "desc": "原有 LilyPond 排版结果，作为悦谱 Dolce 的备用版本保留。"}
         if ext == ".pdf":
-            return {"label": "简谱 PDF", "download": "jianpu.pdf", "desc": "可打印的数字简谱；本次使用的排版引擎见任务报告。"}
+            return {"label": "简谱 PDF（原版排版）", "download": "jianpu.pdf", "desc": "由原有 jianpu-ly + LilyPond 排版器生成的可打印简谱。"}
         if ext == ".svg":
             page_no = re.search(r"jianpu-dolce-(\d+)", low)
             suffix = f"_{page_no.group(1)}" if page_no else ""
-            return {"label": "简谱排版图", "download": f"jianpu_page{suffix}.svg", "desc": "悦谱 Dolce 生成的矢量简谱页面。"}
+            return {"label": "简谱排版图（原版）", "download": f"jianpu_page{suffix}.svg", "desc": "由原有 jianpu-ly + LilyPond 排版器生成的矢量简谱预览。"}
         if ext == ".png":
             page_no = re.search(r"jianpu-dolce-(\d+)", low)
             suffix = f"_{page_no.group(1)}" if page_no else ""
-            return {"label": "简谱高清图片", "download": f"jianpu_page{suffix}.png", "desc": "悦谱 Dolce 排版页的高清 PNG 预览。"}
+            return {"label": "简谱高清图片", "download": f"jianpu_page{suffix}.png", "desc": "简谱排版页的高清 PNG 预览。"}
         if ext == ".jly":
             return {"label": "Dolce 简谱源稿(JLY)", "download": "jianpu_dolce.jly",
                     "desc": "由 Dolce 从 MusicXML 转换的简谱源稿，可用支持 jianpu-ly 的工具继续编辑。"}
