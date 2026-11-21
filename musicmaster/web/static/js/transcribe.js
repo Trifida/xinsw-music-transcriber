@@ -134,18 +134,18 @@
       var sheet = paneSheet.querySelector('.sheet');
       if (!sheet) return;
 
-      // Dolce 简谱是首要谱面预览；五线谱预览仍保留在同一面板下方。
+      // 原版简谱是首要谱面预览；五线谱预览仍保留在同一面板下方。
       if (result.jianpu_svg) {
         var count = Number(result.jianpu_page_count) || 1;
-        var html = '<div class="tt">简谱 · 悦谱 Dolce</div>' +
-          '<div class="st">自动排版 · 第 1 页预览' + (count > 1 ? ' · 共 ' + count + ' 页' : '') + '</div>' +
-          '<div class="dolce-jianpu">' + result.jianpu_svg + '</div>';
+        var html = '<div class="tt">简谱 · 原版排版</div>' +
+          '<div class="st">原版 jianpu-ly + LilyPond 排版预览' + (count > 1 ? ' · 共 ' + count + ' 页' : '') + '</div>' +
+          '<div class="jianpu-rendered">' + result.jianpu_svg + '</div>';
         if (result.staff_svg) {
           html += '<div class="tt" style="margin-top:28px">五线谱</div>' +
             '<div class="st">原有五线谱预览</div><div class="staff-preview">' + result.staff_svg + '</div>';
         }
         sheet.innerHTML = html;
-        var jpSvgs = sheet.querySelectorAll('.dolce-jianpu svg');
+        var jpSvgs = sheet.querySelectorAll('.jianpu-rendered svg');
         Array.prototype.forEach.call(jpSvgs, function (svg) {
           svg.style.width = '100%';
           svg.style.height = 'auto';
