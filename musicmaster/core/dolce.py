@@ -134,9 +134,14 @@ def render_dolce(
         for page in pdf_pages:
             page.unlink(missing_ok=True)
 
+    warnings = manifest.get("warnings", [])
+    if not isinstance(warnings, list):
+        warnings = []
     return {
         "page_count": len(svg_files),
         "svg_files": svg_files,
         "png_files": png_files,
         "pdf_file": pdf_name,
+        "jly_file": manifest.get("jly_file"),
+        "warnings": [str(w)[:240] for w in warnings[:20]],
     }
