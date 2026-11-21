@@ -10,9 +10,6 @@ on:
       - "musicmaster/core/dolce.py"
       - "musicmaster/web/runners.py"
       - ".github/workflows/dolce-smoke.yml"
-  push:
-    branches: ["feature/dolce-jianpu-render"]
-
 permissions:
   contents: read
 
