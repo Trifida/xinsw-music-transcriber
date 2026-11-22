@@ -360,12 +360,9 @@ def musicxml_lyric_alignment(musicxml_path: PathLike) -> List[Dict[str, Any]]:
         return []
     flat = parsed.parts[0].flatten()
     aligned: List[Dict[str, Any]] = []
-    note_index = 0
     for element in flat.getElementsByClass(note.Note):
-        note_index += 1
         for lyric in element.lyrics:
             aligned.append({
-                "note_index": note_index,
                 "start_beat": float(element.offset),
                 "lyric": str(lyric.text or ""),
             })
