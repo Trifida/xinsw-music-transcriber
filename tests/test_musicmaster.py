@@ -291,3 +291,79 @@ def test_xinsw_frontend_is_a_single_automatic_lead_vocal_entry():
     assert "setTimeout(function () { poll(jobId); }, 900)" in script
     assert "basic-pitch" not in script
     assert "bytedance" not in script
+
+
+
+def test_full_song_transcription_separates_before_pitch_recognition(tmp_path, monkeypatch):
+    """完整歌曲入口必须先产出 vocal.wav，再调用原有主唱扒谱；不得把混音直接送进 CREPE。"""
+    from types import SimpleNamespace
+    from musicmaster.web import runners
+
+    source = tmp_path / "complete_song.mp3"
+    source.write_bytes(b"fake audio bytes")
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+    job = SimpleNamespace(
+        job_dir=str(job_dir),
+        set_stage=lambda stage, progress=None: None,
+        set_progress=lambda progress: None,
+    )
+    calls = {}
+
+    def fake_separate(progress_job, audio_path, stages, denoise):
+        calls["separate"] = (audio_path, stages, denoise)
+        vocal = Path(progress_job.job_dir) / "1_分离" / "vocal.wav"
+        vocal.parent.mkdir(parents=True, exist_ok=True)
+        vocal.write_bytes(b"separated vocal")
+        return {"ok": True, "tracks": []}
+
+    def fake_transcribe(progress_job, audio_path, engine, key, lyrics_text, auto_lyrics):
+        calls["transcribe"] = audio_path
+        assert Path(audio_path).read_bytes() == b"separated vocal"
+        return {"ok": True, "report_md": "# test report", "downloads": []}
+
+    monkeypatch.setattr(runners, "run_separate", fake_separate)
+    monkeypatch.setattr(runners, "run_transcribe", fake_transcribe)
+
+    result = runners.run_full_song_transcribe(
+        job, str(source), engine="crepe", key="", lyrics_text="", auto_lyrics=True
+    )
+
+    assert calls["separate"] == (str(source), "1", "dereverb")
+    assert calls["transcribe"].endswith("1_分离/vocal.wav")
+    assert result["ok"] is True
+    assert result["source_mode"] == "full-song"
+    assert {item["name"] for item in result["downloads"]} >= {
+        "source_audio.mp3", "1_分离/vocal.wav"
+    }
+    assert "完整歌曲处理链" in result["report_md"]
+
+
+def test_full_song_transcription_stops_when_separation_is_unavailable(tmp_path, monkeypatch):
+    """没有 GPU 分离环境时必须明确失败，不能把完整混音误送进单旋律识别器。"""
+    from types import SimpleNamespace
+    from musicmaster.web import runners
+
+    source = tmp_path / "complete_song.wav"
+    source.write_bytes(b"fake audio bytes")
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+    job = SimpleNamespace(
+        job_dir=str(job_dir),
+        set_stage=lambda stage, progress=None: None,
+        set_progress=lambda progress: None,
+    )
+    monkeypatch.setattr(
+        runners, "run_separate",
+        lambda *args, **kwargs: {"ok": False, "message": "未找到分离环境"},
+    )
+    monkeypatch.setattr(
+        runners, "run_transcribe",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not transcribe mixed audio")),
+    )
+
+    result = runners.run_full_song_transcribe(job, str(source))
+    assert result["ok"] is False
+    assert result["source_mode"] == "full-song"
+    assert "未找到分离环境" in result["message"]
+    assert result["downloads"][0]["name"] == "source_audio.wav"
