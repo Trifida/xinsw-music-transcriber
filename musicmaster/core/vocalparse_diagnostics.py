@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import statistics
+from bisect import bisect_left, bisect_right
 from typing import Any, Dict, Mapping, Sequence
 
 
@@ -71,6 +72,7 @@ def compare_vocalparse_to_pitch_track(
             raise ValueError(f"invalid confidence at pitch frame {index}")
         frames.append((timestamp, pitch, confidence))
     frames.sort(key=lambda item: item[0])
+    frame_times = [item[0] for item in frames]
 
     if isinstance(reference_time_offset_sec, bool) or not isinstance(reference_time_offset_sec, (int, float)):
         raise ValueError("reference_time_offset_sec must be finite and nonnegative")
@@ -114,11 +116,11 @@ def compare_vocalparse_to_pitch_track(
         end_sec = (start_beat + duration_beats) * seconds_per_beat
         sample_start = start_sec + (end_sec - start_sec) * trim
         sample_end = end_sec - (end_sec - start_sec) * trim
-        selected = [
-            (pitch, confidence)
-            for timestamp, pitch, confidence in frames
-            if sample_start * time_scale + time_offset <= timestamp <= sample_end * time_scale + time_offset
-        ]
+        reference_start = sample_start * time_scale + time_offset
+        reference_end = sample_end * time_scale + time_offset
+        left = bisect_left(frame_times, reference_start)
+        right = bisect_right(frame_times, reference_end)
+        selected = [(pitch, confidence) for _, pitch, confidence in frames[left:right]]
         voiced = [
             (pitch, confidence)
             for pitch, confidence in selected
