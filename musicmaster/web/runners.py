@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -339,6 +340,19 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                 "spots": None, "downloads": [],
                 "message": f"未知引擎「{engine}」,可选:{', '.join(_engines)}。"}
     d = Path(job.job_dir)
+    # 保留本次上传的原始清唱音频到任务目录，供结果页同源试听。
+    # API 文件路由只允许访问 job_dir，因此不能直接引用临时上传目录。
+    preview_audio = None
+    try:
+        source_audio = Path(audio_path)
+        if source_audio.is_file():
+            audio_suffix = source_audio.suffix.lower() or ".audio"
+            preview_path = d / ("source_audio" + audio_suffix)
+            shutil.copy2(source_audio, preview_path)
+            preview_audio = preview_path.name
+    except OSError as preview_error:
+        print(f"[transcribe] 原始音频试听副本创建失败: {type(preview_error).__name__}: {preview_error}", flush=True)
+
     stop = threading.Event()
     # autopilot.main 是一次阻塞调用、内部 stdout 不易按 job 截获 → 改用文件里程碑推断真实进度
     milestones = [
@@ -500,13 +514,15 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                 "jianpu_svg": jianpu_svg,
                 "jianpu_page_count": 1 if jianpu_svg else None,
                 "lyrics_text": lyric_text, "lyrics_info": lyrics_info,
+                "preview_audio": preview_audio,
                 "confidence_pct": confidence_pct, "spots": spots, "downloads": downloads}
     except Exception as e:  # noqa: BLE001
         hint = ""
         if engine in ("basic-pitch", "bytedance"):
             hint = (f"\n\n提示:引擎「{engine}」需专用环境(basic-pitch 需 TensorFlow 2.15;"
                     f"bytedance 需 GPU)。快速上手请用默认引擎 crepe(人声/单旋律最佳)。")
-        return {"ok": False, "message": f"扒谱失败:{type(e).__name__}: {str(e)[:240]}{hint}"}
+        return {"ok": False, "message": f"扒谱失败:{type(e).__name__}: {str(e)[:240]}{hint}",
+                "preview_audio": preview_audio}
     finally:
         stop.set()
 
