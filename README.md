@@ -133,7 +133,7 @@ python scripts/inspect_pitch_npz.py path/to/vocal_pitch_raw.npz --output-json vo
 4. 将该片段按 30 秒偏移与整首 TorchCREPE 轨迹对齐，输出逐音符半音误差、疑似八度偏差和休止区间有声比例。
 5. 将完整结果写入 Drive 的 `TorchCREPE_Test/vocalparse_pitch_comparison_30_55s.json`，同时保存 `reference_pitch_track.json`。
 
-该 Notebook 直接加载项目中的独立 Python 源文件，不安装整个项目、不安装音频推理依赖、不下载模型，也不需要 GPU。首次运行会从 GitHub 下载当前开发分支的代码。它验证的是仓库中保存的 25 秒测试样本，并非未经确认的整首 VocalParse 推理结果。
+该 Notebook 将 NPZ 转换、事件换算、逐音符比较和时间映射网格搜索逻辑内嵌在单个代码单元中，不访问 GitHub、不安装项目、不下载模型、不运行推理，也不需要 GPU。它验证的是仓库中保存的 25 秒测试样本，并非未经确认的整首 VocalParse 推理结果。
 
 ### VocalParse 音高交叉检查（离线，不重新推理）
 
