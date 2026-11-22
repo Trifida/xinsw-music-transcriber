@@ -369,3 +369,40 @@ def test_full_song_transcription_stops_when_separation_is_unavailable(tmp_path, 
     assert result["source_mode"] == "full-song"
     assert "未找到分离环境" in result["message"]
     assert result["downloads"][0]["name"] == "source_audio.wav"
+
+
+def test_separation_status_reports_missing_python(monkeypatch):
+    from musicmaster.web import runners
+    monkeypatch.setattr(runners, "_sep_python", lambda: None)
+    result = runners.get_separation_status()
+    assert result["ready"] is False
+    assert result["python_configured"] is False
+    assert "Python" in result["message"]
+
+
+def test_separation_status_reports_missing_package_and_model(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from musicmaster.web import runners
+    from musicmaster.separate import pipeline
+    monkeypatch.setattr(runners, "_sep_python", lambda: "/fake/sep-python")
+    monkeypatch.setattr(runners.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=1))
+    monkeypatch.setattr(pipeline, "MODEL_DIR", str(tmp_path))
+    missing_package = runners.get_separation_status()
+    assert missing_package["ready"] is False
+    assert missing_package["package_available"] is False
+
+
+def test_separation_status_reports_ready_only_when_model_exists(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from musicmaster.web import runners
+    from musicmaster.separate import pipeline
+    monkeypatch.setattr(runners, "_sep_python", lambda: "/fake/sep-python")
+    monkeypatch.setattr(runners.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0))
+    monkeypatch.setattr(pipeline, "MODEL_DIR", str(tmp_path))
+    model_name = pipeline.SEP_MODELS["bs_roformer"]
+    (tmp_path / model_name).write_bytes(b"model placeholder")
+    result = runners.get_separation_status()
+    assert result["ready"] is True
+    assert result["package_available"] is True
+    assert result["model_available"] is True
+    assert "GPU" in result["message"]
