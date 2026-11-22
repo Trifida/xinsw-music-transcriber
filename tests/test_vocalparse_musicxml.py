@@ -201,6 +201,40 @@ def test_pitch_track_diagnostic_reports_semitone_and_octave_mismatches():
     assert summary["comparison_type"] == "model_to_model_not_ground_truth"
 
 
+def test_pitch_track_diagnostic_aligns_clip_to_full_song_reference_timeline():
+    from musicmaster.core.vocalparse_diagnostics import compare_vocalparse_to_pitch_track
+
+    events = [
+        {"start_beat": 0, "duration_beats": 1, "pitch_midi": 60, "is_rest": False}
+    ]
+    # At 100 BPM, the one-beat note occupies 0.0-0.6s in the clip.
+    # Reference frames are from the full song at 30.12-30.48s.
+    frames = [
+        {"time_sec": 30.12, "pitch_midi": 60.1, "confidence": 0.95},
+        {"time_sec": 30.24, "pitch_midi": 60.0, "confidence": 0.95},
+        {"time_sec": 30.36, "pitch_midi": 60.2, "confidence": 0.95},
+    ]
+    result = compare_vocalparse_to_pitch_track(
+        events, 100, frames, reference_time_offset_sec=30.0
+    )
+    assert result["summary"]["compared_note_count"] == 1
+    assert result["summary"]["reference_time_offset_sec"] == 30.0
+    assert result["events"][0]["start_sec"] == 0.0
+    assert result["events"][0]["reference_start_sec"] == 30.0
+
+
+def test_pitch_track_diagnostic_rejects_invalid_reference_time_offset():
+    from musicmaster.core.vocalparse_diagnostics import compare_vocalparse_to_pitch_track
+
+    with pytest.raises(ValueError, match="reference_time_offset_sec"):
+        compare_vocalparse_to_pitch_track(
+            [{"start_beat": 0, "duration_beats": 1, "pitch_midi": 60, "is_rest": False}],
+            100,
+            [],
+            reference_time_offset_sec=-1,
+        )
+
+
 def test_pitch_track_diagnostic_accepts_frequency_hz_frames():
     from musicmaster.core.vocalparse_diagnostics import compare_vocalparse_to_pitch_track
 
