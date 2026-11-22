@@ -110,6 +110,42 @@ def test_vocalparse_result_direct_musicxml_roundtrip(tmp_path):
 
 
 
+def test_pitch_npz_inspector_reports_numeric_arrays_without_unpickling(tmp_path):
+    import json
+    import numpy as np
+    import runpy
+    from pathlib import Path
+
+    archive = tmp_path / "pitch.npz"
+    np.savez(
+        archive,
+        time=np.array([0.0, 0.01, 0.02]),
+        frequency=np.array([220.0, 221.0, 0.0]),
+        confidence=np.array([0.9, 0.8, 0.1]),
+    )
+    script = Path(__file__).parents[1] / "scripts" / "inspect_pitch_npz.py"
+    report = runpy.run_path(str(script))["inspect_npz"](archive)
+
+    assert report["format"] == "numpy_npz"
+    assert report["arrays"]["frequency"]["shape"] == [3]
+    assert report["arrays"]["frequency"]["min"] == 0.0
+    assert report["arrays"]["frequency"]["max"] == 221.0
+    assert report["arrays"]["confidence"]["sample"] == [0.9, 0.8, 0.1]
+
+
+def test_pitch_npz_inspector_refuses_object_arrays(tmp_path):
+    import numpy as np
+    import runpy
+    from pathlib import Path
+
+    archive = tmp_path / "object.npz"
+    np.savez(archive, unsafe=np.array([{"x": 1}], dtype=object))
+    script = Path(__file__).parents[1] / "scripts" / "inspect_pitch_npz.py"
+    report = runpy.run_path(str(script))["inspect_npz"](archive)
+
+    assert report["arrays"]["unsafe"]["readable"] is False
+
+
 def test_pitch_track_comparison_cli_writes_machine_readable_report(tmp_path):
     import json
     import runpy
