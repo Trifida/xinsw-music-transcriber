@@ -31,7 +31,7 @@
 <main>
   <div class="brand">XINSW MUSIC · 独立验证页面</div>
   <h1 class="title">心思维 AI 扒谱助手</h1>
-  <p class="intro">上传一段已经分离好的主唱音轨，自动识别旋律，生成五线谱、简谱和可编辑文件。</p>
+  <p class="intro">上传完整歌曲或已经分离好的主唱音轨，自动识别主唱旋律，生成五线谱、简谱和可编辑文件。</p>
 
   <section class="panel">
     <label class="drop" id="drop" for="audio">
@@ -41,7 +41,8 @@
     </label>
     <input id="audio" type="file" accept="audio/*">
     <div class="file" id="fileInfo"></div>
-    <audio id="preview" controls></audio>\n    <label class="mode-toggle"><input id="autoSeparate" type="checkbox"> <span>这是完整歌曲，先自动分离主唱再扒谱（需要服务器已配置 GPU 分离环境）</span></label>
+    <audio id="preview" controls></audio>
+    <label class="mode-toggle"><input id="autoSeparate" type="checkbox"> <span>这是完整歌曲，先自动分离主唱再扒谱（需要服务器已配置 GPU 分离环境）</span></label>
     <div class="actions">
       <button id="start" disabled>开始自动扒谱</button>
       <button id="clear" type="button">清空</button>
