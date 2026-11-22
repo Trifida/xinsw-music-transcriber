@@ -86,6 +86,7 @@ def health() -> dict:
         "ok": True,
         "service": "musicmaster",
         "lyric_asr": lyric_asr,
+        "separation": runners.get_separation_status(),
         "static": STATIC.is_dir(),
         "pdf_export": {
             "ready": bool(lilypond and source_ready),
@@ -108,10 +109,13 @@ def api_convert(file: UploadFile = File(...), direction: str = Form("j2s"),
 @app.post("/api/transcribe")
 def api_transcribe(audio: UploadFile = File(...), engine: str = Form("crepe"),
                    key: str = Form(""), lyrics: str = Form(""),
-                   auto_lyrics: str = Form("true")) -> dict:
+                   auto_lyrics: str = Form("true"),
+                   auto_separate: str = Form("false")) -> dict:
     path = _save_upload(audio)
     use_auto_lyrics = auto_lyrics.strip().lower() not in {"0", "false", "off", "no"}
-    job = JM.submit("transcribe", runners.run_transcribe, path, engine, key, lyrics, use_auto_lyrics)
+    use_auto_separate = auto_separate.strip().lower() not in {"0", "false", "off", "no"}
+    runner = runners.run_full_song_transcribe if use_auto_separate else runners.run_transcribe
+    job = JM.submit("transcribe", runner, path, engine, key, lyrics, use_auto_lyrics)
     return {"job_id": job.id}
 
 
