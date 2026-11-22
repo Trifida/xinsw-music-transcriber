@@ -86,6 +86,7 @@ def health() -> dict:
         "ok": True,
         "service": "musicmaster",
         "lyric_asr": lyric_asr,
+        "separation": runners.get_separation_status(),
         "static": STATIC.is_dir(),
         "pdf_export": {
             "ready": bool(lilypond and source_ready),
