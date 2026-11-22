@@ -262,3 +262,28 @@ def test_validate_events_rejects_non_boolean_rest_flag():
     }
     with pytest.raises(ValueError, match="is_rest must be a boolean"):
         validate_events([event], 100)
+
+
+def test_vocalparse_musicxml_renders_real_jianpu_svg_and_pdf_when_lilypond_installed(
+    tmp_path, vocalparse_events
+):
+    import shutil
+
+    if not shutil.which("lilypond"):
+        pytest.skip("LilyPond CLI is not installed")
+    from musicmaster.core.render import render
+
+    musicxml = tmp_path / "vocalparse-real-render.musicxml"
+    vocalparse_events_to_musicxml(vocalparse_events, 100, musicxml)
+
+    svg_result = render(
+        musicxml, tmp_path, formats=("jianpu",), jianpu_format="svg"
+    )
+    pdf_result = render(
+        musicxml, tmp_path, formats=("jianpu",), jianpu_format="pdf"
+    )
+    svg = svg_result["jianpu"]
+    pdf = pdf_result["jianpu"]
+    assert svg.is_file() and svg.stat().st_size > 500
+    assert "<svg" in svg.read_text(encoding="utf-8")[:500]
+    assert pdf.is_file() and pdf.read_bytes().startswith(b"%PDF")
