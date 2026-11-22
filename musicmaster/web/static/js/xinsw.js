@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
-  var fileInput = $('audio'), drop = $('drop'), start = $('start'), clear = $('clear');
+  var fileInput = $('audio'), drop = $('drop'), start = $('start'), clear = $('clear');\n  var autoSeparate = $('autoSeparate');
   var fileInfo = $('fileInfo'), preview = $('preview'), progressPanel = $('progressPanel');
   var stage = $('stage'), pct = $('pct'), fill = $('fill'), progressMessage = $('progressMessage');
   var resultPanel = $('resultPanel'), resultTitle = $('resultTitle'), resultMessage = $('resultMessage');
@@ -60,7 +60,7 @@
   function renderResult(job) {
     var result = job.result || {};
     resultPanel.classList.remove('hidden');
-    resultTitle.textContent = result.ok ? '主唱识别完成' : '识别任务已结束，请查看报告';
+    resultTitle.textContent = result.source_mode === 'full-song'\n      ? (result.ok ? '完整歌曲扒谱完成' : '完整歌曲处理结束，请查看报告')\n      : (result.ok ? '主唱识别完成' : '识别任务已结束，请查看报告');
     resultMessage.textContent = result.message || (result.ok
       ? '已生成识别产物。请先试听并检查谱面，重点核对八度、短音和节奏。'
       : '本次没有通过识别流程。报告会保留可用的诊断信息。');
@@ -125,7 +125,7 @@
     var form = new FormData();
     form.append('audio', selectedFile, selectedFile.name);
     form.append('engine', 'crepe');
-    form.append('key', '');
+    form.append('key', '');\n    form.append('auto_separate', autoSeparate && autoSeparate.checked ? 'true' : 'false');
     fetch('/api/transcribe', { method: 'POST', body: form })
       .then(function (response) {
         if (!response.ok) return response.text().then(function (body) {
