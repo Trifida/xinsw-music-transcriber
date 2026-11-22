@@ -406,3 +406,14 @@ def test_separation_status_reports_ready_only_when_model_exists(tmp_path, monkey
     assert result["package_available"] is True
     assert result["model_available"] is True
     assert "GPU" in result["message"]
+
+
+def test_separator_python_resolves_linux_venv_path(tmp_path, monkeypatch):
+    from musicmaster import _paths
+    from musicmaster.web import runners
+    python = tmp_path / "vendor" / ".venv-sep" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+    monkeypatch.setattr(runners, "REPO", tmp_path)
+    monkeypatch.setattr(_paths, "resolve", lambda *args, **kwargs: None)
+    assert runners._sep_python() == str(python)
