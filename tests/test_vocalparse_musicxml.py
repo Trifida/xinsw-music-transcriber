@@ -287,3 +287,23 @@ def test_vocalparse_musicxml_renders_real_jianpu_svg_and_pdf_when_lilypond_insta
     assert svg.is_file() and svg.stat().st_size > 500
     assert "<svg" in svg.read_text(encoding="utf-8")[:500]
     assert pdf.is_file() and pdf.read_bytes().startswith(b"%PDF")
+
+
+def test_vocalparse_musicxml_renders_real_staff_svg_with_lyrics_when_verovio_installed(
+    tmp_path, vocalparse_events
+):
+    if importlib.util.find_spec("verovio") is None:
+        pytest.skip("Verovio is not installed")
+    from musicmaster.core.render import render
+
+    musicxml = tmp_path / "vocalparse-staff.musicxml"
+    vocalparse_events_to_musicxml(vocalparse_events, 100, musicxml)
+    artifacts = render(musicxml, tmp_path / "staff", formats=("staff",))
+    staff = artifacts["staff"]
+
+    assert staff.is_file() and staff.stat().st_size > 500
+    svg = staff.read_text(encoding="utf-8")
+    assert "<svg" in svg[:500]
+    # Verovio should carry the MusicXML lyric syllables into visible SVG text.
+    for syllable in ("如", "果", "世", "界", "变", "换", "太", "快"):
+        assert syllable in svg
