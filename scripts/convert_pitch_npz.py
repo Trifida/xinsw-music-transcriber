@@ -82,8 +82,14 @@ def convert_npz_to_pitch_json(
             raise ValueError("confidence values must be finite and between 0 and 1")
         if not np.isfinite(values).all():
             raise ValueError("pitch/frequency values must all be finite")
-        if frequency_key is not None and (values < 0).any():
-            raise ValueError("frequency values must be nonnegative; use 0 for unvoiced frames")
+        if frequency_key is not None:
+            if (values < 0).any():
+                raise ValueError("frequency values must be nonnegative; use 0 for unvoiced frames")
+            voiced_hz = values[values > 0]
+            if voiced_hz.size:
+                midi_values = 69.0 + 12.0 * np.log2(voiced_hz / 440.0)
+                if ((midi_values <= 0) | (midi_values > 127)).any():
+                    raise ValueError("positive frequency values must map to MIDI pitches in (0, 127]")
         if pitch_midi_key is not None:
             voiced = values != 0
             if ((values[voiced] <= 0) | (values[voiced] > 127)).any():
