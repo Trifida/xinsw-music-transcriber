@@ -670,3 +670,28 @@ def test_vocalparse_time_mapping_calibration_requires_sufficient_coverage():
     )
     assert result["best_candidate"] is None
     assert result["eligible_candidate_count"] == 0
+
+
+def test_pitch_track_diagnostic_reports_reference_pitch_stability_metrics():
+    from musicmaster.core.vocalparse_diagnostics import compare_vocalparse_to_pitch_track
+
+    events = [
+        {"start_beat": 0, "duration_beats": 1, "pitch_midi": 60, "is_rest": False},
+        {"start_beat": 1, "duration_beats": 1, "pitch_midi": 60, "is_rest": False},
+    ]
+    frames = []
+    # First note is stable around MIDI 60; second has a deliberately broad contour.
+    for time_sec, pitch in [(0.12, 59.9), (0.24, 60.0), (0.36, 60.1), (0.48, 60.0)]:
+        frames.append({"time_sec": time_sec, "pitch_midi": pitch, "confidence": 0.9})
+    for time_sec, pitch in [(0.72, 56.0), (0.84, 58.0), (0.96, 62.0), (1.08, 64.0)]:
+        frames.append({"time_sec": time_sec, "pitch_midi": pitch, "confidence": 0.8})
+
+    result = compare_vocalparse_to_pitch_track(events, 100, frames, central_fraction=1.0)
+    stable, variable = result["events"]
+    assert stable["reference_pitch_iqr_semitones"] == pytest.approx(0.05, abs=0.001)
+    assert stable["reference_pitch_mad_semitones"] == pytest.approx(0.05, abs=0.001)
+    assert stable["reference_voiced_frame_ratio"] == 1.0
+    assert stable["reference_confidence_median"] == pytest.approx(0.9)
+    assert variable["reference_pitch_iqr_semitones"] > 3.0
+    assert variable["reference_pitch_min_midi"] == 56.0
+    assert variable["reference_pitch_max_midi"] == 64.0
