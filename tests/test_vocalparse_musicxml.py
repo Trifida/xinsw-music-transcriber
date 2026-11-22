@@ -7,10 +7,12 @@ music21 = pytest.importorskip("music21")
 
 from musicmaster.core.vocalparse import (  # noqa: E402
     musicxml_roundtrip_errors,
+    musicxml_lyric_alignment,
     validate_events,
     vocalparse_events_to_musicxml,
     vocalparse_result_to_musicxml,
     vocalparse_tokens_to_events,
+    vocalparse_lyric_alignment,
 )
 
 
@@ -142,3 +144,32 @@ def test_real_colab_50_token_sample_is_preserved():
     assert sum(event["is_rest"] for event in events) == 7
     assert sum(event["duration_beats"] for event in events) == 39.5
     assert events[-1]["end_sec"] == pytest.approx(23.7)
+
+
+
+def test_lyric_alignment_keeps_one_anchor_and_preserves_continuation_marker(vocalparse_events):
+    aligned = vocalparse_lyric_alignment(vocalparse_events, 100)
+    displayed = [item for item in aligned if item["display_lyric"]]
+    continuations = [item for item in aligned if item["is_continuation_marker"]]
+
+    assert len(aligned) == 10
+    assert [item["lyric"] for item in displayed] == ["如", "果", "世", "界", "变", "换", "太", "快", "慢"]
+    assert len(continuations) == 1
+    assert continuations[0]["raw_word"] == "慢"
+    assert continuations[0]["lyric"] is None
+    assert continuations[0]["display_lyric"] is False
+
+
+def test_musicxml_displays_lyrics_once_and_never_on_rests(tmp_path, vocalparse_events):
+    destination = tmp_path / "vocalparse-lyrics.musicxml"
+    vocalparse_events_to_musicxml(vocalparse_events, 100, destination)
+
+    actual = musicxml_lyric_alignment(destination)
+    expected = [
+        (event["start_beat"], event["lyric"])
+        for event in vocalparse_events
+        if not event["is_rest"]
+        and event.get("lyric")
+        and not event.get("is_lyric_continuation", False)
+    ]
+    assert [(row["start_beat"], row["lyric"]) for row in actual] == expected
