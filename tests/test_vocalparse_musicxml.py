@@ -59,6 +59,7 @@ def test_validate_events_preserves_order_and_duration(vocalparse_events):
 def test_validate_events_rejects_overlaps(vocalparse_events):
     broken = [dict(event) for event in vocalparse_events]
     broken[2]["start_beat"] = 2.25
+    broken[2]["end_beat"] = 2.625
     with pytest.raises(ValueError, match="overlapping"):
         validate_events(broken, 100)
 
