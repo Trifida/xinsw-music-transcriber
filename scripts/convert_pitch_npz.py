@@ -20,12 +20,14 @@ def _vector(archive: Any, key: str, label: str) -> np.ndarray:
         values = np.asarray(archive[key])
     except ValueError as exc:
         raise ValueError(f"{label} array {key!r} cannot be safely read") from exc
-    values = np.squeeze(values)
-    if values.ndim != 1:
-        raise ValueError(
-            f"{label} array {key!r} must be one-dimensional after squeezing singleton axes; "
-            f"got shape {values.shape}"
-        )
+    if values.ndim > 1:
+        non_singleton_axes = sum(size > 1 for size in values.shape)
+        if non_singleton_axes > 1:
+            raise ValueError(
+                f"{label} array {key!r} must be one-dimensional or have only singleton extra axes; "
+                f"got shape {values.shape}"
+            )
+    values = values.reshape(-1)
     if not np.issubdtype(values.dtype, np.number):
         raise ValueError(f"{label} array {key!r} must be numeric")
     return values.astype(np.float64, copy=False)
