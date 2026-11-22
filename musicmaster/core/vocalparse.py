@@ -367,3 +367,41 @@ def musicxml_lyric_alignment(musicxml_path: PathLike) -> List[Dict[str, Any]]:
                 "lyric": str(lyric.text or ""),
             })
     return aligned
+
+
+def render_vocalparse_result(
+    parsed: Mapping[str, Any],
+    out_dir: PathLike,
+    *,
+    key_name: str | None = None,
+    time_signature: str = "4/4",
+    page: int = 1,
+    jianpu_format: str = "svg",
+    lilypond_timeout: float = 120.0,
+) -> Dict[str, Path]:
+    """Create one MusicXML source and render VocalParse output as staff and jianpu.
+
+    Both notation renderers receive the exact same MusicXML file. Missing optional
+    render backends follow the existing renderer's best-effort behavior; the
+    MusicXML source is always included in the returned artifact map.
+    """
+    from .render import render
+
+    destination = Path(out_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    musicxml_path = vocalparse_result_to_musicxml(
+        parsed,
+        destination / "vocalparse.musicxml",
+        key_name=key_name,
+        time_signature=time_signature,
+    )
+    artifacts = render(
+        musicxml_path,
+        destination,
+        formats=("staff", "jianpu"),
+        page=page,
+        jianpu_format=jianpu_format,
+        lilypond_timeout=lilypond_timeout,
+        require_all=False,
+    )
+    return {"musicxml": musicxml_path, **artifacts}
