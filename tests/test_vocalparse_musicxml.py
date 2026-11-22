@@ -101,3 +101,44 @@ def test_vocalparse_result_direct_musicxml_roundtrip(tmp_path):
     destination = tmp_path / "vocalparse-direct.musicxml"
     vocalparse_result_to_musicxml(parsed, destination)
     assert musicxml_roundtrip_errors(events, destination, 100) == []
+
+
+
+def test_real_colab_50_token_sample_is_preserved():
+    # Captured from the user's successful 25-second VocalParse inference.
+    parsed = {
+        "bpm": 100,
+        "words": [
+            "SP", "如", "果", "世", "·", "界", "变", "·", "换", "太",
+            "快", "SP", "当", "青", "·", "春", "SP", "慢", "慢", "走",
+            "·", "远", "SP", "当", "容", "·", "颜", "不", "再", "如",
+            "初", "·", "·", "见", "SP", "你", "不", "必", "问", "我",
+            "SP", "爱", "·", "不", "·", "·", "爱", "SP", "也", "不",
+        ],
+        "pitches": [
+            0, 55, 55, 58, 59, 60, 61, 58, 60, 58,
+            54, 0, 55, 58, 60, 60, 0, 58, 58, 54,
+            56, 56, 0, 55, 55, 54, 53, 54, 52, 49,
+            53, 55, 54, 54, 0, 47, 47, 49, 50, 52,
+            0, 52, 54, 56, 58, 56, 56, 0, 56, 55,
+        ],
+        "notes": [
+            "NOTE_2", "NOTE_8", "NOTE_DOT_16", "NOTE_8", "NOTE_DOT_16",
+            "NOTE_DOT_4", "NOTE_DOT_16", "NOTE_DOT_16", "NOTE_4", "NOTE_DOT_8",
+            "NOTE_DOT_4", "NOTE_2", "NOTE_8", "NOTE_DOT_8", "NOTE_4",
+            "NOTE_DOT_4", "NOTE_DOT_4", "NOTE_DOT_8", "NOTE_4", "NOTE_8",
+            "NOTE_16", "NOTE_4", "NOTE_DOT_8", "NOTE_8", "NOTE_DOT_16",
+            "NOTE_DOT_16", "NOTE_8", "NOTE_8", "NOTE_8", "NOTE_4",
+            "NOTE_DOT_8", "NOTE_16", "NOTE_DOT_16", "NOTE_2", "NOTE_4",
+            "NOTE_8", "NOTE_8", "NOTE_DOT_8", "NOTE_DOT_16", "NOTE_DOT_4",
+            "NOTE_16", "NOTE_8", "NOTE_DOT_8", "NOTE_DOT_8", "NOTE_DOT_16",
+            "NOTE_DOT_16", "NOTE_DOT_4", "NOTE_DOT_4", "NOTE_8", "NOTE_8",
+        ],
+    }
+
+    events = vocalparse_tokens_to_events(parsed)
+    assert len(events) == 50
+    assert sum(not event["is_rest"] for event in events) == 43
+    assert sum(event["is_rest"] for event in events) == 7
+    assert sum(event["duration_beats"] for event in events) == 39.5
+    assert events[-1]["end_sec"] == pytest.approx(23.7)
