@@ -307,3 +307,31 @@ def test_vocalparse_musicxml_renders_real_staff_svg_with_lyrics_when_verovio_ins
     # Verovio should carry the MusicXML lyric syllables into visible SVG text.
     for syllable in ("如", "果", "世", "界", "变", "换", "太", "快"):
         assert syllable in svg
+
+
+def test_dual_notation_render_can_require_both_outputs(tmp_path, monkeypatch):
+    render_module = importlib.import_module("musicmaster.core.render")
+    captured = {}
+
+    def fake_render(musicxml, out_dir, **kwargs):
+        captured["kwargs"] = kwargs
+        return {
+            "staff": tmp_path / "staff.svg",
+            "jianpu": tmp_path / "jianpu.svg",
+        }
+
+    monkeypatch.setattr(render_module, "render", fake_render)
+    parsed = {
+        "bpm": 100,
+        "words": ["你"],
+        "pitches": [60],
+        "notes": ["NOTE_4"],
+    }
+
+    artifacts = render_vocalparse_result(
+        parsed, tmp_path / "strict-score", require_all=True
+    )
+
+    assert captured["kwargs"]["formats"] == ("staff", "jianpu")
+    assert captured["kwargs"]["require_all"] is True
+    assert set(artifacts) == {"musicxml", "staff", "jianpu"}
