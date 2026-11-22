@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-NOTEBOOK = REPO / "notebooks" / "XinsW_Colab_Free.ipynb"
+NOTEBOOK = REPO / "notebooks" / "XinsW_Colab_Free_v2.ipynb"
 
 
 def test_colab_notebook_is_valid_and_uses_free_ephemeral_runtime():
