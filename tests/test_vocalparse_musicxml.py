@@ -110,6 +110,43 @@ def test_vocalparse_result_direct_musicxml_roundtrip(tmp_path):
 
 
 
+def test_pitch_track_diagnostic_reports_semitone_and_octave_mismatches():
+    from musicmaster.core.vocalparse_diagnostics import compare_vocalparse_to_pitch_track
+
+    events = [
+        {"start_beat": 0, "duration_beats": 1, "pitch_midi": 60, "is_rest": False},
+        {"start_beat": 1, "duration_beats": 1, "pitch_midi": None, "is_rest": True},
+        {"start_beat": 2, "duration_beats": 1, "pitch_midi": 72, "is_rest": False},
+    ]
+    frames = []
+    for time_sec in (0.12, 0.18, 0.24, 0.30, 0.36, 0.42, 0.48, 0.54):
+        frames.append({"time_sec": time_sec, "pitch_midi": 60.1, "confidence": 0.95})
+    for time_sec in (0.72, 0.90, 1.08):
+        frames.append({"time_sec": time_sec, "pitch_midi": None, "confidence": 0.1})
+    for time_sec in (1.32, 1.50, 1.68, 1.86):
+        frames.append({"time_sec": time_sec, "pitch_midi": 60.0, "confidence": 0.9})
+
+    result = compare_vocalparse_to_pitch_track(events, 100, frames)
+    summary = result["summary"]
+    assert summary["compared_note_count"] == 2
+    assert summary["median_absolute_error_semitones"] == pytest.approx(5.95)
+    assert summary["octave_mismatch_count"] == 1
+    assert summary["compared_rest_count"] == 1
+    assert summary["mean_rest_voiced_ratio"] == 0.0
+    assert summary["comparison_type"] == "model_to_model_not_ground_truth"
+
+
+def test_pitch_track_diagnostic_rejects_invalid_reference_frames():
+    from musicmaster.core.vocalparse_diagnostics import compare_vocalparse_to_pitch_track
+
+    with pytest.raises(ValueError, match="invalid pitch_midi"):
+        compare_vocalparse_to_pitch_track(
+            [{"start_beat": 0, "duration_beats": 1, "pitch_midi": 60, "is_rest": False}],
+            100,
+            [{"time_sec": 0.1, "pitch_midi": 200, "confidence": 1}],
+        )
+
+
 def test_real_colab_50_token_sample_is_preserved():
     import json
     from pathlib import Path
