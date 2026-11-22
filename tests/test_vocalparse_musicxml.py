@@ -194,7 +194,7 @@ def test_jianpu_source_retains_chinese_lyrics_when_backend_is_installed(tmp_path
         assert lyric in lilypond_source
     # jianpu-ly should emit an actual Lyrics context, not merely leave the
     # characters in metadata or comments; the syllables must remain ordered.
-    assert r"\\lyricsto" in lilypond_source
+    assert r"\lyricsto" in lilypond_source
     lyric_positions = [lilypond_source.index(lyric) for lyric in expected_lyrics]
     assert lyric_positions == sorted(lyric_positions)
 
