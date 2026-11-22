@@ -1,8 +1,8 @@
 """Compare saved VocalParse notes with an independently saved pitch contour.
 
 Input pitch-track JSON:
-{"frames": [{"time_sec": 0.01, "pitch_midi": 60.2, "confidence": 0.95}]}
-Use pitch_midi: null for unvoiced frames. No model inference is performed.
+{"frames": [{"time_sec": 0.01, "frequency_hz": 261.63, "confidence": 0.95}]}
+Use frequency_hz: 0 or pitch_midi: null for unvoiced frames. No inference is performed.
 """
 from __future__ import annotations
 
