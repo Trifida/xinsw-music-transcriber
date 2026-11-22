@@ -114,7 +114,7 @@ def convert_npz_to_pitch_json(
 
     destination = Path(output_json)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+    destination.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return report
 
 
@@ -146,7 +146,7 @@ def main() -> int:
             start_time_sec=args.start_time_sec,
         )
     except Exception as exc:
-        parser.exit(2, f"NPZ conversion failed: {exc}\\n")
+        parser.exit(2, f"NPZ conversion failed: {exc}\n")
     print(json.dumps({key: value for key, value in report.items() if key != "frames"},
                      ensure_ascii=False, indent=2))
     print(f"Pitch-track JSON saved: {args.output_json}")
