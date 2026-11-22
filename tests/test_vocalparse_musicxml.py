@@ -146,7 +146,7 @@ def test_captured_colab_sample_roundtrips_notes_rests_and_lyrics(tmp_path):
     ]
     actual_lyrics = musicxml_lyric_alignment(musicxml_path)
     assert [(item["start_beat"], item["lyric"]) for item in actual_lyrics] == expected_lyrics
-    assert len(actual_lyrics) == 31
+    assert len(actual_lyrics) == 33
     assert all(lyric not in ("SP", "·") for _, lyric in expected_lyrics)
 
 
