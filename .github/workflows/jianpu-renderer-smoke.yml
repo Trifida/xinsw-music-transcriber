@@ -7,6 +7,8 @@ on:
       - "musicmaster/core/render.py"
       - "musicmaster/core/vocalparse.py"
       - "tests/test_vocalparse_musicxml.py"
+      - "tests/fixtures/vocalparse_25s_sample.json"
+      - "scripts/render_vocalparse_json.py"
       - "musicmaster/transcribe/lyrics.py"
       - "musicmaster/transcribe/lyric_asr.py"
       - "musicmaster/web/server.py"
@@ -39,11 +41,18 @@ jobs:
       - name: Install renderer test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e . pytest jianpu-ly httpx
+          python -m pip install -e ".[render]" pytest httpx
       - name: Verify original renderer produces real SVG and PDF
         run: python -m pytest -q tests/test_musicmaster.py -k "jianpu_download_labels or original_jianpu_renderer_generates_svg_and_pdf"
       - name: Render VocalParse MusicXML to real jianpu SVG and PDF
         run: python -m pytest -q tests/test_vocalparse_musicxml.py -k vocalparse_musicxml_renders_real_jianpu_svg_and_pdf
+      - name: Render captured VocalParse sample through the offline CLI
+        run: |
+          python scripts/render_vocalparse_json.py tests/fixtures/vocalparse_25s_sample.json /tmp/vocalparse-25s-score
+          test -s /tmp/vocalparse-25s-score/vocalparse.musicxml
+          test -s /tmp/vocalparse-25s-score/staff.svg
+          test -s /tmp/vocalparse-25s-score/jianpu.svg
+          grep -q "如" /tmp/vocalparse-25s-score/staff.svg
       - name: Test lyric tokenization, MusicXML alignment, and ASR adapter
         run: python -m pytest -q tests/test_lyrics.py tests/test_lyric_asr.py
       - name: Check Python syntax
