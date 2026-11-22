@@ -126,6 +126,30 @@ def test_real_colab_50_token_sample_is_preserved():
 
 
 
+def test_captured_colab_sample_roundtrips_notes_rests_and_lyrics(tmp_path):
+    import json
+    from pathlib import Path
+
+    fixture = Path(__file__).parent / "fixtures" / "vocalparse_25s_sample.json"
+    parsed = json.loads(fixture.read_text(encoding="utf-8"))
+    assert len(parsed["words"]) == len(parsed["pitches"]) == len(parsed["notes"]) == 50
+
+    events = vocalparse_tokens_to_events(parsed)
+    musicxml_path = tmp_path / "captured-vocalparse-sample.musicxml"
+    vocalparse_events_to_musicxml(events, parsed["bpm"], musicxml_path)
+
+    assert musicxml_roundtrip_errors(events, musicxml_path, parsed["bpm"]) == []
+    expected_lyrics = [
+        (item["start_beat"], item["lyric"])
+        for item in vocalparse_lyric_alignment(events, parsed["bpm"])
+        if item["display_lyric"]
+    ]
+    actual_lyrics = musicxml_lyric_alignment(musicxml_path)
+    assert [(item["start_beat"], item["lyric"]) for item in actual_lyrics] == expected_lyrics
+    assert len(actual_lyrics) == 31
+    assert all(lyric not in ("SP", "·") for _, lyric in expected_lyrics)
+
+
 def test_lyric_alignment_keeps_one_anchor_and_preserves_continuation_marker(vocalparse_events):
     aligned = vocalparse_lyric_alignment(vocalparse_events, 100)
     displayed = [item for item in aligned if item["display_lyric"]]
