@@ -413,10 +413,12 @@ def run_full_song_transcribe(job, audio_path: str, engine: str = "crepe", key: s
         "vocal_file": "1_分离/vocal.wav",
         "message": "已先从完整混音中提取人声；本版本不额外执行去和声和降噪。",
     }
+    previous_message = result.get("message")
     result["message"] = (
         "完整歌曲已完成基础人声分离并进入主唱扒谱流程。"
         if result.get("ok") else
         "人声已分离，但主唱扒谱未能完整完成；请查看报告和可用产物。"
+        + ((" 原始错误：" + str(previous_message)) if previous_message else "")
     )
     result.setdefault("downloads", [])
     # 将原始歌曲与分离人声一并保留，便于试听、对照和重新处理。
@@ -427,10 +429,10 @@ def run_full_song_transcribe(job, audio_path: str, engine: str = "crepe", key: s
                 result["downloads"].append(entry)
     if result.get("report_md"):
         result["report_md"] += (
-            "\\n\\n## 完整歌曲处理链\\n"
-            "- 已先使用 BS-RoFormer 提取人声，再将人声送入主唱旋律识别。\\n"
-            "- 本版本仅执行基础分离，不自动去和声或降噪，避免额外处理改变主唱音色与音高细节。\\n"
-            "- 原始歌曲与分离人声均保留在下载列表中，便于人工试听核对。\\n"
+            "\n\n## 完整歌曲处理链\n"
+            "- 已先使用 BS-RoFormer 提取人声，再将人声送入主唱旋律识别。\n"
+            "- 本版本仅执行基础分离，不自动去和声或降噪，避免额外处理改变主唱音色与音高细节。\n"
+            "- 原始歌曲与分离人声均保留在下载列表中，便于人工试听核对。\n"
         )
     return result
 
