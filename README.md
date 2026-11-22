@@ -97,6 +97,17 @@ python scripts/render_vocalparse_json.py path/to/vocalparse_result.json output/v
 
 ### 检查已有 TorchCREPE NPZ（不重新运行模型）
 
+确认 NPZ 的真实字段后，可以使用 `scripts/convert_pitch_npz.py` 转换为比较工具所需的 JSON。必须明确指定数组键和时间来源，不会猜测字段名或帧间隔。例如，只有在检查报告确认字段名和时间步长后，才使用类似命令：
+
+```bash
+python scripts/convert_pitch_npz.py vocal_pitch_raw.npz reference_pitch_track.json \\
+  --time-key <时间数组键> --frequency-key <频率数组键> \\
+  --confidence-key <置信度数组键>
+```
+
+如果文件没有时间数组，只有在从原始推理参数或保存代码确认了帧间隔后，才使用 `--hop-seconds`；不要凭估计填写。转换后再用比较脚本的 `--reference-time-offset 30` 对齐 30–55 秒 VocalParse 切片。
+
+
 如果 Google Drive 中已有 `XinsW_Lead_Transcription/TorchCREPE_Test/vocal_pitch_raw.npz`，可直接打开 `notebooks/Inspect_TorchCREPE_NPZ.ipynb`，授权挂载 Drive 后运行唯一代码单元。它只输出 NPZ 内部数组的名称、形状、数据类型、有限值范围和少量样本，并在同一目录保存 `vocal_pitch_raw_inspection.json`。不会导入 TensorFlow/CREPE，不会执行推理，也不会下载模型或占用 GPU。
 
 本地也可运行：
