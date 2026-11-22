@@ -327,6 +327,114 @@ def run_convert(job, file_path: str, direction: str, key: str = "") -> dict:
         return {"ok": False, "message": f"转换失败:{type(e).__name__}: {e}"}
 
 
+# ─────────────────── 完整歌曲自动分离 + 记谱 ─────────────────── #
+class _ProgressWindow:
+    """把子流程进度映射到总任务的一个区间，保证完整歌曲流程进度单调。"""
+    def __init__(self, job, start: float, end: float) -> None:
+        self.job = job
+        self.job_dir = job.job_dir
+        self.start = float(start)
+        self.end = float(end)
+
+    def _map(self, progress: float) -> float:
+        p = max(0.0, min(1.0, float(progress)))
+        return self.start + (self.end - self.start) * p
+
+    def set_stage(self, stage: str, progress: Optional[float] = None) -> None:
+        if progress is None:
+            self.job.set_stage(stage)
+        else:
+            self.job.set_stage(stage, self._map(progress))
+
+    def set_progress(self, progress: float) -> None:
+        self.job.set_progress(self._map(progress))
+
+
+def run_full_song_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
+                             lyrics_text: str = "", auto_lyrics: bool = True) -> dict:
+    """完整歌曲入口：先用现有分离流程提取人声，再复用原有单旋律扒谱流程。"""
+    if not audio_path:
+        return {"ok": False, "message": "请先上传完整歌曲音频。"}
+
+    d = Path(job.job_dir)
+    source = Path(audio_path)
+    source_copy = None
+    try:
+        if source.is_file():
+            source_copy = d / ("source_audio" + (source.suffix.lower() or ".audio"))
+            import shutil
+            shutil.copy2(source, source_copy)
+    except OSError as e:
+        return {"ok": False, "message": f"无法保留原始歌曲：{type(e).__name__}: {e}"}
+
+    job.set_stage("准备自动分离主唱…", 0.03)
+    separated = run_separate(
+        _ProgressWindow(job, 0.03, 0.38),
+        audio_path,
+        stages="1",
+        denoise="dereverb",
+    )
+    if not separated.get("ok"):
+        result = {
+            "ok": False,
+            "message": "完整歌曲的人声分离没有成功，尚未开始扒谱。"
+                       + (" " + str(separated.get("message")) if separated.get("message") else ""),
+            "source_mode": "full-song",
+            "separation": separated,
+            "downloads": [],
+        }
+        if source_copy and source_copy.is_file():
+            result["downloads"].append(_dl_entry(d, source_copy))
+        return result
+
+    vocal_path = d / "1_分离" / "vocal.wav"
+    if not vocal_path.is_file():
+        return {
+            "ok": False,
+            "message": "分离流程返回成功，但没有找到预期的人声文件 1_分离/vocal.wav；为避免误把伴奏送入扒谱，已停止。",
+            "source_mode": "full-song",
+            "separation": separated,
+            "downloads": _downloads(d),
+        }
+
+    job.set_stage("人声已分离，开始识别主唱旋律…", 0.40)
+    result = run_transcribe(
+        _ProgressWindow(job, 0.40, 0.98),
+        str(vocal_path),
+        engine=engine,
+        key=key,
+        lyrics_text=lyrics_text,
+        auto_lyrics=auto_lyrics,
+    )
+    result["source_mode"] = "full-song"
+    result["separation"] = {
+        "ok": True,
+        "method": "BS-RoFormer",
+        "vocal_file": "1_分离/vocal.wav",
+        "message": "已先从完整混音中提取人声；本版本不额外执行去和声和降噪。",
+    }
+    result["message"] = (
+        "完整歌曲已完成基础人声分离并进入主唱扒谱流程。"
+        if result.get("ok") else
+        "人声已分离，但主唱扒谱未能完整完成；请查看报告和可用产物。"
+    )
+    result.setdefault("downloads", [])
+    # 将原始歌曲与分离人声一并保留，便于试听、对照和重新处理。
+    for audio_file in (source_copy, vocal_path):
+        if audio_file and audio_file.is_file():
+            entry = _dl_entry(d, audio_file)
+            if not any(item.get("name") == entry["name"] for item in result["downloads"]):
+                result["downloads"].append(entry)
+    if result.get("report_md"):
+        result["report_md"] += (
+            "\\n\\n## 完整歌曲处理链\\n"
+            "- 已先使用 BS-RoFormer 提取人声，再将人声送入主唱旋律识别。\\n"
+            "- 本版本仅执行基础分离，不自动去和声或降噪，避免额外处理改变主唱音色与音高细节。\\n"
+            "- 原始歌曲与分离人声均保留在下载列表中，便于人工试听核对。\\n"
+        )
+    return result
+
+
 # ─────────────────────────── 记谱 ─────────────────────────── #
 def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                    lyrics_text: str = "", auto_lyrics: bool = True) -> dict:
