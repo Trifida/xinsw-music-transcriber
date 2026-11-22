@@ -59,7 +59,7 @@
     }
 
     // 解读 pane:可信度环 + 概述 + 存疑段 + 报告全文(report_md 始终展示)
-    function renderRead(result) {
+    function renderRead(job, result) {
       if (!paneRead) return;
 
       // 可信度环:第二个 circle(有 stroke-dasharray="264")是进度环
@@ -114,6 +114,46 @@
         } else {
           listen.style.display = 'none';
         }
+      }
+
+      // 任务完成后试听本次上传的真实清唱音频。音频副本位于 job_dir，
+      // 通过受控的 /api/file 路由读取，不依赖浏览器本地临时 URL。
+      var audioBox = paneRead.querySelector('[data-result-audio]');
+      if (result.preview_audio && job && job.id) {
+        if (!audioBox) {
+          audioBox = document.createElement('section');
+          audioBox.setAttribute('data-result-audio', '');
+          audioBox.style.cssText = 'margin:18px 0;padding:16px;border:1px solid rgba(120,130,150,.22);border-radius:14px;background:rgba(120,130,150,.06)';
+          var audioTitle = document.createElement('div');
+          audioTitle.textContent = '本次上传音频 · 真实试听';
+          audioTitle.style.cssText = 'font-weight:600;margin-bottom:10px';
+          var audioNote = document.createElement('div');
+          audioNote.textContent = '这是本次扒谱使用的原始清唱音频，方便对照识别结果。';
+          audioNote.style.cssText = 'font-size:12px;opacity:.72;margin-bottom:10px';
+          var audioControl = document.createElement('audio');
+          audioControl.setAttribute('controls', '');
+          audioControl.preload = 'metadata';
+          audioControl.style.cssText = 'display:block;width:100%;max-width:100%';
+          audioBox.appendChild(audioTitle);
+          audioBox.appendChild(audioNote);
+          audioBox.appendChild(audioControl);
+        }
+        var resultAudio = audioBox.querySelector('audio');
+        if (resultAudio) {
+          resultAudio.pause();
+          resultAudio.src = MM.fileUrl(job.id, result.preview_audio);
+          resultAudio.load();
+        }
+        var reportAnchor = paneRead.querySelector('pre[data-report]');
+        if (reportAnchor && reportAnchor.parentNode) {
+          reportAnchor.parentNode.insertBefore(audioBox, reportAnchor);
+        } else if (!audioBox.parentNode) {
+          paneRead.appendChild(audioBox);
+        }
+      } else if (audioBox) {
+        var oldAudio = audioBox.querySelector('audio');
+        if (oldAudio) { oldAudio.pause(); oldAudio.removeAttribute('src'); oldAudio.load(); }
+        audioBox.parentNode.removeChild(audioBox);
       }
 
       // 报告全文:始终展示(即便软失败)。复用同一个 <pre>,避免重复提交时堆叠。
@@ -182,7 +222,7 @@
       // 软失败且无报告(如引擎环境未就绪):仅有 message,展示并切到解读 pane
       if (result.ok === false && result.report_md == null) {
         MM.toast(result.message || '记谱未能完成。', 'error');
-        renderRead(result); // 隐藏环/存疑、概述显示 message
+        renderRead(job, result); // 隐藏环/存疑、概述显示 message
         MM.switchOut(panel, 0);
         return;
       }
@@ -192,7 +232,7 @@
       if (result.ok === false) {
         MM.toast(result.message || '记谱以失败收场,但已保留报告与可印源稿。', 'error');
       }
-      renderRead(result);
+      renderRead(job, result);
       renderSheet(result);
       renderTake(job, result);
       MM.switchOut(panel, 0);
@@ -238,6 +278,8 @@
       if (autoLyricsEl) autoLyricsEl.checked = true;
       if (btn && btn._mmProg) btn._mmProg.hide();
       if (paneTake) MM.renderDownloads(paneTake.querySelector('.dl-grid'), '', []);
+      var resultAudioBox = panel.querySelector('[data-result-audio]');
+      if (resultAudioBox) resultAudioBox.parentNode.removeChild(resultAudioBox);
       var au = panel.querySelectorAll('audio');
       Array.prototype.forEach.call(au, function (a) { try { a.pause(); } catch (e) {} });
       MM.switchOut(panel, 0);
