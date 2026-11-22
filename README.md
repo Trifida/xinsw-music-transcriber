@@ -59,3 +59,26 @@
 可选参数：`ASR_LANGUAGE`（默认 zh）、`ASR_TIMEOUT_SECONDS`（默认 90，范围 5–240）、`ASR_MAX_FILE_MB`（默认 24）。`GET /api/health` 会返回歌词识别服务是否已配置；配置完成但尚未实际请求时，不代表服务端点已验证可用。
 
 歌词自动排词目前是**按旋律音符顺序初排**，不是带时间戳的强制对齐；请试听并核对每字位置，尤其是拖腔、衬词、重复段和多音节英文。
+
+## VocalParse 实验接入（开发分支）
+
+开发分支 feature/vocalparse-event-musicxml 增加了 VocalParse 结果适配层。它把模型返回的歌词、MIDI 音高和音符时值转换为 beat-based 事件，再生成一份 MusicXML，供五线谱与简谱渲染器共同使用。
+
+```python
+from musicmaster.core import render_vocalparse_result
+
+parsed = {
+    "bpm": 100,
+    "words": ["SP", "你", "好"],
+    "pitches": [0, 60, 62],
+    "notes": ["NOTE_2", "NOTE_4", "NOTE_DOT_4"],
+}
+
+artifacts = render_vocalparse_result(parsed, "output/vocalparse-score")
+# artifacts["musicxml"] 统一的记谱源文件
+# artifacts.get("staff") 五线谱 SVG（需安装 render extra）
+# artifacts.get("jianpu_ly") 简谱 LilyPond 源文件（需安装 jianpu-ly）
+# artifacts.get("jianpu") 简谱 SVG/PDF（还需独立安装 LilyPond CLI）
+```
+
+此接口目前属于实验适配层，不替换现有 transcribe() / Target 生产路径。渲染后端按现有 best-effort 规则运行：未安装可选后端时会跳过对应产物，但仍保留 MusicXML。歌词 · 延续标记暂时保留为无显示歌词的事件，不将其自动解释为延音或重复字；其语义仍需用更多真实歌曲样本确认。自动化测试与真实谱面视觉验收完成前，不应将此实验路径视为已达到生产准确率。
