@@ -233,3 +233,26 @@ def test_dual_notation_render_uses_one_musicxml_source(tmp_path, monkeypatch):
     assert captured["kwargs"]["require_all"] is False
     assert artifacts["staff"].name == "staff.svg"
     assert artifacts["jianpu_ly"].name == "jianpu.ly"
+
+
+@pytest.mark.parametrize("bad_pitch", [60.5, -1, 128, float("nan"), float("inf"), True, "not-a-pitch"])
+def test_vocalparse_rejects_invalid_pitch_without_truncating(bad_pitch):
+    parsed = {
+        "bpm": 100,
+        "words": ["你"],
+        "pitches": [bad_pitch],
+        "notes": ["NOTE_4"],
+    }
+    with pytest.raises(ValueError, match="MIDI pitch"):
+        vocalparse_tokens_to_events(parsed)
+
+
+def test_validate_events_rejects_non_boolean_rest_flag():
+    event = {
+        "start_beat": 0,
+        "duration_beats": 1,
+        "pitch_midi": 60,
+        "is_rest": "false",
+    }
+    with pytest.raises(ValueError, match="is_rest must be a boolean"):
+        validate_events([event], 100)
