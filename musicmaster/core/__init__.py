@@ -25,6 +25,8 @@ from .vocalparse import (
     vocalparse_result_to_musicxml,
     vocalparse_tokens_to_events,
     musicxml_roundtrip_errors,
+    vocalparse_lyric_alignment,
+    musicxml_lyric_alignment,
 )
 from .transcribe import (
     transcribe,
@@ -54,6 +56,8 @@ __all__ = [
     "vocalparse_result_to_musicxml",
     "vocalparse_tokens_to_events",
     "musicxml_roundtrip_errors",
+    "vocalparse_lyric_alignment",
+    "musicxml_lyric_alignment",
     "transcribe",
     "transcribe_to_files",
     "is_transcription_available",
