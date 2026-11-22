@@ -109,7 +109,7 @@ def main() -> int:
                 minimum_coverage=args.minimum_coverage,
             )
             destination = Path(args.output_json)
-            destination.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\\n', encoding='utf-8')
+            destination.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
     except Exception as exc:
         parser.exit(2, f"Pitch comparison failed: {exc}\n")
     print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
