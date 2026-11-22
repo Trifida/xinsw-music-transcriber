@@ -653,6 +653,8 @@ def test_vocalparse_time_mapping_calibration_finds_known_offset_and_scale():
     assert best["reference_time_scale"] == pytest.approx(1.1)
     assert best["median_absolute_error_semitones"] == pytest.approx(0.0)
     assert best["note_coverage"] == 1.0
+    assert result["best_full_coverage_candidate"] is not None
+    assert result["best_full_coverage_candidate"]["note_coverage"] == 1.0
 
 
 def test_vocalparse_time_mapping_calibration_requires_sufficient_coverage():
