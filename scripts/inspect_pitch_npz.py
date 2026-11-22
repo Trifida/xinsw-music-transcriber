@@ -54,7 +54,7 @@ def inspect_npz(path: str | Path) -> dict[str, Any]:
         "notes": [
             "Inspection only: no pitch model is loaded or executed.",
             "Object arrays are not unpickled; allow_pickle remains disabled.",
-            "Array names and shapes must be reviewed before choosing conversion keys.",
+            "Array names and shapes must be reviewed before choosing conversion keys.",\n            "When scalar sample_rate and hop_length are present, hop_seconds is derived arithmetically; pitch-array meaning is never inferred.",
         ],
     }
 
