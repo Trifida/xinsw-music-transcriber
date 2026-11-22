@@ -10,6 +10,8 @@ on:
       - "musicmaster/web/server.py"
       - "musicmaster/web/static/index.html"
       - "musicmaster/web/static/js/transcribe.js"
+      - "musicmaster/web/static/js/xinsw.js"
+      - "musicmaster/web/static/xinsw.html"
       - "requirements/requirements-core.txt"
       - "tests/test_lyrics.py"
       - "tests/test_lyric_asr.py"
@@ -40,9 +42,12 @@ jobs:
         run: python -m pytest -q tests/test_musicmaster.py -k "jianpu_download_labels or original_jianpu_renderer_generates_svg_and_pdf"
       - name: Test lyric tokenization, MusicXML alignment, and ASR adapter
         run: python -m pytest -q tests/test_lyrics.py tests/test_lyric_asr.py
+      - name: Test full-song separation-to-transcription orchestration
+        run: python -m pytest -q tests/test_musicmaster.py -k "full_song_transcription"
       - name: Check Python syntax
         run: python -m compileall -q musicmaster
       - name: Check frontend JavaScript syntax
         run: |
           node --check musicmaster/web/static/js/transcribe.js
+          node --check musicmaster/web/static/js/xinsw.js
           node --check musicmaster/web/static/js/convert.js
