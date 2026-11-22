@@ -74,11 +74,15 @@ parsed = {
     "notes": ["NOTE_2", "NOTE_4", "NOTE_DOT_4"],
 }
 
-artifacts = render_vocalparse_result(parsed, "output/vocalparse-score")
+artifacts = render_vocalparse_result(
+    parsed,
+    "output/vocalparse-score",
+    require_all=True,  # 五线谱与简谱任一后端缺失或失败时直接报错
+)
 # artifacts["musicxml"] 统一的记谱源文件
 # artifacts.get("staff") 五线谱 SVG（需安装 render extra）
 # artifacts.get("jianpu_ly") 简谱 LilyPond 源文件（需安装 jianpu-ly）
 # artifacts.get("jianpu") 简谱 SVG/PDF（还需独立安装 LilyPond CLI）
 ```
 
-此接口目前属于实验适配层，不替换现有 transcribe() / Target 生产路径。渲染后端按现有 best-effort 规则运行：未安装可选后端时会跳过对应产物，但仍保留 MusicXML。歌词 · 延续标记暂时保留为无显示歌词的事件，不将其自动解释为延音或重复字；其语义仍需用更多真实歌曲样本确认。自动化测试与真实谱面视觉验收完成前，不应将此实验路径视为已达到生产准确率。
+此接口目前属于实验适配层，不替换现有 transcribe() / Target 生产路径。默认 `require_all=False`，按 best-effort 规则运行：未安装可选后端时会跳过对应产物，但仍保留 MusicXML。若验收或正式任务必须同时得到五线谱和简谱，请设置 `require_all=True`；任一渲染后端缺失或渲染失败都会明确报错，避免把不完整的双谱结果误认为成功。歌词 · 延续标记暂时保留为无显示歌词的事件，不将其自动解释为延音或重复字；其语义仍需用更多真实歌曲样本确认。自动化测试与真实谱面视觉验收完成前，不应将此实验路径视为已达到生产准确率。
