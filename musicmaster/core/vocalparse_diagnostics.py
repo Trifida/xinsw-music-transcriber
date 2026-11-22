@@ -48,15 +48,23 @@ def compare_vocalparse_to_pitch_track(
     for index, frame in enumerate(pitch_frames):
         try:
             timestamp = float(frame["time_sec"])
-            raw_pitch = frame.get("pitch_midi")
-            pitch = None if raw_pitch is None else float(raw_pitch)
+            if "pitch_midi" in frame:
+                raw_pitch = frame.get("pitch_midi")
+                pitch = None if raw_pitch is None else float(raw_pitch)
+            elif "frequency_hz" in frame:
+                frequency = float(frame["frequency_hz"])
+                if not math.isfinite(frequency) or frequency < 0:
+                    raise ValueError("frequency_hz must be finite and nonnegative")
+                pitch = None if frequency == 0 else 69.0 + 12.0 * math.log2(frequency / 440.0)
+            else:
+                raise ValueError("pitch frame needs pitch_midi or frequency_hz")
             confidence = float(frame.get("confidence", 1.0))
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError(f"invalid pitch frame at index {index}") from exc
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"invalid pitch frame at index {index}: {exc}") from exc
         if not math.isfinite(timestamp) or timestamp < 0:
             raise ValueError(f"invalid time_sec at pitch frame {index}")
         if pitch is not None and (not math.isfinite(pitch) or not 0 < pitch <= 127):
-            raise ValueError(f"invalid pitch_midi at pitch frame {index}")
+            raise ValueError(f"invalid pitch value at pitch frame {index}")
         if not math.isfinite(confidence) or not 0 <= confidence <= 1:
             raise ValueError(f"invalid confidence at pitch frame {index}")
         frames.append((timestamp, pitch, confidence))
