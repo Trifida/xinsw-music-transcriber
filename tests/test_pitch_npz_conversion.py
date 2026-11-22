@@ -127,3 +127,17 @@ def test_converter_refuses_unknown_keys_and_object_arrays(tmp_path):
             time_key="f0",
             frequency_key="unsafe",
         )
+
+
+def test_converter_accepts_single_frame_arrays(tmp_path):
+    source = tmp_path / "single.npz"
+    np.savez(source, times=np.array([30.0]), f0=np.array([[440.0]]))
+
+    result = convert_npz_to_pitch_json(
+        source, tmp_path / "single.json",
+        time_key="times",
+        frequency_key="f0",
+    )
+
+    assert result["frame_count"] == 1
+    assert result["frames"][0]["frequency_hz"] == 440.0
