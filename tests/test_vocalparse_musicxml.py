@@ -110,6 +110,35 @@ def test_vocalparse_result_direct_musicxml_roundtrip(tmp_path):
 
 
 
+def test_pitch_track_comparison_cli_writes_machine_readable_report(tmp_path):
+    import json
+    import runpy
+    from pathlib import Path
+
+    vocalparse_json = tmp_path / "vocalparse.json"
+    track_json = tmp_path / "pitch-track.json"
+    output_json = tmp_path / "comparison.json"
+    vocalparse_json.write_text(
+        json.dumps({"bpm": 100, "words": ["你"], "pitches": [60], "notes": ["NOTE_4"]}),
+        encoding="utf-8",
+    )
+    track_json.write_text(
+        json.dumps({"frames": [
+            {"time_sec": 0.12, "pitch_midi": 60.1, "confidence": 0.9},
+            {"time_sec": 0.24, "pitch_midi": 60.0, "confidence": 0.9},
+            {"time_sec": 0.36, "pitch_midi": 60.2, "confidence": 0.9},
+        ]}),
+        encoding="utf-8",
+    )
+    script = Path(__file__).parents[1] / "scripts" / "compare_vocalparse_pitch_track.py"
+    namespace = runpy.run_path(str(script))
+    report = namespace["compare_files"](vocalparse_json, track_json, output_json)
+
+    assert report["summary"]["compared_note_count"] == 1
+    saved = json.loads(output_json.read_text(encoding="utf-8"))
+    assert saved["summary"]["comparison_type"] == "model_to_model_not_ground_truth"
+
+
 def test_pitch_track_diagnostic_reports_semitone_and_octave_mismatches():
     from musicmaster.core.vocalparse_diagnostics import compare_vocalparse_to_pitch_track
 
