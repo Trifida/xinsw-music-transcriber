@@ -187,3 +187,15 @@ def test_npz_conversion_feeds_vocalparse_comparison_end_to_end(tmp_path):
     assert report["events"][0]["reference_start_sec"] == 30.0
     assert report["events"][0]["reference_median_pitch_midi"] == pytest.approx(60.0, abs=0.1)
     assert output_json.exists()
+
+
+def test_converter_rejects_frequency_outside_midi_range(tmp_path):
+    source = tmp_path / "out_of_range.npz"
+    np.savez(source, times=np.array([0.0]), f0=np.array([1.0]))
+
+    with pytest.raises(ValueError, match="map to MIDI pitches"):
+        convert_npz_to_pitch_json(
+            source, tmp_path / "out.json",
+            time_key="times",
+            frequency_key="f0",
+        )
