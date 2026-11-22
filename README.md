@@ -95,4 +95,29 @@ python scripts/render_vocalparse_json.py path/to/vocalparse_result.json output/v
 
 输入 JSON 须包含 `bpm`、`words`、`pitches`、`notes` 四个字段。默认严格要求五线谱和简谱都成功生成；若只想尽可能生成可用产物，可追加 `--allow-partial`。脚本只读取已保存的识别结果，不会下载模型、不消耗 GPU，也不会重新进行音频推理。
 
+### VocalParse 音高交叉检查（离线，不重新推理）
+
+为便于检查模型音高是否存在八度偏差或明显半音偏差，新增独立的音高轨迹对照工具。它把已保存的 VocalParse 音符，与另一套音高估计器导出的带时间戳 F0 轨迹逐音符比较；不会重新运行 VocalParse、CREPE，也不会下载模型。
+
+先把参考音高轨迹整理为 JSON（时间单位为秒，音高为 MIDI 浮点数；无声帧的 pitch_midi 写 null）：
+
+```json
+{
+  "frames": [
+    {"time_sec": 0.01, "pitch_midi": 60.2, "confidence": 0.95},
+    {"time_sec": 0.02, "pitch_midi": null, "confidence": 0.10}
+  ]
+}
+```
+
+运行：
+
+```bash
+python scripts/compare_vocalparse_pitch_track.py vocalparse_result.json reference_pitch_track.json output/pitch_comparison.json
+```
+
+报告包含每个音符的参考中位音高、半音误差、八度疑似偏差、置信度，以及休止区间的有声音帧比例。默认只取每个音符中间 60% 的时间窗口，减少音符边界混音影响；可用 `--confidence-threshold` 和 `--central-fraction` 调整。
+
+**重要限制：** 这只是两个算法之间的交叉检查，不等于真实音高准确率。CREPE/torchcrepe 本身也可能出错，最终仍需对照原始人声听辨或人工标注。现有 Colab NPZ 的字段结构尚未确认，因此本工具先定义稳定的通用 JSON 接口，不擅自猜测 NPZ 内部数组格式。
+
 此接口目前属于实验适配层，不替换现有 transcribe() / Target 生产路径。默认 `require_all=False`，按 best-effort 规则运行：未安装可选后端时会跳过对应产物，但仍保留 MusicXML。若验收或正式任务必须同时得到五线谱和简谱，请设置 `require_all=True`；任一渲染后端缺失或渲染失败都会明确报错，避免把不完整的双谱结果误认为成功。歌词 · 延续标记暂时保留为无显示歌词的事件，不将其自动解释为延音或重复字；其语义仍需用更多真实歌曲样本确认。自动化测试与真实谱面视觉验收完成前，不应将此实验路径视为已达到生产准确率。
