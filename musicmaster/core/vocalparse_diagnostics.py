@@ -18,6 +18,7 @@ def compare_vocalparse_to_pitch_track(
     *,
     confidence_threshold: float = 0.5,
     central_fraction: float = 0.6,
+    reference_time_offset_sec: float = 0.0,
 ) -> Dict[str, Any]:
     """Compare note events with timestamped reference F0 frames.
 
@@ -70,7 +71,13 @@ def compare_vocalparse_to_pitch_track(
         frames.append((timestamp, pitch, confidence))
     frames.sort(key=lambda item: item[0])
 
+    if isinstance(reference_time_offset_sec, bool) or not isinstance(reference_time_offset_sec, (int, float)):
+        raise ValueError("reference_time_offset_sec must be finite and nonnegative")
+    if not math.isfinite(float(reference_time_offset_sec)) or reference_time_offset_sec < 0:
+        raise ValueError("reference_time_offset_sec must be finite and nonnegative")
+
     trim = (1.0 - float(central_fraction)) / 2.0
+    time_offset = float(reference_time_offset_sec)
     seconds_per_beat = 60.0 / tempo
     rows = []
     note_errors = []
@@ -104,7 +111,7 @@ def compare_vocalparse_to_pitch_track(
         selected = [
             (pitch, confidence)
             for timestamp, pitch, confidence in frames
-            if sample_start <= timestamp <= sample_end
+            if sample_start + time_offset <= timestamp <= sample_end + time_offset
         ]
         voiced = [
             (pitch, confidence)
@@ -115,6 +122,8 @@ def compare_vocalparse_to_pitch_track(
             "event_index": index,
             "start_sec": start_sec,
             "end_sec": end_sec,
+            "reference_start_sec": start_sec + time_offset,
+            "reference_end_sec": end_sec + time_offset,
             "is_rest": is_rest,
             "frame_count": len(selected),
             "voiced_frame_count": len(voiced),
@@ -162,6 +171,7 @@ def compare_vocalparse_to_pitch_track(
         ),
         "confidence_threshold": float(confidence_threshold),
         "central_fraction": float(central_fraction),
+        "reference_time_offset_sec": time_offset,
         "comparison_type": "model_to_model_not_ground_truth",
     }
     return {"summary": summary, "events": rows}
