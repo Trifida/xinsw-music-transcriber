@@ -17,7 +17,7 @@
     audio{display:none;width:100%;margin-top:14px}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
     button{border:0;border-radius:10px;padding:12px 22px;font:600 15px system-ui,-apple-system,\"Microsoft YaHei\",sans-serif;cursor:pointer}
     #start{background:var(--accent);color:#20180b}#start:disabled{opacity:.45;cursor:not-allowed}#clear{background:#ffffff10;color:var(--text);border:1px solid var(--line)}
-    .hint{font-size:13px;color:var(--muted);margin-top:14px}.status{display:flex;justify-content:space-between;gap:12px;align-items:center}.stage{font-weight:600}.pct{font-variant-numeric:tabular-nums;color:var(--accent)}
+    .mode-toggle{display:flex;gap:10px;align-items:flex-start;margin-top:16px;color:var(--muted);font-size:14px}.mode-toggle input{position:static;width:auto;height:auto;opacity:1;pointer-events:auto;margin-top:5px;accent-color:var(--accent)}.hint{font-size:13px;color:var(--muted);margin-top:14px}.status{display:flex;justify-content:space-between;gap:12px;align-items:center}.stage{font-weight:600}.pct{font-variant-numeric:tabular-nums;color:var(--accent)}
     .bar{height:9px;background:#ffffff12;border-radius:99px;overflow:hidden;margin:14px 0 8px}.fill{height:100%;width:0;background:var(--accent);transition:width .3s}
     .message{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);font-size:14px}.message.error{color:var(--bad)}.result-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.result-head h2{margin:0;font-size:20px}
     .score{background:#fff;border-radius:10px;padding:14px;overflow:auto;margin-top:14px;min-height:90px}.score svg{max-width:100%;height:auto}.downloads{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-top:14px}
@@ -35,18 +35,18 @@
 
   <section class="panel">
     <label class="drop" id="drop" for="audio">
-      <strong>选择或拖入主唱音频</strong>
+      <strong>选择或拖入歌曲音频</strong>
       <span>支持 MP3、WAV、M4A、FLAC 等常见音频格式</span>
       <span>建议优先使用清晰、单声部的主唱音轨</span>
     </label>
     <input id="audio" type="file" accept="audio/*">
     <div class="file" id="fileInfo"></div>
-    <audio id="preview" controls></audio>
+    <audio id="preview" controls></audio>\n    <label class="mode-toggle"><input id="autoSeparate" type="checkbox"> <span>这是完整歌曲，先自动分离主唱再扒谱（需要服务器已配置 GPU 分离环境）</span></label>
     <div class="actions">
       <button id="start" disabled>开始自动扒谱</button>
       <button id="clear" type="button">清空</button>
     </div>
-    <p class="hint">本测试页固定使用 MusicMaster 的 CREPE 主唱识别流程，不需要选择算法。当前页面由本机服务提供，只能在运行服务的电脑上打开；首次运行前需准备好模型。</p>
+    <p class="hint">默认按已分离主唱音轨处理。勾选“完整歌曲”后，系统会先运行 BS-RoFormer 基础人声分离，再识别主唱；如果服务器没有配置分离环境，会明确提示，不会把伴奏误送入扒谱。</p>
   </section>
 
   <section class="panel hidden" id="progressPanel" aria-live="polite">
