@@ -85,4 +85,14 @@ artifacts = render_vocalparse_result(
 # artifacts.get("jianpu") 简谱 SVG/PDF（还需独立安装 LilyPond CLI）
 ```
 
+也可以直接使用命令行，把已经保存的 VocalParse 推理 JSON 转成双谱，不需要再次加载模型或运行音频推理：
+
+```bash
+# 先安装五线谱与简谱渲染依赖；系统还需单独安装 LilyPond CLI
+python -m pip install -e ".[render]"
+python scripts/render_vocalparse_json.py path/to/vocalparse_result.json output/vocalparse-score
+```
+
+输入 JSON 须包含 `bpm`、`words`、`pitches`、`notes` 四个字段。默认严格要求五线谱和简谱都成功生成；若只想尽可能生成可用产物，可追加 `--allow-partial`。脚本只读取已保存的识别结果，不会下载模型、不消耗 GPU，也不会重新进行音频推理。
+
 此接口目前属于实验适配层，不替换现有 transcribe() / Target 生产路径。默认 `require_all=False`，按 best-effort 规则运行：未安装可选后端时会跳过对应产物，但仍保留 MusicXML。若验收或正式任务必须同时得到五线谱和简谱，请设置 `require_all=True`；任一渲染后端缺失或渲染失败都会明确报错，避免把不完整的双谱结果误认为成功。歌词 · 延续标记暂时保留为无显示歌词的事件，不将其自动解释为延音或重复字；其语义仍需用更多真实歌曲样本确认。自动化测试与真实谱面视觉验收完成前，不应将此实验路径视为已达到生产准确率。
