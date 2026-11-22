@@ -45,7 +45,7 @@ def compare_files(
     destination = Path(output_json)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\\n",
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     return report
@@ -70,7 +70,7 @@ def main() -> int:
             central_fraction=args.central_fraction,
         )
     except Exception as exc:
-        parser.exit(2, f"Pitch comparison failed: {exc}\\n")
+        parser.exit(2, f"Pitch comparison failed: {exc}\n")
     print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
     print(f"Detailed report: {args.output_json}")
     return 0
