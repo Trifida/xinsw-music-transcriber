@@ -580,3 +580,85 @@ def test_saved_vocalparse_json_cli_rejects_missing_model_fields(tmp_path):
 
     with pytest.raises(ValueError, match="missing required keys"):
         namespace["render_file"](input_json, tmp_path / "out")
+
+
+
+def test_pitch_track_diagnostic_supports_reference_time_scale():
+    from musicmaster.core.vocalparse_diagnostics import compare_vocalparse_to_pitch_track
+
+    events = [
+        {"start_beat": 0, "duration_beats": 1, "pitch_midi": 60, "is_rest": False}
+    ]
+    # One beat is 0.6s at 100 BPM; the reference recording runs 10% longer.
+    frames = [
+        {"time_sec": 30.132, "pitch_midi": 60.0, "confidence": 0.95},
+        {"time_sec": 30.330, "pitch_midi": 60.1, "confidence": 0.95},
+        {"time_sec": 30.528, "pitch_midi": 60.0, "confidence": 0.95},
+    ]
+    result = compare_vocalparse_to_pitch_track(
+        events, 100, frames,
+        reference_time_offset_sec=30.0,
+        reference_time_scale=1.1,
+    )
+    assert result["summary"]["compared_note_count"] == 1
+    assert result["summary"]["reference_time_scale"] == pytest.approx(1.1)
+    assert result["events"][0]["reference_end_sec"] == pytest.approx(30.66)
+
+
+def test_pitch_track_diagnostic_rejects_invalid_reference_time_scale():
+    from musicmaster.core.vocalparse_diagnostics import compare_vocalparse_to_pitch_track
+
+    with pytest.raises(ValueError, match="reference_time_scale"):
+        compare_vocalparse_to_pitch_track(
+            [{"start_beat": 0, "duration_beats": 1, "pitch_midi": 60, "is_rest": False}],
+            100, [], reference_time_scale=0,
+        )
+
+
+def test_vocalparse_time_mapping_calibration_finds_known_offset_and_scale():
+    from musicmaster.core.vocalparse_diagnostics import calibrate_vocalparse_time_mapping
+
+    events = [
+        {"start_beat": 0, "duration_beats": 1, "pitch_midi": 60, "is_rest": False},
+        {"start_beat": 1, "duration_beats": 1, "pitch_midi": 64, "is_rest": False},
+    ]
+    frames = []
+    # The true mapping is reference_time = 30.2 + clip_time * 1.1.
+    # Build a dense 10 ms contour with a pitch transition at the mapped note boundary.
+    for index in range(0, 150):
+        clip_time = index * 0.01
+        reference_time = 30.2 + clip_time * 1.1
+        pitch = 60.0 if clip_time < 0.6 else 64.0
+        frames.append({
+            "time_sec": reference_time,
+            "pitch_midi": pitch,
+            "confidence": 0.95,
+        })
+
+    result = calibrate_vocalparse_time_mapping(
+        events, 100, frames,
+        offset_values=[30.0, 30.2, 30.4],
+        scale_values=[1.0, 1.1, 1.2],
+        minimum_coverage=1.0,
+    )
+    best = result["best_candidate"]
+    assert best is not None
+    assert best["reference_time_offset_sec"] == pytest.approx(30.2)
+    assert best["reference_time_scale"] == pytest.approx(1.1)
+    assert best["median_absolute_error_semitones"] == pytest.approx(0.0)
+    assert best["note_coverage"] == 1.0
+
+
+def test_vocalparse_time_mapping_calibration_requires_sufficient_coverage():
+    from musicmaster.core.vocalparse_diagnostics import calibrate_vocalparse_time_mapping
+
+    events = [
+        {"start_beat": 0, "duration_beats": 1, "pitch_midi": 60, "is_rest": False}
+    ]
+    result = calibrate_vocalparse_time_mapping(
+        events, 100, [],
+        offset_values=[0.0], scale_values=[1.0],
+        minimum_coverage=1.0,
+    )
+    assert result["best_candidate"] is None
+    assert result["eligible_candidate_count"] == 0
