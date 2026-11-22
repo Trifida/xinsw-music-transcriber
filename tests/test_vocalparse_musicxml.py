@@ -335,3 +335,58 @@ def test_dual_notation_render_can_require_both_outputs(tmp_path, monkeypatch):
     assert captured["kwargs"]["formats"] == ("staff", "jianpu")
     assert captured["kwargs"]["require_all"] is True
     assert set(artifacts) == {"musicxml", "staff", "jianpu"}
+
+
+def test_saved_vocalparse_json_cli_renders_without_model_inference(tmp_path, monkeypatch):
+    import json
+    import runpy
+
+    input_json = tmp_path / "saved-vocalparse.json"
+    input_json.write_text(
+        json.dumps({
+            "bpm": 100,
+            "words": ["你"],
+            "pitches": [60],
+            "notes": ["NOTE_4"],
+        }, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    captured = {}
+    expected = {
+        "musicxml": tmp_path / "out" / "vocalparse.musicxml",
+        "staff": tmp_path / "out" / "staff.svg",
+        "jianpu": tmp_path / "out" / "jianpu.svg",
+    }
+
+    import musicmaster.core.vocalparse as vocalparse_module
+
+    def fake_render(parsed, output_dir, **kwargs):
+        captured["parsed"] = parsed
+        captured["output_dir"] = output_dir
+        captured["kwargs"] = kwargs
+        return expected
+
+    monkeypatch.setattr(vocalparse_module, "render_vocalparse_result", fake_render)
+    namespace = runpy.run_path(
+        str(__import__("pathlib").Path(__file__).parents[1] / "scripts" / "render_vocalparse_json.py")
+    )
+    artifacts = namespace["render_file"](input_json, tmp_path / "out")
+
+    assert artifacts == expected
+    assert captured["parsed"]["words"] == ["你"]
+    assert captured["kwargs"]["require_all"] is True
+
+
+def test_saved_vocalparse_json_cli_rejects_missing_model_fields(tmp_path):
+    import json
+    import runpy
+    from pathlib import Path
+
+    input_json = tmp_path / "incomplete.json"
+    input_json.write_text(json.dumps({"bpm": 100}), encoding="utf-8")
+    namespace = runpy.run_path(
+        str(Path(__file__).parents[1] / "scripts" / "render_vocalparse_json.py")
+    )
+
+    with pytest.raises(ValueError, match="missing required keys"):
+        namespace["render_file"](input_json, tmp_path / "out")
