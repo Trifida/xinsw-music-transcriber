@@ -165,6 +165,22 @@ def test_pitch_track_diagnostic_reports_semitone_and_octave_mismatches():
     assert summary["comparison_type"] == "model_to_model_not_ground_truth"
 
 
+def test_pitch_track_diagnostic_accepts_frequency_hz_frames():
+    from musicmaster.core.vocalparse_diagnostics import compare_vocalparse_to_pitch_track
+
+    result = compare_vocalparse_to_pitch_track(
+        [{"start_beat": 0, "duration_beats": 1, "pitch_midi": 60, "is_rest": False}],
+        100,
+        [
+            {"time_sec": 0.12, "frequency_hz": 261.6256, "confidence": 0.95},
+            {"time_sec": 0.24, "frequency_hz": 261.6256, "confidence": 0.95},
+            {"time_sec": 0.36, "frequency_hz": 0, "confidence": 0.1},
+        ],
+    )
+    assert result["summary"]["compared_note_count"] == 1
+    assert result["events"][0]["reference_median_pitch_midi"] == pytest.approx(60, abs=0.001)
+
+
 def test_pitch_track_diagnostic_rejects_invalid_reference_frames():
     from musicmaster.core.vocalparse_diagnostics import compare_vocalparse_to_pitch_track
 
