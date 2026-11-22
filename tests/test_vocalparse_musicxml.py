@@ -1,6 +1,7 @@
 """Regression tests for the VocalParse -> MusicXML event adapter."""
 from __future__ import annotations
 
+import importlib.util
 import pytest
 
 music21 = pytest.importorskip("music21")
@@ -14,6 +15,7 @@ from musicmaster.core.vocalparse import (  # noqa: E402
     vocalparse_tokens_to_events,
     vocalparse_lyric_alignment,
 )
+from musicmaster.core.render import musicxml_to_lilypond, render_staff_svg
 
 
 @pytest.fixture
@@ -173,3 +175,30 @@ def test_musicxml_displays_lyrics_once_and_never_on_rests(tmp_path, vocalparse_e
         and not event.get("is_lyric_continuation", False)
     ]
     assert [(row["start_beat"], row["lyric"]) for row in actual] == expected
+
+
+
+def test_jianpu_source_retains_chinese_lyrics_when_backend_is_installed(tmp_path, vocalparse_events):
+    if importlib.util.find_spec("jianpu_ly") is None:
+        pytest.skip("jianpu-ly is not installed")
+    destination = tmp_path / "jianpu-lyrics.musicxml"
+    vocalparse_events_to_musicxml(vocalparse_events, 100, destination)
+
+    lilypond_source = musicxml_to_lilypond(destination)
+    # This is an integration contract: the conversion must not silently discard
+    # Chinese lyrics while converting MusicXML into jianpu-ly/LilyPond source.
+    for lyric in ("如", "果", "世", "界", "变", "换", "太", "快"):
+        assert lyric in lilypond_source
+
+
+def test_staff_svg_retains_chinese_lyrics_when_verovio_is_installed(tmp_path, vocalparse_events):
+    if importlib.util.find_spec("verovio") is None:
+        pytest.skip("verovio is not installed")
+    destination = tmp_path / "staff-lyrics.musicxml"
+    svg_path = tmp_path / "staff-lyrics.svg"
+    vocalparse_events_to_musicxml(vocalparse_events, 100, destination)
+
+    render_staff_svg(destination, svg_path)
+    svg = svg_path.read_text(encoding="utf-8")
+    for lyric in ("如", "果", "世", "界", "变", "换", "太", "快"):
+        assert lyric in svg
