@@ -99,13 +99,13 @@ python scripts/render_vocalparse_json.py path/to/vocalparse_result.json output/v
 
 为便于检查模型音高是否存在八度偏差或明显半音偏差，新增独立的音高轨迹对照工具。它把已保存的 VocalParse 音符，与另一套音高估计器导出的带时间戳 F0 轨迹逐音符比较；不会重新运行 VocalParse、CREPE，也不会下载模型。
 
-先把参考音高轨迹整理为 JSON（时间单位为秒，音高为 MIDI 浮点数；无声帧的 pitch_midi 写 null）：
+参考轨迹整理为 JSON（时间单位为秒）。每帧可提供 MIDI 浮点音高 `pitch_midi`，也可直接提供 CREPE 常见的频率 `frequency_hz`（Hz）；无声帧分别用 `pitch_midi: null` 或 `frequency_hz: 0` 表示。置信度 `confidence` 可选：
 
 ```json
 {
   "frames": [
-    {"time_sec": 0.01, "pitch_midi": 60.2, "confidence": 0.95},
-    {"time_sec": 0.02, "pitch_midi": null, "confidence": 0.10}
+    {"time_sec": 0.01, "frequency_hz": 261.63, "confidence": 0.95},
+    {"time_sec": 0.02, "frequency_hz": 0, "confidence": 0.10}
   ]
 }
 ```
