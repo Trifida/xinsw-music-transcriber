@@ -618,18 +618,23 @@ def test_pitch_track_diagnostic_rejects_invalid_reference_time_scale():
 def test_vocalparse_time_mapping_calibration_finds_known_offset_and_scale():
     from musicmaster.core.vocalparse_diagnostics import calibrate_vocalparse_time_mapping
 
-    pitches = [60, 62, 65, 69]
+    pitches = [
+        55, 62, 67, 58, 72, 60, 69, 55, 65, 58,
+        67, 72, 62, 69, 60, 65, 55, 72, 58, 67,
+        60, 69, 62, 55, 72, 65, 58, 69, 67, 60,
+        62, 72, 55, 65, 69, 58, 60, 67, 72, 62,
+    ]
     events = [
-        {"start_beat": index, "duration_beats": 1, "pitch_midi": pitch, "is_rest": False}
+        {"start_beat": index * 0.5, "duration_beats": 0.5, "pitch_midi": pitch, "is_rest": False}
         for index, pitch in enumerate(pitches)
     ]
     frames = []
     # The true mapping is reference_time = 30.2 + clip_time * 1.1.
-    # Four distinct pitches make accumulated time-scale drift observable.
-    for index in range(0, 280):
+    # A varied 40-note contour makes accumulated offset/scale drift observable.
+    for index in range(1400):
         clip_time = index * 0.01
         reference_time = 30.2 + clip_time * 1.1
-        note_index = min(int(clip_time / 0.6), len(pitches) - 1)
+        note_index = min(int(clip_time / 0.3), len(pitches) - 1)
         frames.append({
             "time_sec": reference_time,
             "pitch_midi": float(pitches[note_index]),
