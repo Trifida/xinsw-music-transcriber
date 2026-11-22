@@ -1,6 +1,7 @@
 """Regression tests for the VocalParse -> MusicXML event adapter."""
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import pytest
 
@@ -14,6 +15,7 @@ from musicmaster.core.vocalparse import (  # noqa: E402
     vocalparse_result_to_musicxml,
     vocalparse_tokens_to_events,
     vocalparse_lyric_alignment,
+    render_vocalparse_result,
 )
 from musicmaster.core.render import musicxml_to_lilypond, render_staff_svg
 
@@ -202,3 +204,32 @@ def test_staff_svg_retains_chinese_lyrics_when_verovio_is_installed(tmp_path, vo
     svg = svg_path.read_text(encoding="utf-8")
     for lyric in ("如", "果", "世", "界", "变", "换", "太", "快"):
         assert lyric in svg
+
+
+
+def test_dual_notation_render_uses_one_musicxml_source(tmp_path, monkeypatch):
+    render_module = importlib.import_module("musicmaster.core.render")
+    captured = {}
+
+    def fake_render(musicxml, out_dir, **kwargs):
+        captured["musicxml"] = musicxml
+        captured["out_dir"] = out_dir
+        captured["kwargs"] = kwargs
+        return {"staff": tmp_path / "staff.svg", "jianpu_ly": tmp_path / "jianpu.ly"}
+
+    monkeypatch.setattr(render_module, "render", fake_render)
+    parsed = {
+        "bpm": 100,
+        "words": ["SP", "你", "·", "好"],
+        "pitches": [0, 60, 60, 62],
+        "notes": ["NOTE_2", "NOTE_4", "NOTE_8", "NOTE_DOT_4"],
+    }
+
+    artifacts = render_vocalparse_result(parsed, tmp_path / "score")
+
+    assert artifacts["musicxml"].exists()
+    assert captured["musicxml"] == artifacts["musicxml"]
+    assert captured["kwargs"]["formats"] == ("staff", "jianpu")
+    assert captured["kwargs"]["require_all"] is False
+    assert artifacts["staff"].name == "staff.svg"
+    assert artifacts["jianpu_ly"].name == "jianpu.ly"
