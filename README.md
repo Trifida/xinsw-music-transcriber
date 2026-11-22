@@ -97,15 +97,20 @@ python scripts/render_vocalparse_json.py path/to/vocalparse_result.json output/v
 
 ### 检查已有 TorchCREPE NPZ（不重新运行模型）
 
-确认 NPZ 的真实字段后，可以使用 `scripts/convert_pitch_npz.py` 转换为比较工具所需的 JSON。必须明确指定数组键和时间来源，不会猜测字段名或帧间隔。例如，只有在检查报告确认字段名和时间步长后，才使用类似命令：
+已检查 Google Drive 中现有的 `vocal_pitch_raw.npz`，确认其字段为：
+
+- `pitch`：27309 帧，`float32`，频率单位为 Hz，范围约 91.24–706.67。
+- `periodicity`：27309 帧，`float32`，周期性指标，范围约 0–0.9863，可作为置信度筛选指标。
+- `sample_rate=16000`、`hop_length=160`，因此帧间隔为 0.01 秒（100 帧/秒），总覆盖约 273.09 秒。
+
+可以直接转换，不需要再次运行 TorchCREPE：
 
 ```bash
-python scripts/convert_pitch_npz.py vocal_pitch_raw.npz reference_pitch_track.json \\
-  --time-key <时间数组键> --frequency-key <频率数组键> \\
-  --confidence-key <置信度数组键>
+python scripts/convert_pitch_npz.py vocal_pitch_raw.npz reference_pitch_track.json \
+  --hop-seconds 0.01 --frequency-key pitch --confidence-key periodicity
 ```
 
-如果文件没有时间数组，只有在从原始推理参数或保存代码确认了帧间隔后，才使用 `--hop-seconds`；不要凭估计填写。转换后再用比较脚本的 `--reference-time-offset 30` 对齐 30–55 秒 VocalParse 切片。
+对 30–55 秒 VocalParse 切片进行比较时，使用整首歌曲参考轨迹，并增加 `--reference-time-offset 30`。比较工具默认置信度阈值为 0.5，只采样每个音符中间 60% 的区间。注意：periodicity 是算法指标，不是人工标注的真值；交叉比较只能发现两套算法之间的差异，不能单独证明哪一套音高正确。
 
 
 如果 Google Drive 中已有 `XinsW_Lead_Transcription/TorchCREPE_Test/vocal_pitch_raw.npz`，可直接打开 `notebooks/Inspect_TorchCREPE_NPZ.ipynb`，授权挂载 Drive 后运行唯一代码单元。它只输出 NPZ 内部数组的名称、形状、数据类型、有限值范围和少量样本，并在同一目录保存 `vocal_pitch_raw_inspection.json`。不会导入 TensorFlow/CREPE，不会执行推理，也不会下载模型或占用 GPU。
@@ -143,6 +148,6 @@ python scripts/compare_vocalparse_pitch_track.py vocalparse_result.json referenc
 
 报告包含每个音符的参考中位音高、半音误差、八度疑似偏差、置信度，以及休止区间的有声音帧比例。默认只取每个音符中间 60% 的时间窗口，减少音符边界混音影响；可用 `--confidence-threshold` 和 `--central-fraction` 调整。
 
-**重要限制：** 这只是两个算法之间的交叉检查，不等于真实音高准确率。CREPE/torchcrepe 本身也可能出错，最终仍需对照原始人声听辨或人工标注。现有 Colab NPZ 的字段结构尚未确认，因此本工具先定义稳定的通用 JSON 接口，不擅自猜测 NPZ 内部数组格式。
+**重要限制：** 这只是两个算法之间的交叉检查，不等于真实音高准确率。CREPE/torchcrepe 本身也可能出错，最终仍需对照原始人声听辨或人工标注。当前已确认 TorchCREPE NPZ 的字段名与帧间隔，转换时应使用上述明确参数；其他来源的 NPZ 仍须先检查字段语义，不可直接套用。
 
 此接口目前属于实验适配层，不替换现有 transcribe() / Target 生产路径。默认 `require_all=False`，按 best-effort 规则运行：未安装可选后端时会跳过对应产物，但仍保留 MusicXML。若验收或正式任务必须同时得到五线谱和简谱，请设置 `require_all=True`；任一渲染后端缺失或渲染失败都会明确报错，避免把不完整的双谱结果误认为成功。歌词 · 延续标记暂时保留为无显示歌词的事件，不将其自动解释为延音或重复字；其语义仍需用更多真实歌曲样本确认。自动化测试与真实谱面视觉验收完成前，不应将此实验路径视为已达到生产准确率。
