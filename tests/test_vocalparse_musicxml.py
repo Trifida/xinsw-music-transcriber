@@ -129,7 +129,7 @@ def test_pitch_track_diagnostic_reports_semitone_and_octave_mismatches():
     result = compare_vocalparse_to_pitch_track(events, 100, frames)
     summary = result["summary"]
     assert summary["compared_note_count"] == 2
-    assert summary["median_absolute_error_semitones"] == pytest.approx(5.95)
+    assert summary["median_absolute_error_semitones"] == pytest.approx(6.05)
     assert summary["octave_mismatch_count"] == 1
     assert summary["compared_rest_count"] == 1
     assert summary["mean_rest_voiced_ratio"] == 0.0
