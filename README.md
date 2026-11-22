@@ -123,6 +123,18 @@ python scripts/inspect_pitch_npz.py path/to/vocal_pitch_raw.npz --output-json vo
 
 检查报告用于确认旧文件的真实字段结构。若文件同时包含标量 `sample_rate` 和 `hop_length`，检查器会按 `hop_length / sample_rate` 算出帧间隔；若存在 `periodicity`，还会列出与它帧数相同的数值数组候选。候选只代表形状相符，不代表它一定是 F0/音高数组。确认字段语义后，再显式指定 `--frequency-key`、`--confidence-key` 和 `--hop-seconds`；不要猜测数组键名，也不要把不确定的数组直接当作音高轨迹。
 
+### Colab 一键交叉验证（已有 NPZ，不重新推理）
+
+已增加 `notebooks/TorchCREPE_VocalParse_CrossCheck.ipynb`。在 Colab 打开并运行唯一代码单元后，它会：
+
+1. 挂载 Google Drive，读取已有的 `TorchCREPE_Test/vocal_pitch_raw.npz`。
+2. 使用已确认的 `pitch`、`periodicity`、0.01 秒帧间隔转换参考音高轨迹。
+3. 读取仓库内已保存的 25 秒 VocalParse 测试样本。
+4. 将该片段按 30 秒偏移与整首 TorchCREPE 轨迹对齐，输出逐音符半音误差、疑似八度偏差和休止区间有声比例。
+5. 将完整结果写入 Drive 的 `TorchCREPE_Test/vocalparse_pitch_comparison_30_55s.json`，同时保存 `reference_pitch_track.json`。
+
+该 Notebook 直接加载项目中的独立 Python 源文件，不安装整个项目、不安装音频推理依赖、不下载模型，也不需要 GPU。首次运行会从 GitHub 下载当前开发分支的代码。它验证的是仓库中保存的 25 秒测试样本，并非未经确认的整首 VocalParse 推理结果。
+
 ### VocalParse 音高交叉检查（离线，不重新推理）
 
 为便于检查模型音高是否存在八度偏差或明显半音偏差，新增独立的音高轨迹对照工具。它把已保存的 VocalParse 音符，与另一套音高估计器导出的带时间戳 F0 轨迹逐音符比较；不会重新运行 VocalParse、CREPE，也不会下载模型。
