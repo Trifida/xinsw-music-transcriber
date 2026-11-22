@@ -35,7 +35,10 @@ def validate_events(events: Sequence[Mapping[str, Any]], bpm: float) -> List[Dic
         if not math.isfinite(duration) or duration <= 0:
             raise ValueError(f"event {index} has invalid duration_beats: {duration}")
 
-        is_rest = bool(source.get("is_rest", False))
+        is_rest_value = source.get("is_rest", False)
+        if not isinstance(is_rest_value, bool):
+            raise ValueError(f"event {index} is_rest must be a boolean")
+        is_rest = is_rest_value
         pitch = source.get("pitch_midi")
         if not is_rest:
             if isinstance(pitch, bool) or not isinstance(pitch, int) or not 0 <= pitch <= 127:
@@ -276,7 +279,19 @@ def vocalparse_tokens_to_events(parsed: Mapping[str, Any]) -> List[Dict[str, Any
             raise ValueError(f"unsupported VocalParse duration token at index {index}: {token}")
         duration = _DURATION_BEATS[token]
         word = str(word)
-        pitch = int(pitch_value)
+        if isinstance(pitch_value, bool):
+            raise ValueError(f"invalid MIDI pitch at index {index}: {pitch_value!r}")
+        try:
+            numeric_pitch = float(pitch_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid MIDI pitch at index {index}: {pitch_value!r}") from exc
+        if (
+            not math.isfinite(numeric_pitch)
+            or not numeric_pitch.is_integer()
+            or not 0 <= numeric_pitch <= 127
+        ):
+            raise ValueError(f"invalid MIDI pitch at index {index}: {pitch_value!r}")
+        pitch = int(numeric_pitch)
         is_rest = word == "SP" or pitch == 0
         is_continuation = word == "·"
 
