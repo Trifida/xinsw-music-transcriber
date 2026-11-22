@@ -16,6 +16,7 @@ on:
       - "tests/test_lyrics.py"
       - "tests/test_lyric_asr.py"
       - "musicmaster/web/runners.py"
+      - "scripts/gpu_full_song_smoke.py"
       - "tests/test_musicmaster.py"
       - "examples/twinkle.jianpu"
       - ".github/workflows/jianpu-renderer-smoke.yml"
@@ -45,7 +46,7 @@ jobs:
       - name: Test full-song separation-to-transcription orchestration
         run: python -m pytest -q tests/test_musicmaster.py -k "full_song_transcription"
       - name: Check Python syntax
-        run: python -m compileall -q musicmaster
+        run: python -m compileall -q musicmaster scripts/gpu_full_song_smoke.py
       - name: Check frontend JavaScript syntax
         run: |
           node --check musicmaster/web/static/js/transcribe.js
