@@ -279,7 +279,15 @@
       if (btn && btn._mmProg) btn._mmProg.hide();
       if (paneTake) MM.renderDownloads(paneTake.querySelector('.dl-grid'), '', []);
       var resultAudioBox = panel.querySelector('[data-result-audio]');
-      if (resultAudioBox) resultAudioBox.parentNode.removeChild(resultAudioBox);
+      if (resultAudioBox) {
+        var resultAudio = resultAudioBox.querySelector('audio');
+        if (resultAudio) {
+          try { resultAudio.pause(); } catch (e) {}
+          resultAudio.removeAttribute('src');
+          resultAudio.load();
+        }
+        if (resultAudioBox.parentNode) resultAudioBox.parentNode.removeChild(resultAudioBox);
+      }
       var au = panel.querySelectorAll('audio');
       Array.prototype.forEach.call(au, function (a) { try { a.pause(); } catch (e) {} });
       MM.switchOut(panel, 0);
