@@ -34,7 +34,7 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
 
 # audio-separator 模型缓存目录:可用环境变量 MUSICMASTER_SEP_MODELS 覆盖(权重首次自动下载至此)
-MODEL_DIR = os.environ.get("MUSICMASTER_SEP_MODELS") or r"C:\tmp\audio-separator-models"
+MODEL_DIR = os.environ.get("MUSICMASTER_SEP_MODELS") or (\n    r"C:\\tmp\\audio-separator-models" if os.name == "nt"\n    else str(Path.home() / ".cache" / "audio-separator-models")\n)
 
 # 各段可选模型(默认 = 老板/对比选定项)
 SEP_MODELS = {
