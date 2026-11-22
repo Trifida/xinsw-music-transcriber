@@ -141,3 +141,49 @@ def test_converter_accepts_single_frame_arrays(tmp_path):
 
     assert result["frame_count"] == 1
     assert result["frames"][0]["frequency_hz"] == 440.0
+
+
+def test_npz_conversion_feeds_vocalparse_comparison_end_to_end(tmp_path):
+    from scripts.compare_vocalparse_pitch_track import compare_files
+
+    source = tmp_path / "existing_pitch.npz"
+    track_json = tmp_path / "reference_pitch_track.json"
+    vocalparse_json = tmp_path / "vocalparse_clip.json"
+    output_json = tmp_path / "comparison.json"
+
+    # A 30-55 second full-song reference window for a 25-second VocalParse clip.
+    np.savez(
+        source,
+        timestamps=np.array([30.12, 30.24, 30.36, 30.48]),
+        f0_hz=np.array([261.6256, 261.9, 261.7, 0.0]),
+        periodicity=np.array([0.95, 0.96, 0.94, 0.1]),
+    )
+    convert_npz_to_pitch_json(
+        source,
+        track_json,
+        time_key="timestamps",
+        frequency_key="f0_hz",
+        confidence_key="periodicity",
+    )
+    vocalparse_json.write_text(
+        json.dumps({
+            "bpm": 100,
+            "words": ["你"],
+            "pitches": [60],
+            "notes": ["NOTE_4"],
+        }),
+        encoding="utf-8",
+    )
+
+    report = compare_files(
+        vocalparse_json,
+        track_json,
+        output_json,
+        reference_time_offset_sec=30.0,
+    )
+
+    assert report["summary"]["compared_note_count"] == 1
+    assert report["summary"]["reference_time_offset_sec"] == 30.0
+    assert report["events"][0]["reference_start_sec"] == 30.0
+    assert report["events"][0]["reference_median_pitch_midi"] == pytest.approx(60.0, abs=0.1)
+    assert output_json.exists()
