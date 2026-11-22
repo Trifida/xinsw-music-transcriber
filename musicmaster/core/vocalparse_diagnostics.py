@@ -12,6 +12,20 @@ from bisect import bisect_left, bisect_right
 from typing import Any, Dict, Mapping, Sequence
 
 
+def _percentile(values: Sequence[float], fraction: float) -> float:
+    """Linearly interpolated percentile for a nonempty numeric sequence."""
+    ordered = sorted(float(value) for value in values)
+    if not ordered:
+        raise ValueError("percentile requires at least one value")
+    position = (len(ordered) - 1) * fraction
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    weight = position - lower
+    return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
+
+
 def compare_vocalparse_to_pitch_track(
     events: Sequence[Mapping[str, Any]],
     bpm: float,
@@ -144,17 +158,38 @@ def compare_vocalparse_to_pitch_track(
                 rest_voiced_ratios.append(ratio)
         else:
             row["vocalparse_pitch_midi"] = expected_pitch
+            row["reference_voiced_frame_ratio"] = len(voiced) / len(selected) if selected else None
             if voiced:
-                reference_pitch = float(statistics.median(pitch for pitch, _ in voiced))
+                reference_values = [pitch for pitch, _ in voiced]
+                confidence_values = [confidence for _, confidence in voiced]
+                reference_pitch = float(statistics.median(reference_values))
+                pitch_q25 = _percentile(reference_values, 0.25)
+                pitch_q75 = _percentile(reference_values, 0.75)
+                pitch_mad = float(statistics.median(abs(value - reference_pitch) for value in reference_values))
                 error = float(expected_pitch) - reference_pitch
                 row["reference_median_pitch_midi"] = reference_pitch
+                row["reference_pitch_q25_midi"] = pitch_q25
+                row["reference_pitch_q75_midi"] = pitch_q75
+                row["reference_pitch_iqr_semitones"] = pitch_q75 - pitch_q25
+                row["reference_pitch_mad_semitones"] = pitch_mad
+                row["reference_pitch_min_midi"] = min(reference_values)
+                row["reference_pitch_max_midi"] = max(reference_values)
                 row["pitch_error_semitones"] = error
-                row["reference_confidence_mean"] = statistics.mean(conf for _, conf in voiced)
+                row["reference_confidence_mean"] = statistics.mean(confidence_values)
+                row["reference_confidence_median"] = float(statistics.median(confidence_values))
                 row["is_octave_mismatch"] = abs(abs(error) - 12.0) <= 1.0
                 note_errors.append((error, row["is_octave_mismatch"]))
             else:
                 row["reference_median_pitch_midi"] = None
+                row["reference_pitch_q25_midi"] = None
+                row["reference_pitch_q75_midi"] = None
+                row["reference_pitch_iqr_semitones"] = None
+                row["reference_pitch_mad_semitones"] = None
+                row["reference_pitch_min_midi"] = None
+                row["reference_pitch_max_midi"] = None
                 row["pitch_error_semitones"] = None
+                row["reference_confidence_mean"] = None
+                row["reference_confidence_median"] = None
                 row["is_octave_mismatch"] = None
         rows.append(row)
 
