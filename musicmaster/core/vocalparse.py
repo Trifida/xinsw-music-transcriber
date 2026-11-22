@@ -313,3 +313,60 @@ def vocalparse_result_to_musicxml(
     return vocalparse_events_to_musicxml(
         events, bpm, out_path, key_name=key_name, time_signature=time_signature
     )
+
+
+
+def vocalparse_lyric_alignment(
+    events: Sequence[Mapping[str, Any]], bpm: float
+) -> List[Dict[str, Any]]:
+    """Build a notation-ready, per-note lyric alignment without guessing marker semantics.
+
+    A normal lyric is anchored to its own note. A VocalParse middle-dot marker
+    remains an explicit continuation marker with no displayed lyric. It is not
+    silently merged into the preceding word because that interpretation needs
+    model-level confirmation.
+    """
+    normalized = validate_events(events, bpm)
+    aligned: List[Dict[str, Any]] = []
+    note_index = 0
+    for event in normalized:
+        if event["is_rest"]:
+            continue
+        note_index += 1
+        raw_word = str(event.get("raw_word") or "")
+        is_continuation = bool(event.get("is_lyric_continuation", False)) or raw_word == "·"
+        lyric = event.get("lyric")
+        if is_continuation or lyric in (None, "", "SP", "·"):
+            lyric = None
+        aligned.append({
+            "event_id": event.get("event_id"),
+            "note_index": note_index,
+            "start_beat": float(event["start_beat"]),
+            "end_beat": float(event["end_beat"]),
+            "raw_word": raw_word,
+            "lyric": str(lyric) if lyric is not None else None,
+            "display_lyric": lyric is not None,
+            "is_continuation_marker": is_continuation,
+        })
+    return aligned
+
+
+def musicxml_lyric_alignment(musicxml_path: PathLike) -> List[Dict[str, Any]]:
+    """Read displayed lyric anchors from MusicXML for layout regression checks."""
+    from music21 import converter, note
+
+    parsed = converter.parse(str(musicxml_path))
+    if not parsed.parts:
+        return []
+    flat = parsed.parts[0].flatten()
+    aligned: List[Dict[str, Any]] = []
+    note_index = 0
+    for element in flat.getElementsByClass(note.Note):
+        note_index += 1
+        for lyric in element.lyrics:
+            aligned.append({
+                "note_index": note_index,
+                "start_beat": float(element.offset),
+                "lyric": str(lyric.text or ""),
+            })
+    return aligned
