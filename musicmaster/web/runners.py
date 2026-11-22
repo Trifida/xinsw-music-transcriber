@@ -112,6 +112,40 @@ def _watch_artifacts(job, d: Path, milestones: list, stop_event: "threading.Even
         stop_event.wait(interval)
 
 
+def get_separation_status() -> dict:
+    """轻量检查独立分离环境、audio-separator 包和 BS-RoFormer 权重是否就绪。"""
+    sep_python = _sep_python()
+    if not sep_python:
+        return {"ready": False, "python_configured": False, "package_available": False,
+                "model_available": False, "message": "未配置分离环境 Python(.venv-sep)。"}
+    package_available = False
+    try:
+        probe = subprocess.run(
+            [sep_python, "-c", "import importlib.util; raise SystemExit(0 if importlib.util.find_spec('audio_separator') else 1)"],
+            cwd=str(REPO), env=_subprocess_env(), capture_output=True, text=True, timeout=15,
+        )
+        package_available = probe.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        package_available = False
+    try:
+        from musicmaster.separate import pipeline as sep_pipeline
+        model_name = sep_pipeline.SEP_MODELS["bs_roformer"]
+        model_path = Path(sep_pipeline.MODEL_DIR).expanduser() / model_name
+        model_available = model_path.is_file()
+    except Exception:
+        model_available = False
+        model_name = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
+    ready = package_available and model_available
+    if not package_available:
+        message = "已找到分离 Python，但未安装 audio-separator。"
+    elif not model_available:
+        message = "分离依赖已安装，但 BS-RoFormer 权重尚未缓存；首次运行需下载模型。"
+    else:
+        message = "分离 Python、audio-separator 和 BS-RoFormer 权重均已就绪；GPU 可用性仍需实际推理验证。"
+    return {"ready": ready, "python_configured": True,
+            "package_available": package_available, "model_available": model_available,
+            "model": model_name, "message": message}
+
 def _sep_python() -> Optional[str]:
     """分离 venv(.venv-sep)的 python;优先级:环境变量 > paths.local.json > vendor 默认。"""
     from musicmaster import _paths
