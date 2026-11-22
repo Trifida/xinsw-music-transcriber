@@ -44,7 +44,10 @@ def validate_events(events: Sequence[Mapping[str, Any]], bpm: float) -> List[Dic
         event = dict(source)
         event["start_beat"] = start
         event["duration_beats"] = duration
-        event["end_beat"] = start + duration
+        calculated_end = start + duration
+        if "end_beat" in source and not math.isclose(float(source["end_beat"]), calculated_end, abs_tol=_TOL):
+            raise ValueError(f"event {index} end_beat does not match start_beat + duration_beats")
+        event["end_beat"] = calculated_end
         event["is_rest"] = is_rest
         normalized.append(event)
 
@@ -223,3 +226,90 @@ def musicxml_roundtrip_errors(
                 errors.append(f"rest {index} {label}: expected {left}, got {right}")
 
     return errors
+
+
+# VocalParse symbol durations are expressed in quarter-note beats.
+_DURATION_BEATS = {
+    "NOTE_1": 4.0,
+    "NOTE_DOT_1": 6.0,
+    "NOTE_2": 2.0,
+    "NOTE_DOT_2": 3.0,
+    "NOTE_4": 1.0,
+    "NOTE_DOT_4": 1.5,
+    "NOTE_8": 0.5,
+    "NOTE_DOT_8": 0.75,
+    "NOTE_16": 0.25,
+    "NOTE_DOT_16": 0.375,
+    "NOTE_32": 0.125,
+    "NOTE_DOT_32": 0.1875,
+}
+
+
+def vocalparse_tokens_to_events(parsed: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """Convert VocalParse's parsed words/pitches/duration tokens into beat events.
+
+    SP and MIDI pitch 0 are rests. The middle-dot marker is preserved as a
+    lyric-continuation event, not promoted to a new lyric syllable.
+    """
+    try:
+        bpm = float(parsed["bpm"])
+        words = list(parsed["words"])
+        pitches = list(parsed["pitches"])
+        durations = list(parsed["notes"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("parsed result must contain bpm, words, pitches, and notes arrays") from exc
+
+    if not (len(words) == len(pitches) == len(durations)):
+        raise ValueError(
+            "VocalParse words, pitches, and notes arrays must have equal lengths"
+        )
+    if not math.isfinite(bpm) or bpm <= 0:
+        raise ValueError("parsed bpm must be a finite positive number")
+
+    events: List[Dict[str, Any]] = []
+    cursor = 0.0
+    seconds_per_beat = 60.0 / bpm
+
+    for index, (word, pitch_value, token) in enumerate(zip(words, pitches, durations)):
+        token = str(token)
+        if token not in _DURATION_BEATS:
+            raise ValueError(f"unsupported VocalParse duration token at index {index}: {token}")
+        duration = _DURATION_BEATS[token]
+        word = str(word)
+        pitch = int(pitch_value)
+        is_rest = word == "SP" or pitch == 0
+        is_continuation = word == "·"
+
+        event = {
+            "event_id": f"vp-{index + 1:05d}",
+            "raw_word": word,
+            "lyric": None if is_rest or is_continuation else word,
+            "pitch_midi": None if is_rest else pitch,
+            "duration_token": token,
+            "duration_beats": duration,
+            "start_beat": cursor,
+            "end_beat": cursor + duration,
+            "start_sec": cursor * seconds_per_beat,
+            "end_sec": (cursor + duration) * seconds_per_beat,
+            "is_rest": is_rest,
+            "is_lyric_continuation": is_continuation,
+        }
+        events.append(event)
+        cursor += duration
+
+    return validate_events(events, bpm)
+
+
+def vocalparse_result_to_musicxml(
+    parsed: Mapping[str, Any],
+    out_path: PathLike,
+    *,
+    key_name: str | None = None,
+    time_signature: str = "4/4",
+) -> Path:
+    """Convert a VocalParse parsed result directly to MusicXML."""
+    bpm = float(parsed["bpm"])
+    events = vocalparse_tokens_to_events(parsed)
+    return vocalparse_events_to_musicxml(
+        events, bpm, out_path, key_name=key_name, time_signature=time_signature
+    )
