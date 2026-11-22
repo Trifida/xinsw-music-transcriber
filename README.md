@@ -126,6 +126,8 @@ python scripts/inspect_pitch_npz.py path/to/vocal_pitch_raw.npz --output-json vo
 
 ```bash
 python scripts/compare_vocalparse_pitch_track.py vocalparse_result.json reference_pitch_track.json output/pitch_comparison.json
+
+如果 VocalParse 输入是原曲的 30–55 秒切片，而参考音高轨迹来自整首歌曲，请增加 `--reference-time-offset 30`，让切片内 0 秒对应参考轨迹的 30 秒。偏移量单位为秒，默认 0；报告会同时保留片段相对时间和参考轨迹绝对时间。
 ```
 
 报告包含每个音符的参考中位音高、半音误差、八度疑似偏差、置信度，以及休止区间的有声音帧比例。默认只取每个音符中间 60% 的时间窗口，减少音符边界混音影响；可用 `--confidence-threshold` 和 `--central-fraction` 调整。
