@@ -9,6 +9,8 @@ from musicmaster.core.vocalparse import (  # noqa: E402
     musicxml_roundtrip_errors,
     validate_events,
     vocalparse_events_to_musicxml,
+    vocalparse_result_to_musicxml,
+    vocalparse_tokens_to_events,
 )
 
 
@@ -68,3 +70,33 @@ def test_musicxml_roundtrip_restores_split_notes_and_rests(tmp_path, vocalparse_
     assert destination.exists()
     assert destination.stat().st_size > 0
     assert musicxml_roundtrip_errors(vocalparse_events, destination, 100) == []
+
+
+
+def test_vocalparse_tokens_build_beat_events():
+    parsed = {
+        "bpm": 100,
+        "words": ["SP", "你", "·", "好"],
+        "pitches": [0, 60, 60, 62],
+        "notes": ["NOTE_2", "NOTE_4", "NOTE_8", "NOTE_DOT_4"],
+    }
+    events = vocalparse_tokens_to_events(parsed)
+    assert len(events) == 4
+    assert events[0]["is_rest"] is True
+    assert events[1]["lyric"] == "你"
+    assert events[2]["is_lyric_continuation"] is True
+    assert events[2]["lyric"] is None
+    assert events[-1]["end_beat"] == 5.0
+
+
+def test_vocalparse_result_direct_musicxml_roundtrip(tmp_path):
+    parsed = {
+        "bpm": 100,
+        "words": ["SP", "你", "·", "好"],
+        "pitches": [0, 60, 60, 62],
+        "notes": ["NOTE_2", "NOTE_4", "NOTE_8", "NOTE_DOT_4"],
+    }
+    events = vocalparse_tokens_to_events(parsed)
+    destination = tmp_path / "vocalparse-direct.musicxml"
+    vocalparse_result_to_musicxml(parsed, destination)
+    assert musicxml_roundtrip_errors(events, destination, 100) == []
