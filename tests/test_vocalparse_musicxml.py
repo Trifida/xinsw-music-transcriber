@@ -189,8 +189,14 @@ def test_jianpu_source_retains_chinese_lyrics_when_backend_is_installed(tmp_path
     lilypond_source = musicxml_to_lilypond(destination)
     # This is an integration contract: the conversion must not silently discard
     # Chinese lyrics while converting MusicXML into jianpu-ly/LilyPond source.
-    for lyric in ("如", "果", "世", "界", "变", "换", "太", "快"):
+    expected_lyrics = ("如", "果", "世", "界", "变", "换", "太", "快")
+    for lyric in expected_lyrics:
         assert lyric in lilypond_source
+    # jianpu-ly should emit an actual Lyrics context, not merely leave the
+    # characters in metadata or comments; the syllables must remain ordered.
+    assert r"\\lyricsto" in lilypond_source
+    lyric_positions = [lilypond_source.index(lyric) for lyric in expected_lyrics]
+    assert lyric_positions == sorted(lyric_positions)
 
 
 def test_staff_svg_retains_chinese_lyrics_when_verovio_is_installed(tmp_path, vocalparse_events):
