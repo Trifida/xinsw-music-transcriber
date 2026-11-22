@@ -393,12 +393,14 @@ def render_vocalparse_result(
     page: int = 1,
     jianpu_format: str = "svg",
     lilypond_timeout: float = 120.0,
+    require_all: bool = False,
 ) -> Dict[str, Path]:
     """Create one MusicXML source and render VocalParse output as staff and jianpu.
 
-    Both notation renderers receive the exact same MusicXML file. Missing optional
-    render backends follow the existing renderer's best-effort behavior; the
-    MusicXML source is always included in the returned artifact map.
+    Both notation renderers receive the exact same MusicXML file. By default,
+    missing optional render backends follow the existing best-effort behavior;
+    set require_all=True to fail unless both requested score formats render.
+    The MusicXML source is always included in the returned artifact map.
     """
     from .render import render
 
@@ -417,6 +419,6 @@ def render_vocalparse_result(
         page=page,
         jianpu_format=jianpu_format,
         lilypond_timeout=lilypond_timeout,
-        require_all=False,
+        require_all=require_all,
     )
     return {"musicxml": musicxml_path, **artifacts}
