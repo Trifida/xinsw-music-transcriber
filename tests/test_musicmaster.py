@@ -285,6 +285,8 @@ def test_xinsw_frontend_is_a_single_automatic_lead_vocal_entry():
     assert 'id="audio" type="file" accept="audio/*"' in page
     assert "engine', 'crepe'" in script
     assert "'/api/transcribe'" in script
+    assert "auto_separate" in script
+    assert "autoSeparate" in page
     assert "job.progress" in script
     assert "result.staff_svg" in script
     assert "result.downloads" in script
