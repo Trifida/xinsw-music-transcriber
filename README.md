@@ -95,6 +95,18 @@ python scripts/render_vocalparse_json.py path/to/vocalparse_result.json output/v
 
 输入 JSON 须包含 `bpm`、`words`、`pitches`、`notes` 四个字段。默认严格要求五线谱和简谱都成功生成；若只想尽可能生成可用产物，可追加 `--allow-partial`。脚本只读取已保存的识别结果，不会下载模型、不消耗 GPU，也不会重新进行音频推理。
 
+### 检查已有 TorchCREPE NPZ（不重新运行模型）
+
+如果 Google Drive 中已有 `XinsW_Lead_Transcription/TorchCREPE_Test/vocal_pitch_raw.npz`，可直接打开 `notebooks/Inspect_TorchCREPE_NPZ.ipynb`，授权挂载 Drive 后运行唯一代码单元。它只输出 NPZ 内部数组的名称、形状、数据类型、有限值范围和少量样本，并在同一目录保存 `vocal_pitch_raw_inspection.json`。不会导入 TensorFlow/CREPE，不会执行推理，也不会下载模型或占用 GPU。
+
+本地也可运行：
+
+```bash
+python scripts/inspect_pitch_npz.py path/to/vocal_pitch_raw.npz --output-json vocal_pitch_raw_inspection.json
+```
+
+检查报告用于确认旧文件的真实字段结构；确认前不要猜测数组键名或时间步长，也不要把不确定的数组直接当作音高轨迹。
+
 ### VocalParse 音高交叉检查（离线，不重新推理）
 
 为便于检查模型音高是否存在八度偏差或明显半音偏差，新增独立的音高轨迹对照工具。它把已保存的 VocalParse 音符，与另一套音高估计器导出的带时间戳 F0 轨迹逐音符比较；不会重新运行 VocalParse、CREPE，也不会下载模型。
