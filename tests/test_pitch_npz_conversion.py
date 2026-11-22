@@ -199,3 +199,42 @@ def test_converter_rejects_frequency_outside_midi_range(tmp_path):
             time_key="times",
             frequency_key="f0",
         )
+
+
+def test_npz_inspector_derives_hop_and_lists_shape_matches_without_guessing(tmp_path):
+    from scripts.inspect_pitch_npz import inspect_npz
+
+    source = tmp_path / "torchcrepe.npz"
+    np.savez(
+        source,
+        periodicity=np.array([0.1, 0.8, 0.9], dtype=np.float32),
+        sample_rate=np.array(16000, dtype=np.int64),
+        hop_length=np.array(160, dtype=np.int64),
+        f0=np.array([0.0, 220.0, 221.0], dtype=np.float32),
+        unrelated=np.array([1.0, 2.0], dtype=np.float32),
+    )
+
+    report = inspect_npz(source)
+
+    assert report["derived_metadata"]["hop_seconds"] == pytest.approx(0.01)
+    assert report["derived_metadata"]["frame_rate_hz"] == pytest.approx(100.0)
+    assert report["frame_alignment"]["anchor_array"] == "periodicity"
+    assert report["frame_alignment"]["frame_count"] == 3
+    assert report["frame_alignment"]["same_length_numeric_candidates"] == ["f0"]
+    assert "meaning is not inferred" in report["frame_alignment"]["warning"]
+
+
+def test_npz_inspector_does_not_derive_hop_without_both_metadata_values(tmp_path):
+    from scripts.inspect_pitch_npz import inspect_npz
+
+    source = tmp_path / "partial_metadata.npz"
+    np.savez(
+        source,
+        periodicity=np.array([0.1, 0.8], dtype=np.float32),
+        sample_rate=np.array(16000, dtype=np.int64),
+    )
+
+    report = inspect_npz(source)
+
+    assert report["derived_metadata"] == {}
+    assert report["frame_alignment"]["same_length_numeric_candidates"] == []
