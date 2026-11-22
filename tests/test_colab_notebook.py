@@ -16,7 +16,7 @@ def test_colab_notebook_is_valid_and_uses_free_ephemeral_runtime():
         for cell in cells
         for line in cell.get("source", [])
     )
-    assert "experiment/musicmaster-standalone" in source
+    assert "zipball/" in source
     assert "google.colab.kernel.proxyPort(7860)" in source
     assert "MUSICMASTER_HOST" in source
     assert "model-full.h5" in source
