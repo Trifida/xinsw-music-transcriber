@@ -152,8 +152,12 @@ def _sep_python() -> Optional[str]:
     p = _paths.resolve("sep_python", "MUSICMASTER_SEP_PYTHON", None)
     if p and Path(p).is_file():
         return p
-    for cand in (REPO / "vendor" / ".venv-sep" / "Scripts" / "python.exe",
-                 REPO / ".venv-sep" / "Scripts" / "python.exe"):
+    for cand in (
+        REPO / "vendor" / ".venv-sep" / "Scripts" / "python.exe",
+        REPO / ".venv-sep" / "Scripts" / "python.exe",
+        REPO / "vendor" / ".venv-sep" / "bin" / "python",
+        REPO / ".venv-sep" / "bin" / "python",
+    ):
         if cand.is_file():
             return str(cand)
     return None
