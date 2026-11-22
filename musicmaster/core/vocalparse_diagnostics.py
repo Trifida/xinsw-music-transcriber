@@ -21,9 +21,9 @@ def compare_vocalparse_to_pitch_track(
 ) -> Dict[str, Any]:
     """Compare note events with timestamped reference F0 frames.
 
-    Each pitch frame must contain time_sec and pitch_midi; confidence is
-    optional and defaults to 1.0. A null pitch denotes an unvoiced frame.
-    Only the central central_fraction of each event is sampled to reduce
+    Each pitch frame must contain time_sec and either pitch_midi or frequency_hz;
+    confidence is optional and defaults to 1.0. Null MIDI or zero Hz is unvoiced.
+    Only the central fraction of each event is sampled to reduce
     boundary contamination. Rests are checked for voiced-frame contamination.
 
     The reference contour is a second estimator, not human-verified ground
