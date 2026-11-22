@@ -160,6 +160,27 @@ python scripts/compare_vocalparse_pitch_track.py vocalparse_result.json referenc
 
 报告包含每个音符的参考中位音高、半音误差、八度疑似偏差、置信度，以及休止区间的有声音帧比例。默认只取每个音符中间 60% 的时间窗口，减少音符边界混音影响；可用 `--confidence-threshold` 和 `--central-fraction` 调整。
 
+#### 自动校准切片时间轴（新增）
+
+如果 VocalParse 输入是歌曲中的一个切片，而参考 F0 是整首歌的轨迹，可以同时搜索切片起点偏移和时间尺度：
+
+```bash
+python scripts/compare_vocalparse_pitch_track.py vocalparse_result.json reference_pitch_track.json output/pitch_comparison.json \
+  --reference-time-offset 30 \
+  --calibrate-time-mapping \
+  --calibrate-offset-range 29.5 31.0 0.1 \
+  --calibrate-scale-range 0.96 1.10 0.01 \
+  --minimum-coverage 0.8
+```
+
+- 时间映射公式：`参考轨迹时间 = 起点偏移 + VocalParse片段时间 × 时间尺度`。
+- `--reference-time-offset` 和 `--reference-time-scale` 用于固定参数比较；时间尺度默认 1.0。
+- `--calibrate-time-mapping` 会按指定网格搜索偏移与时间尺度，并将排名写入输出 JSON 的 `time_mapping_calibration` 字段。
+- 默认只接受至少覆盖 80% VocalParse 音符的候选，避免某个参数因为只碰巧比较到少数简单音符而胜出。
+- 候选按中位绝对音高误差排序，再以覆盖率作为次级排序依据。多个候选可能同样好，尤其当旋律重复或长音较多时；这时应保留并检查候选列表，不能把第一名当成唯一真实时间轴。
+- 时间尺度大于 1 表示参考音轨的时间跨度比按 VocalParse BPM 换算的跨度更长；它只是时间轴诊断参数，不会自动改写 BPM、音符时值或 MIDI 音高。
+
+
 **重要限制：** 这只是两个算法之间的交叉检查，不等于真实音高准确率。CREPE/torchcrepe 本身也可能出错，最终仍需对照原始人声听辨或人工标注。当前已确认 TorchCREPE NPZ 的字段名与帧间隔，转换时应使用上述明确参数；其他来源的 NPZ 仍须先检查字段语义，不可直接套用。
 
 此接口目前属于实验适配层，不替换现有 transcribe() / Target 生产路径。默认 `require_all=False`，按 best-effort 规则运行：未安装可选后端时会跳过对应产物，但仍保留 MusicXML。若验收或正式任务必须同时得到五线谱和简谱，请设置 `require_all=True`；任一渲染后端缺失或渲染失败都会明确报错，避免把不完整的双谱结果误认为成功。歌词 · 延续标记暂时保留为无显示歌词的事件，不将其自动解释为延音或重复字；其语义仍需用更多真实歌曲样本确认。自动化测试与真实谱面视觉验收完成前，不应将此实验路径视为已达到生产准确率。
