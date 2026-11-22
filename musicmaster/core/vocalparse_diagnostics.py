@@ -256,6 +256,7 @@ def calibrate_vocalparse_time_mapping(
         item["reference_time_offset_sec"],
         item["reference_time_scale"],
     ))
+    full_coverage = [item for item in eligible if item["compared_note_count"] == note_count]
     return {
         "method": "grid_search_offset_and_time_scale",
         "minimum_coverage": float(minimum_coverage),
@@ -263,6 +264,7 @@ def calibrate_vocalparse_time_mapping(
         "candidate_count": len(candidates),
         "eligible_candidate_count": len(eligible),
         "best_candidate": eligible[0] if eligible else None,
+        "best_full_coverage_candidate": full_coverage[0] if full_coverage else None,
         "candidates": sorted(
             candidates,
             key=lambda item: (
