@@ -376,6 +376,45 @@ def test_saved_vocalparse_json_cli_renders_without_model_inference(tmp_path, mon
     assert captured["kwargs"]["require_all"] is True
 
 
+def test_saved_vocalparse_json_cli_allows_partial_render_when_requested(tmp_path, monkeypatch):
+    import json
+    import runpy
+    from pathlib import Path
+
+    input_json = tmp_path / "saved-vocalparse.json"
+    input_json.write_text(
+        json.dumps({"bpm": 100, "words": ["你"], "pitches": [60], "notes": ["NOTE_4"]}),
+        encoding="utf-8",
+    )
+    captured = {}
+    import musicmaster.core.vocalparse as vocalparse_module
+
+    def fake_render(parsed, output_dir, **kwargs):
+        captured.update(kwargs)
+        return {"musicxml": Path(output_dir) / "vocalparse.musicxml"}
+
+    monkeypatch.setattr(vocalparse_module, "render_vocalparse_result", fake_render)
+    script = Path(__file__).parents[1] / "scripts" / "render_vocalparse_json.py"
+    namespace = runpy.run_path(str(script))
+    namespace["render_file"](input_json, tmp_path / "out", require_all=False)
+
+    assert captured["require_all"] is False
+
+
+def test_saved_vocalparse_json_cli_reports_invalid_json(tmp_path):
+    import runpy
+    from pathlib import Path
+
+    input_json = tmp_path / "broken.json"
+    input_json.write_text("{not valid JSON", encoding="utf-8")
+    namespace = runpy.run_path(
+        str(Path(__file__).parents[1] / "scripts" / "render_vocalparse_json.py")
+    )
+
+    with pytest.raises(ValueError, match="Invalid JSON"):
+        namespace["render_file"](input_json, tmp_path / "out")
+
+
 def test_saved_vocalparse_json_cli_rejects_missing_model_fields(tmp_path):
     import json
     import runpy
