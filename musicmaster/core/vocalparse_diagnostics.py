@@ -19,6 +19,7 @@ def compare_vocalparse_to_pitch_track(
     confidence_threshold: float = 0.5,
     central_fraction: float = 0.6,
     reference_time_offset_sec: float = 0.0,
+    reference_time_scale: float = 1.0,
 ) -> Dict[str, Any]:
     """Compare note events with timestamped reference F0 frames.
 
@@ -75,9 +76,14 @@ def compare_vocalparse_to_pitch_track(
         raise ValueError("reference_time_offset_sec must be finite and nonnegative")
     if not math.isfinite(float(reference_time_offset_sec)) or reference_time_offset_sec < 0:
         raise ValueError("reference_time_offset_sec must be finite and nonnegative")
+    if isinstance(reference_time_scale, bool) or not isinstance(reference_time_scale, (int, float)):
+        raise ValueError("reference_time_scale must be finite and positive")
+    if not math.isfinite(float(reference_time_scale)) or reference_time_scale <= 0:
+        raise ValueError("reference_time_scale must be finite and positive")
 
     trim = (1.0 - float(central_fraction)) / 2.0
     time_offset = float(reference_time_offset_sec)
+    time_scale = float(reference_time_scale)
     seconds_per_beat = 60.0 / tempo
     rows = []
     note_errors = []
@@ -111,7 +117,7 @@ def compare_vocalparse_to_pitch_track(
         selected = [
             (pitch, confidence)
             for timestamp, pitch, confidence in frames
-            if sample_start + time_offset <= timestamp <= sample_end + time_offset
+            if sample_start * time_scale + time_offset <= timestamp <= sample_end * time_scale + time_offset
         ]
         voiced = [
             (pitch, confidence)
@@ -122,8 +128,8 @@ def compare_vocalparse_to_pitch_track(
             "event_index": index,
             "start_sec": start_sec,
             "end_sec": end_sec,
-            "reference_start_sec": start_sec + time_offset,
-            "reference_end_sec": end_sec + time_offset,
+            "reference_start_sec": start_sec * time_scale + time_offset,
+            "reference_end_sec": end_sec * time_scale + time_offset,
             "is_rest": is_rest,
             "frame_count": len(selected),
             "voiced_frame_count": len(voiced),
@@ -172,6 +178,100 @@ def compare_vocalparse_to_pitch_track(
         "confidence_threshold": float(confidence_threshold),
         "central_fraction": float(central_fraction),
         "reference_time_offset_sec": time_offset,
+        "reference_time_scale": time_scale,
         "comparison_type": "model_to_model_not_ground_truth",
     }
     return {"summary": summary, "events": rows}
+
+
+
+def calibrate_vocalparse_time_mapping(
+    events: Sequence[Mapping[str, Any]],
+    bpm: float,
+    pitch_frames: Sequence[Mapping[str, Any]],
+    *,
+    offset_values: Sequence[float],
+    scale_values: Sequence[float],
+    confidence_threshold: float = 0.5,
+    central_fraction: float = 0.6,
+    minimum_coverage: float = 0.8,
+) -> Dict[str, Any]:
+    """Grid-search clip-to-reference offset and time scale.
+
+    Candidates are ranked by median absolute pitch error, then by greater note
+    coverage. A minimum coverage gate prevents a candidate from winning merely
+    because it compares only a few easy notes. This is a diagnostic fit, not a
+    BPM correction or proof of ground-truth timing.
+    """
+    if isinstance(minimum_coverage, bool) or not isinstance(minimum_coverage, (int, float)):
+        raise ValueError("minimum_coverage must be between 0 and 1")
+    if not math.isfinite(float(minimum_coverage)) or not 0 < minimum_coverage <= 1:
+        raise ValueError("minimum_coverage must be between 0 and 1")
+
+    offsets = [float(value) for value in offset_values]
+    scales = [float(value) for value in scale_values]
+    if not offsets or any(not math.isfinite(value) or value < 0 for value in offsets):
+        raise ValueError("offset_values must be a nonempty list of finite nonnegative values")
+    if not scales or any(not math.isfinite(value) or value <= 0 for value in scales):
+        raise ValueError("scale_values must be a nonempty list of finite positive values")
+
+    note_count = sum(not bool(event.get("is_rest", False)) for event in events)
+    if note_count == 0:
+        raise ValueError("at least one pitched note is required for calibration")
+
+    candidates = []
+    required_count = math.ceil(note_count * float(minimum_coverage))
+    for offset in offsets:
+        for scale in scales:
+            result = compare_vocalparse_to_pitch_track(
+                events,
+                bpm,
+                pitch_frames,
+                confidence_threshold=confidence_threshold,
+                central_fraction=central_fraction,
+                reference_time_offset_sec=offset,
+                reference_time_scale=scale,
+            )
+            summary = result["summary"]
+            compared = summary["compared_note_count"]
+            coverage = compared / note_count
+            candidates.append({
+                "reference_time_offset_sec": offset,
+                "reference_time_scale": scale,
+                "compared_note_count": compared,
+                "note_count": note_count,
+                "note_coverage": coverage,
+                "median_absolute_error_semitones": summary["median_absolute_error_semitones"],
+                "within_one_semitone_rate": summary["within_one_semitone_rate"],
+                "mean_rest_voiced_ratio": summary["mean_rest_voiced_ratio"],
+                "eligible": compared >= required_count,
+            })
+
+    eligible = [item for item in candidates if item["eligible"] and item["median_absolute_error_semitones"] is not None]
+    eligible.sort(key=lambda item: (
+        item["median_absolute_error_semitones"],
+        -item["note_coverage"],
+        item["reference_time_offset_sec"],
+        item["reference_time_scale"],
+    ))
+    return {
+        "method": "grid_search_offset_and_time_scale",
+        "minimum_coverage": float(minimum_coverage),
+        "required_compared_note_count": required_count,
+        "candidate_count": len(candidates),
+        "eligible_candidate_count": len(eligible),
+        "best_candidate": eligible[0] if eligible else None,
+        "candidates": sorted(
+            candidates,
+            key=lambda item: (
+                not item["eligible"],
+                item["median_absolute_error_semitones"] is None,
+                item["median_absolute_error_semitones"] if item["median_absolute_error_semitones"] is not None else math.inf,
+                -item["note_coverage"],
+            ),
+        ),
+        "warning": (
+            "Best grid candidate is a model-to-model fit, not ground truth. "
+            "Do not automatically rewrite BPM, note durations, or pitches from this result."
+        ),
+    }
