@@ -69,14 +69,14 @@ def main() -> int:
     try:
         report = inspect_npz(args.npz_file)
     except Exception as exc:
-        parser.exit(2, f"NPZ inspection failed: {exc}\\n")
+        parser.exit(2, f"NPZ inspection failed: {exc}\n")
 
     rendered = json.dumps(report, ensure_ascii=False, indent=2)
     print(rendered)
     if args.output_json:
         destination = Path(args.output_json)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(rendered + "\\n", encoding="utf-8")
+        destination.write_text(rendered + "\n", encoding="utf-8")
         print(f"Inspection report saved: {destination}")
     return 0
 
