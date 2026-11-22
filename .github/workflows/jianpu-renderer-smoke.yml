@@ -37,7 +37,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends lilypond
       - name: Install renderer test dependencies
-        run: python -m pip install --upgrade pip
+        run: |
+          python -m pip install --upgrade pip
           python -m pip install -e . pytest jianpu-ly httpx
       - name: Verify original renderer produces real SVG and PDF
         run: python -m pytest -q tests/test_musicmaster.py -k "jianpu_download_labels or original_jianpu_renderer_generates_svg_and_pdf"
