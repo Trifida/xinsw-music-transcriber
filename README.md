@@ -116,7 +116,7 @@ python scripts/convert_pitch_npz.py vocal_pitch_raw.npz reference_pitch_track.js
 python scripts/inspect_pitch_npz.py path/to/vocal_pitch_raw.npz --output-json vocal_pitch_raw_inspection.json
 ```
 
-检查报告用于确认旧文件的真实字段结构；确认前不要猜测数组键名或时间步长，也不要把不确定的数组直接当作音高轨迹。
+检查报告用于确认旧文件的真实字段结构。若文件同时包含标量 `sample_rate` 和 `hop_length`，检查器会按 `hop_length / sample_rate` 算出帧间隔；若存在 `periodicity`，还会列出与它帧数相同的数值数组候选。候选只代表形状相符，不代表它一定是 F0/音高数组。确认字段语义后，再显式指定 `--frequency-key`、`--confidence-key` 和 `--hop-seconds`；不要猜测数组键名，也不要把不确定的数组直接当作音高轨迹。
 
 ### VocalParse 音高交叉检查（离线，不重新推理）
 
