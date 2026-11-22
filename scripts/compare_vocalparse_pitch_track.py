@@ -22,6 +22,7 @@ def compare_files(
     *,
     confidence_threshold: float = 0.5,
     central_fraction: float = 0.6,
+    reference_time_offset_sec: float = 0.0,
 ) -> dict[str, Any]:
     parsed = json.loads(Path(vocalparse_json).read_text(encoding="utf-8"))
     reference = json.loads(Path(pitch_track_json).read_text(encoding="utf-8"))
@@ -41,6 +42,7 @@ def compare_files(
         frames,
         confidence_threshold=confidence_threshold,
         central_fraction=central_fraction,
+        reference_time_offset_sec=reference_time_offset_sec,
     )
     destination = Path(output_json)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -60,6 +62,8 @@ def main() -> int:
     parser.add_argument("output_json")
     parser.add_argument("--confidence-threshold", type=float, default=0.5)
     parser.add_argument("--central-fraction", type=float, default=0.6)
+    parser.add_argument("--reference-time-offset", type=float, default=0.0,
+                        help="Offset in seconds from the VocalParse clip start to the reference track timeline (e.g. 30 for a 30-55s clip).")
     args = parser.parse_args()
     try:
         report = compare_files(
@@ -68,6 +72,7 @@ def main() -> int:
             args.output_json,
             confidence_threshold=args.confidence_threshold,
             central_fraction=args.central_fraction,
+            reference_time_offset_sec=args.reference_time_offset,
         )
     except Exception as exc:
         parser.exit(2, f"Pitch comparison failed: {exc}\n")
