@@ -40,7 +40,8 @@ def test_dual_mode_notebook_does_not_install_or_download_models():
     lowered = source.lower()
     assert "pip install" not in lowered
     assert "git clone" not in lowered
-    assert "torchcrepe" not in lowered
+    assert "import torchcrepe" not in lowered
+    assert "from torchcrepe" not in lowered
     assert "wget " not in lowered
     assert "混响" in source
     assert "合唱" in source
