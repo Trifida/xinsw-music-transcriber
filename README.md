@@ -184,3 +184,15 @@ python scripts/compare_vocalparse_pitch_track.py vocalparse_result.json referenc
 **重要限制：** 这只是两个算法之间的交叉检查，不等于真实音高准确率。CREPE/torchcrepe 本身也可能出错，最终仍需对照原始人声听辨或人工标注。当前已确认 TorchCREPE NPZ 的字段名与帧间隔，转换时应使用上述明确参数；其他来源的 NPZ 仍须先检查字段语义，不可直接套用。
 
 此接口目前属于实验适配层，不替换现有 transcribe() / Target 生产路径。默认 `require_all=False`，按 best-effort 规则运行：未安装可选后端时会跳过对应产物，但仍保留 MusicXML。若验收或正式任务必须同时得到五线谱和简谱，请设置 `require_all=True`；任一渲染后端缺失或渲染失败都会明确报错，避免把不完整的双谱结果误认为成功。歌词 · 延续标记暂时保留为无显示歌词的事件，不将其自动解释为延音或重复字；其语义仍需用更多真实歌曲样本确认。自动化测试与真实谱面视觉验收完成前，不应将此实验路径视为已达到生产准确率。
+
+
+### VocalParse 双模式受控对照
+
+可打开 [VocalParse Audio-only vs Audio-lyric Notebook](notebooks/VocalParse_AudioOnly_vs_AudioLyric.ipynb)，在同一段原曲 30–55 秒音频、同一个 checkpoint 和相同生成参数下，对比两种提示模式：
+
+- `audio-only`：只输入音频，模型同时预测歌词和音乐事件。
+- `audio-lyric`：输入同一段音频，并提供已知歌词作为提示，模型预测音乐事件。
+
+Notebook 只加载一次模型权重，随后顺序运行两次推理；输出原始解码文本、解析后的 BPM/歌词/音高/时值、歌词序列对齐及逐索引差异，并保存 JSON 到 Google Drive。它不会自动安装依赖或下载模型；若现有 Colab 环境、checkpoint 或音频路径不可用，会停止并提示，不会擅自启动其他下载。
+
+**解释限制：** 该实验用于观察“提供歌词提示”是否改变 VocalParse 的音乐事件输出，不是人工真值准确率测试。当前分离人声仍含混响与合唱/叠唱，不能把模型间差异或单个模型的稳定输出当作主唱真实音高。实验结果不自动回写生产识别流程。
