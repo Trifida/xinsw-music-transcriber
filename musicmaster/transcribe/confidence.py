@@ -38,6 +38,9 @@ MIN_VALIDATION_FRAMES = 3
 MIN_VALIDATION_COVERAGE = 0.50
 MIN_CREPE_CONF = 0.70
 MIN_MODEL_AGREEMENT = 0.80
+# 调外音序列与报告区间均需考虑真实时间间隔，避免把隔很久的音符拼成一段。
+MAX_OUT_OF_KEY_GAP_S = 0.15
+MAX_PASSAGE_GAP_S = 0.75
 
 
 def _frame_tracks(path, fmin="C2", fmax="C6", hop_ms=10.0):
@@ -58,19 +61,27 @@ def _frame_tracks(path, fmin="C2", fmax="C6", hop_ms=10.0):
     return t, cm, np.asarray(c, float), pm, pv
 
 
-def _out_of_key_runs(in_scale):
-    """每个音所在【连续调外段】长度(调内=0)。这是抓'一起漂移'的主信号。"""
+def _out_of_key_runs(in_scale, notes=None, max_gap_s=MAX_OUT_OF_KEY_GAP_S):
+    """返回每个音所属的连续调外段长度。
+
+    除了音符列表相邻，还要求前后音符的实际间隔不超过 max_gap_s；
+    中间有休止或明显断句时，不把两处变化音当成同一段异常。
+    """
     n = len(in_scale); run = [0] * n; i = 0
     while i < n:
-        if not in_scale[i]:
-            j = i
-            while j < n and not in_scale[j]:
-                j += 1
-            for k in range(i, j):
-                run[k] = j - i
-            i = j
-        else:
+        if in_scale[i]:
             i += 1
+            continue
+        j = i + 1
+        while j < n and not in_scale[j]:
+            if notes is not None:
+                gap = float(notes[j]["start_s"]) - float(notes[j - 1]["end_s"])
+                if gap > max_gap_s:
+                    break
+            j += 1
+        for k in range(i, j):
+            run[k] = j - i
+        i = j
     return run
 
 
@@ -112,7 +123,7 @@ def assess(path, notes, key=None, gate_tier=None, fmin="C2", fmax="C6"):
         tonic, mode, steps = _detect_scale_robust(notes)
     scale_pcs = {(tonic + s) % 12 for s in steps}
     in_scale = [(int(n["midi"]) % 12) in scale_pcs for n in notes]
-    run_len = _out_of_key_runs(in_scale)
+    run_len = _out_of_key_runs(in_scale, notes)
 
     # ---- 2. 帧级两算法 + 自信(用于副信号)----
     t, cm, cc, pm, pv = _frame_tracks(path, fmin=fmin, fmax=fmax)
@@ -146,7 +157,7 @@ def assess(path, notes, key=None, gate_tier=None, fmin="C2", fmax="C6"):
         elif run_len[i] >= 3:
             c_key = 0.25; reasons.append("连续调外(疑似整段被拖飘)")
         elif run_len[i] == 2:
-            c_key = 0.5; reasons.append("成对调外")
+            c_key = 0.5; reasons.append("连续两个调外音(需要确认是否为正常变化音)")
         else:
             c_key = 0.72; reasons.append("单个调外(也可能是真变化音)")
         # —— 副信号:双算法分歧 ——
@@ -167,9 +178,10 @@ def assess(path, notes, key=None, gate_tier=None, fmin="C2", fmax="C6"):
             reasons.append("录音质量门档位较低")
 
         # 状态与数值评分分开：证据不足不等于错，也不应获得满额验证分。
-        if run_len[i] >= 2 or (agree is not None and agree < MIN_MODEL_AGREEMENT):
+        if run_len[i] >= 3 or (agree is not None and agree < MIN_MODEL_AGREEMENT):
             status = STATUS_SUSPECT
-        elif (agree is None or cconf < MIN_CREPE_CONF or gate_tier in ("太差", "差")):
+        elif (run_len[i] == 2 or agree is None or cconf < MIN_CREPE_CONF
+              or gate_tier in ("太差", "差")):
             status = STATUS_PENDING
         else:
             status = STATUS_HIGH
@@ -201,7 +213,8 @@ def assess(path, notes, key=None, gate_tier=None, fmin="C2", fmax="C6"):
     cur = None
     for x in out_notes:
         if x["status"] != STATUS_HIGH:
-            if cur is None or cur["status"] != x["status"]:
+            if (cur is None or cur["status"] != x["status"]
+                    or x["start_s"] - cur["end_s"] > MAX_PASSAGE_GAP_S):
                 if cur:
                     passages.append(cur)
                 cur = {"status": x["status"], "start_s": x["start_s"], "end_s": x["end_s"],
