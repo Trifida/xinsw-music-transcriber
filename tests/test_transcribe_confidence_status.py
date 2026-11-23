@@ -81,7 +81,7 @@ def test_model_disagreement_is_suspect(monkeypatch):
     assert "两算法分歧" in note["reasons"]
 
 
-def test_two_consecutive_out_of_key_notes_are_suspect(monkeypatch):
+def test_three_consecutive_out_of_key_notes_are_suspect(monkeypatch):
     _mock_tracks(monkeypatch, frames=30, crepe_pitch=61.0, pyin_pitch=61.0)
     notes = [
         _note(midi=61, start=0.0, end=0.1),
@@ -93,6 +93,45 @@ def test_two_consecutive_out_of_key_notes_are_suspect(monkeypatch):
 
     assert all(note["status"] == "存疑" for note in result["notes"])
     assert result["statuses"]["存疑"] == 3
+
+
+def test_two_consecutive_out_of_key_notes_are_pending(monkeypatch):
+    _mock_tracks(monkeypatch, frames=20, crepe_pitch=61.0, pyin_pitch=61.0)
+    notes = [
+        _note(midi=61, start=0.0, end=0.1),
+        _note(midi=61, start=0.1, end=0.2),
+    ]
+
+    result = confidence.assess("unused.wav", notes, key="C", gate_tier="好")
+
+    assert all(note["status"] == "待验证" for note in result["notes"])
+    assert result["statuses"]["待验证"] == 2
+
+
+def test_out_of_key_notes_separated_by_rest_are_not_one_run(monkeypatch):
+    _mock_tracks(monkeypatch, frames=120, crepe_pitch=61.0, pyin_pitch=61.0)
+    notes = [
+        _note(midi=61, start=0.0, end=0.1),
+        _note(midi=61, start=1.0, end=1.1),
+    ]
+
+    result = confidence.assess("unused.wav", notes, key="C", gate_tier="好")
+
+    assert all(note["status"] == "高可信" for note in result["notes"])
+    assert result["passages"] == []
+
+
+def test_same_status_passages_split_after_long_gap(monkeypatch):
+    _mock_tracks(monkeypatch, frames=220, crepe_conf=0.65)
+    notes = [
+        _note(midi=60, start=0.0, end=0.1),
+        _note(midi=60, start=2.0, end=2.1),
+    ]
+
+    result = confidence.assess("unused.wav", notes, key="C", gate_tier="好")
+
+    assert all(note["status"] == "待验证" for note in result["notes"])
+    assert len(result["passages"]) == 2
 
 
 def test_single_chromatic_note_is_not_automatically_suspect(monkeypatch):
