@@ -111,7 +111,6 @@ def analyze_key(notes: Iterable[Dict], tempo: Optional[float] = None,
     top_score = candidates[0]["score"]
     near = [c for c in candidates if top_score - c["score"] <= 0.015]
     chosen = min(near, key=lambda c: (c["signature_cost"], -c["score"]))
-    ranked = sorted(candidates, key=lambda c: (c is chosen, c["score"]), reverse=True)
     next_score = max((c["score"] for c in candidates if c is not chosen), default=0.0)
     margin = max(0.0, chosen["score"] - next_score)
     confidence = min(1.0, max(0.0, margin / 0.08))
@@ -133,7 +132,7 @@ def analyze_key(notes: Iterable[Dict], tempo: Optional[float] = None,
         "confidence": round(confidence, 3), "status": status,
         "ending_pitch_class": PITCH_NAMES[ending_pc],
         "tempo_used": tempo if tempo and tempo > 0 else None,
-        "candidates": sorted(candidates, key=lambda c: c["score"], reverse=True)[:max(1, top_n)],
+        "candidates": [chosen] + [c for c in sorted(candidates, key=lambda c: c["score"], reverse=True) if c is not chosen][:max(0, top_n - 1)],
         "evidence": evidence,
         "transposed": False,
     }
