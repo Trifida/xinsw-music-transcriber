@@ -358,10 +358,10 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
         # Lyrics are optional and must never turn a successful melody transcription into a failed job.
         mx = d / "out.musicxml"
         lyrics_info = {
-            "source": "not-configured", "status": "not-configured",
+            "source": "not-provided", "status": "not-provided",
             "alignmentStatus": "not-attempted", "tokenCount": 0,
             "assignedCount": 0, "unassignedCount": 0,
-            "message": "尚未配置自动歌词识别服务；可粘贴歌词后重新记谱。",
+            "message": "本次未提供歌词，已生成无歌词乐谱；粘贴歌词后重新记谱即可。",
         }
         lyric_text = ""
         lyrics_source = None
@@ -407,10 +407,10 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                         }
                 else:
                     lyrics_info = {
-                        "source": "not-configured", "status": "not-configured",
+                        "source": "not-provided", "status": "not-provided",
                         "alignmentStatus": "not-attempted", "tokenCount": 0,
                         "assignedCount": 0, "unassignedCount": 0,
-                        "message": "本次未启用自动歌词识别；可粘贴歌词后重新记谱。",
+                        "message": "本次未提供歌词，已生成无歌词乐谱；粘贴歌词后重新记谱即可。",
                     }
 
                 if not lyric_text and lyrics_source == "automatic-asr-empty":
