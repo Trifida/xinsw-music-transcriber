@@ -329,8 +329,8 @@ def _music21_key_from_name(key_name: str):
     from music21 import key as m21key
 
     raw = str(key_name).strip().replace("♭", "b").replace("♯", "#")
-    is_minor = bool(re.search(r"(?:小调|minor|\bm\s*$)", raw, flags=re.IGNORECASE))
-    raw = re.sub(r"(?:小调|minor|major|\bm)\s*$", "", raw, flags=re.IGNORECASE).strip()
+    is_minor = bool(re.search(r"(?:小调|minor|m\s*$)", raw, flags=re.IGNORECASE))
+    raw = re.sub(r"(?:小调|minor|major|m)\s*$", "", raw, flags=re.IGNORECASE).strip()
     match = re.match(r"^([A-Ga-g])([#b-]?)$", raw)
     if not match:
         raise ValueError(f"无法识别调性名称: {key_name}")
