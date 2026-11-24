@@ -1,0 +1,121 @@
+# 心思维 AI 扒谱助手｜开发交接存档
+
+**存档日期：** 2026-11-24  
+**用途：** 明天在办公室电脑继续开发时，作为唯一交接依据。  
+**仓库：** `Trifida/xinsw-music-transcriber`  
+**开发分支：** `deploy/v1-production`  
+**PR：** [#12 — Build durable cloud jobs and GPU worker API](https://github.com/Trifida/xinsw-music-transcriber/pull/12)
+
+## 一、当前工作位置
+
+- 所有本轮改动都在 `deploy/v1-production`，没有合并 `main`。
+- PR #12 仍为 Draft / Open。
+- 本轮最后一个已确认提交：`13f6c12742121aafd98b7ec1324e829354c20249`。
+- 未部署新生产服务，未修改生产 Neon main，未创建或启动付费 AutoDL GPU 实例。
+- 明天继续前，先检查 PR 当前 HEAD SHA；如果分支有更新，以 GitHub 最新状态为准。
+
+## 二、今天完成的工作
+
+### 1. Worker 租约与重复下载修复
+
+此前提交：
+- `6efcc2bd5474b759789e7283ff308a3984c947cf`
+- `3d43aec57e0067c5dd5b89f2354b5df054d2cb89`
+
+修复 Worker 重复下载源音频，以及下载/推理/产物上传期间 heartbeat 不连续的问题；补充回归测试。
+
+### 2. 私有 GitHub 代码包交付第一阶段
+
+新增：
+- `musicmaster/cloud/source_bundle.py`
+  - 通过可信 API 主机上的 GitHub 只读令牌，获取指定完整 Commit SHA 的私有仓库 tar.gz。
+  - 校验 GitHub 返回的 Commit SHA。
+  - 限制最大包体积 512 MiB。
+  - 计算 SHA256。
+  - 上传到私有对象存储的不可变路径：`worker-bundles/<commit_sha>/<sha256>.tar.gz`。
+- `scripts/publish_worker_bundle.py`
+  - 供可信 API 主机执行的发布命令。
+- `musicmaster/web/cloud_api.py`
+  - 新增受 Worker Bearer 认证保护的 `GET /api/internal/worker/bundle`。
+  - 只按服务端环境变量中配置的 Commit、SHA256 和对象路径签发 10 分钟预签名下载 URL。
+  - 校验 Commit、SHA256 格式及对象路径匹配。
+- `tests/test_source_bundle.py`
+  - 覆盖密钥/仓库配置、固定 SHA、摘要、错误响应、gzip 格式及包体积限制。
+- `.github/workflows/cloud-jobs-smoke.yml`
+  - 将 source bundle 测试纳入 cloud jobs workflow。
+- `docs/WORKER_SOURCE_BUNDLE.md`
+  - 记录发布和环境配置方式。
+
+本阶段关键提交：
+- `63ddad878c27fa3aee517eb2cbebc4d944e30b1c`
+- `de396e32dabfe2476a944295c9206b4e57dcd6a6`
+- `b0385c91a71f2c7249fbc9e4197246dd4c1104c3`
+- `9d1af4f68471788e0e446c836d7208f0b78ba842`
+- `bb7e8e2da3f9cc0ce290362764d68c2410d85540`
+- `c12eebd19558e8cdb2beee14739d44bf91a3307a`
+- `b161455d4d0346c6a9e9f4fa955b6836fd3269dd`
+- `13f6c12742121aafd98b7ec1324e829354c20249`
+
+## 三、测试现状（不可误报）
+
+截至今晚最新 Cloud jobs workflow run：
+- Run ID：`45427658498`
+- Head SHA：`c12eebd19558e8cdb2beee14739d44bf91a3307a`
+- 结果：failure。
+- Job ID：`138563954374`。
+- GitHub Jobs 返回的 `steps` 和 `logs_url` 均为空；尝试取日志得到 BlobNotFound 404。
+
+后续还有提交进入分支，因此明天必须对最新 HEAD 再检查 Actions。当前不能声称测试通过，也不能确定失败来自代码、依赖、workflow 还是 GitHub 日志系统。优先修复 CI 可观测性：让测试步骤输出可见，必要时增加独立、清晰的安装/编译/测试步骤和失败日志保留。
+
+## 四、下一步开发顺序
+
+### P0：先恢复可靠测试反馈
+1. 检查 PR #12 最新 HEAD、Actions workflow 与最新失败运行。
+2. 找到失败的真实步骤；若日志仍不可取，调整 workflow 以确保步骤状态和日志可诊断。
+3. 本地或可用的安全测试环境运行新增 source bundle 测试及 cloud jobs 测试。没有真实运行结果前，不标记通过。
+
+### P1：完成 GPU Bootstrap（下一项实际开发）
+GPU 端目前没有项目代码，因此启动命令必须能独立运行最小 bootstrap，不能依赖尚未下载的仓库脚本。
+
+预期流程：
+1. AutoDL 实例启动命令运行一个最小 Python 标准库 bootstrap。
+2. 使用一次性 bootstrap token 向网站内部 API 交换短期授权。
+3. 获取 worker token、代码包 Commit、SHA256 和短期对象下载 URL。
+4. 下载代码包并校验 SHA256。
+5. 安全解压 tar.gz，必须防止路径穿越（tar path traversal）；只允许解压到专用工作目录。
+6. 启动 `python -m musicmaster.cloud.worker`。
+7. GitHub 长期令牌不得进入 GPU 环境变量、启动命令、日志或 GPU 文件。
+
+注意：当前新增的 `GET /api/internal/worker/bundle` 是 Worker Bearer 认证端点。需要核实 bootstrap token exchange 现有接口的返回结构和认证约定，再决定如何把 bundle manifest 安全地接到一次性 bootstrap 流程；不要想当然地假设接口已经打通。
+
+### P2：持久化 AutoDL 调度器
+1. PostgreSQL 持久化调度状态，避免网站重启丢失。
+2. 多副本互斥（数据库 lease 或 advisory lock）。
+3. 待处理任务出现时才创建/启动 GPU。
+4. 监控实例启动、Worker 注册、任务领取和心跳。
+5. 无任务后自动关机；确认关机后才释放实例。
+6. 异常重试与遗留实例回收。
+
+### P3：端到端验证
+Render 独立服务配置、Neon 测试分支、AutoDL 按任务启动、完整音频处理、结果回传和自动释放的全链路验证。
+
+## 五、不可越过的安全边界
+
+- 只在 `deploy/v1-production` 和 PR #12 开发，不直接改 `main`。
+- 不合并 PR，不部署生产，不修改生产 Neon main。
+- 不创建、启动或释放付费 GPU 实例，除非用户明确授权。
+- 不把 GitHub 长期令牌交给 GPU。
+- 不将密钥写入代码、提交记录、日志或聊天存档。
+- 生产环境变量变更、数据库破坏性操作、服务部署均需用户明确授权。
+- 不因 CI 绿色就跳过完整音频端到端验证。
+
+## 六、明天跨电脑恢复方式
+
+在办公室电脑打开同一个 ChatGPT 账号和本项目对话，发送：
+
+> 继续开发心思维 AI 扒谱助手。请先读取 GitHub 仓库 `docs/DEV_HANDOFF_2026-11-24.md`，检查 PR #12 和 `deploy/v1-production` 最新状态，然后从 P0 测试排查开始，按存档中的顺序继续。不要修改 main，不要启动付费 GPU。
+
+也可直接打开 PR：
+https://github.com/Trifida/xinsw-music-transcriber/pull/12
+
+**交接原则：** 先核实远端真实状态，再继续写代码；不以聊天中的旧 SHA 覆盖 GitHub 最新状态。
