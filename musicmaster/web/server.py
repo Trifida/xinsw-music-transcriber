@@ -108,7 +108,7 @@ def api_convert(file: UploadFile = File(...), direction: str = Form("j2s"),
 @app.post("/api/transcribe")
 def api_transcribe(audio: UploadFile = File(...), engine: str = Form("crepe"),
                    key: str = Form(""), lyrics: str = Form(""),
-                   auto_lyrics: str = Form("true")) -> dict:
+                   auto_lyrics: str = Form("false")) -> dict:
     path = _save_upload(audio)
     use_auto_lyrics = auto_lyrics.strip().lower() not in {"0", "false", "off", "no"}
     job = JM.submit("transcribe", runners.run_transcribe, path, engine, key, lyrics, use_auto_lyrics)
