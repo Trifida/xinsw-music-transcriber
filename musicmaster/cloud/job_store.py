@@ -107,19 +107,27 @@ class PostgresJobStore:
             # are reclaimed by the same atomic SKIP LOCKED statement below.
             cur.execute(
                 """
-                UPDATE music_jobs
-                SET status = 'failed', stage = '处理失败',
-                    error = COALESCE(error, 'GPU worker lease expired; retry limit reached'),
-                    completed_at = now(), updated_at = now(),
-                    lease_expires_at = NULL
-                WHERE status = 'running' AND lease_expires_at < now()
-                  AND attempt_count >= max_attempts
+                WITH expired AS (
+                    UPDATE music_jobs
+                    SET status = 'failed', stage = '处理失败',
+                        error = COALESCE(error, 'GPU worker lease expired; retry limit reached'),
+                        completed_at = now(), updated_at = now(),
+                        lease_expires_at = NULL
+                    WHERE status = 'running' AND lease_expires_at < now()
+                      AND attempt_count >= max_attempts
+                    RETURNING id, worker_id
+                )
+                UPDATE music_workers AS w
+                SET status = 'idle', active_job_id = NULL,
+                    last_seen_at = now(), updated_at = now()
+                FROM expired AS e
+                WHERE w.worker_id = e.worker_id AND w.active_job_id = e.id
                 """
             )
             cur.execute(
                 """
                 WITH candidate AS (
-                    SELECT id
+                    SELECT id, worker_id AS previous_worker_id
                     FROM music_jobs
                     WHERE status = 'queued'
                        OR (status = 'running' AND lease_expires_at < now()
@@ -141,12 +149,23 @@ class PostgresJobStore:
                 WHERE j.id = candidate.id
                 RETURNING j.id, j.source_object_key, j.source_filename,
                           j.source_content_type, j.options, j.attempt_count,
-                          j.lease_expires_at
+                          j.lease_expires_at, candidate.previous_worker_id
                 """,
                 (worker, lease),
             )
             job = cur.fetchone()
             if job is not None:
+                previous_worker = job.get("previous_worker_id")
+                if previous_worker and previous_worker != worker:
+                    cur.execute(
+                        """
+                        UPDATE music_workers
+                        SET status = 'idle', active_job_id = NULL,
+                            last_seen_at = now(), updated_at = now()
+                        WHERE worker_id = %s AND active_job_id = %s
+                        """,
+                        (previous_worker, job["id"]),
+                    )
                 cur.execute(
                     """
                     INSERT INTO music_workers (worker_id, status, active_job_id)
