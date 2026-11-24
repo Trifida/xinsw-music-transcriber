@@ -90,30 +90,40 @@ def is_editable_melody_musicxml(musicxml_path: str | Path) -> bool:
     except (OSError, ET.ParseError, TypeError, ValueError):
         return False
 
-    if _local_name(root) != "score-partwise":
-        return False
-    parts = [node for node in root if _local_name(node) == "part"]
-    if len(parts) != 1:
+    root_kind = _local_name(root)
+    if root_kind == "score-partwise":
+        part_segments = [node for node in root if _local_name(node) == "part"]
+        if len(part_segments) != 1:
+            return False
+    elif root_kind == "score-timewise":
+        part_segments = [
+            node for node in root.iter()
+            if _local_name(node) == "part" and node.get("id")
+        ]
+        if len({node.get("id") for node in part_segments}) != 1 or not part_segments:
+            return False
+    else:
         return False
 
     voices: set[str] = set()
     pitched_notes = 0
-    for node in parts[0].iter():
-        name = _local_name(node)
-        if name in {"backup", "forward"}:
-            return False
-        if name == "note":
-            if any(_local_name(child) == "chord" for child in node):
+    for part in part_segments:
+        for node in part.iter():
+            name = _local_name(node)
+            if name in {"backup", "forward"}:
                 return False
-            if any(_local_name(child) == "pitch" for child in node):
-                pitched_notes += 1
-                voice = next(
-                    ((child.text or "").strip()
-                     for child in node if _local_name(child) == "voice"),
-                    "",
-                )
-                if voice:
-                    voices.add(voice)
+            if name == "note":
+                if any(_local_name(child) == "chord" for child in node):
+                    return False
+                if any(_local_name(child) == "pitch" for child in node):
+                    pitched_notes += 1
+                    voice = next(
+                        ((child.text or "").strip()
+                         for child in node if _local_name(child) == "voice"),
+                        "",
+                    )
+                    if voice:
+                        voices.add(voice)
     return pitched_notes > 0 and len(voices) <= 1
 
 
