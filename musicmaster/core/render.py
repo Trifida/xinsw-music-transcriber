@@ -225,14 +225,23 @@ def render_staff_svgs(musicxml: PathLike, out_dir: PathLike, *, stem: str = "sta
     page_count = max(1, int(tk.getPageCount() or 1))
     output_dir = Path(out_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    # 清理上次页数更多时遗留的页面，避免把旧页误认为本次结果。
+    for stale in output_dir.glob(f"{stem}-page-*.svg"):
+        if stale.is_file():
+            stale.unlink()
     pages: List[Path] = []
-    for page_number in range(1, page_count + 1):
-        svg = tk.renderToSVG(page_number)
-        if not svg or "<svg" not in svg[:200]:
-            raise RuntimeError(f"Verovio 第 {page_number} 页渲染结果不是有效 SVG。")
-        page_path = output_dir / f"{stem}-page-{page_number:03d}.svg"
-        page_path.write_text(svg, encoding="utf-8")
-        pages.append(page_path)
+    try:
+        for page_number in range(1, page_count + 1):
+            svg = tk.renderToSVG(page_number)
+            if not svg or "<svg" not in svg[:200]:
+                raise RuntimeError(f"Verovio 第 {page_number} 页渲染结果不是有效 SVG。")
+            page_path = output_dir / f"{stem}-page-{page_number:03d}.svg"
+            page_path.write_text(svg, encoding="utf-8")
+            pages.append(page_path)
+    except Exception:
+        for partial in pages:
+            partial.unlink(missing_ok=True)
+        raise
     # 旧版调用方仍可通过 staff.svg 读取第一页。
     (output_dir / f"{stem}.svg").write_text(pages[0].read_text(encoding="utf-8"), encoding="utf-8")
     return pages
