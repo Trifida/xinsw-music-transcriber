@@ -145,8 +145,13 @@ def test_render_staff_svgs_writes_every_page_and_legacy_first_page(tmp_path, mon
     monkeypatch.setattr(render_module, "_verovio_importable", lambda: True)
     monkeypatch.setattr(render_module, "_ascii_verovio_resource_dir", lambda: None)
 
-    pages = render_module.render_staff_svgs(musicxml, tmp_path / "out")
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    stale_page = output_dir / "staff-page-003.svg"
+    stale_page.write_text("<svg>old page</svg>", encoding="utf-8")
+    pages = render_module.render_staff_svgs(musicxml, output_dir)
 
+    assert not stale_page.exists()
     assert [path.name for path in pages] == ["staff-page-001.svg", "staff-page-002.svg"]
     assert "page 1" in pages[0].read_text(encoding="utf-8")
     assert "page 2" in pages[1].read_text(encoding="utf-8")
