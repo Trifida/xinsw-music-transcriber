@@ -315,16 +315,112 @@ def vocalparse_tokens_to_events(parsed: Mapping[str, Any]) -> List[Dict[str, Any
     return validate_events(events, bpm)
 
 
+
+def _tokenize_manual_lyrics(lyrics: str) -> List[str]:
+    """Split pasted lyrics into note-level syllables.
+
+    Chinese characters are individual syllables; contiguous Latin words and
+    numbers stay together. Punctuation is attached to the preceding syllable.
+    An em dash (—) or tilde (~) is a melisma continuation slot; a middle dot
+    (·) is an intentionally lyricless note slot.
+    """
+    import re
+    if not isinstance(lyrics, str):
+        raise TypeError("lyrics must be a string")
+    raw_tokens = re.findall(
+        r"[A-Za-z]+(?:['’][A-Za-z]+)*|[0-9]+|[\\u3400-\\u9fff]|[—~·]|[^\\s]",
+        lyrics,
+    )
+    tokens: List[str] = []
+    punctuation = set("，。！？；：、,.!?;:)]}）】》」』”’")
+    for token in raw_tokens:
+        if token in punctuation and tokens and tokens[-1] not in ("—", "~", "·"):
+            tokens[-1] += token
+        else:
+            tokens.append(token)
+    return tokens
+
+
+def align_manual_lyrics(
+    events: Sequence[Mapping[str, Any]],
+    bpm: float,
+    lyrics: str,
+    *,
+    strict: bool = True,
+) -> List[Dict[str, Any]]:
+    """Attach user-supplied lyrics to monophonic note events.
+
+    Default mapping is one Chinese character or one Latin word per pitched
+    note. Rests do not consume lyric slots. Use '—' (or '~') for a melisma
+    continuation note and '·' for a deliberately lyricless pitched note.
+    Strict mode requires an exact slot count to prevent silent lyric loss.
+    """
+    normalized = validate_events(events, bpm)
+    tokens = _tokenize_manual_lyrics(lyrics)
+    note_events = [
+        event for event in normalized
+        if not event["is_rest"]
+        and not bool(event.get("is_lyric_continuation", False))
+        and str(event.get("raw_word") or "") != "·"
+    ]
+    if strict and len(tokens) != len(note_events):
+        raise ValueError(
+            f"歌词音节数与可分配音符数不一致：歌词 {len(tokens)} 个，"
+            f"可分配音符 {len(note_events)} 个。中文按字、英文按单词；"
+            "拖腔请用“—”占一个后续音符，纯音乐音符请用“·”占位。"
+        )
+    if len(tokens) > len(note_events):
+        raise ValueError(f"歌词有 {len(tokens)} 个音节，但只有 {len(note_events)} 个可分配音符。")
+    aligned = [dict(event) for event in normalized]
+    token_index = 0
+    previous_has_lyric = False
+    for event in aligned:
+        if event["is_rest"]:
+            event["lyric"] = None
+            continue
+        if bool(event.get("is_lyric_continuation", False)) or str(event.get("raw_word") or "") == "·":
+            event["lyric"] = None
+            event["is_lyric_continuation"] = True
+            continue
+        if token_index >= len(tokens):
+            if strict:
+                raise ValueError("歌词音节不足，无法完成逐音符对齐。")
+            event["lyric"] = None
+            event["is_lyric_continuation"] = False
+            continue
+        token = tokens[token_index]
+        token_index += 1
+        if token in ("—", "~"):
+            if not previous_has_lyric:
+                raise ValueError("歌词延续符“—”前面必须先有一个实际歌词音节。")
+            event["lyric"] = None
+            event["is_lyric_continuation"] = True
+        elif token == "·":
+            event["lyric"] = None
+            event["is_lyric_continuation"] = False
+            previous_has_lyric = False
+        else:
+            event["lyric"] = token
+            event["is_lyric_continuation"] = False
+            event["lyric_source"] = "manual"
+            previous_has_lyric = True
+    if strict and token_index != len(tokens):
+        raise ValueError("存在未能分配到音符的歌词音节。")
+    return aligned
+
 def vocalparse_result_to_musicxml(
     parsed: Mapping[str, Any],
     out_path: PathLike,
     *,
     key_name: str | None = None,
     time_signature: str = "4/4",
+    lyrics: str | None = None,
 ) -> Path:
-    """Convert a VocalParse parsed result directly to MusicXML."""
+    """Convert a VocalParse result to MusicXML, optionally using user-supplied lyrics."""
     bpm = float(parsed["bpm"])
     events = vocalparse_tokens_to_events(parsed)
+    if lyrics is not None:
+        events = align_manual_lyrics(events, bpm, lyrics)
     return vocalparse_events_to_musicxml(
         events, bpm, out_path, key_name=key_name, time_signature=time_signature
     )
@@ -390,6 +486,7 @@ def render_vocalparse_result(
     *,
     key_name: str | None = None,
     time_signature: str = "4/4",
+    lyrics: str | None = None,
     page: int = 1,
     jianpu_format: str = "svg",
     lilypond_timeout: float = 120.0,
@@ -411,6 +508,7 @@ def render_vocalparse_result(
         destination / "vocalparse.musicxml",
         key_name=key_name,
         time_signature=time_signature,
+        lyrics=lyrics,
     )
     artifacts = render(
         musicxml_path,
