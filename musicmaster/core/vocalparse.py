@@ -486,9 +486,12 @@ def musicxml_lyric_alignment(musicxml_path: PathLike) -> List[Dict[str, Any]]:
     aligned: List[Dict[str, Any]] = []
     for element in flat.getElementsByClass(note.Note):
         for lyric in element.lyrics:
+            text_value = str(lyric.text or "")
+            if not text_value:
+                continue  # MusicXML melisma extender nodes intentionally have no text.
             aligned.append({
                 "start_beat": float(element.offset),
-                "lyric": str(lyric.text or ""),
+                "lyric": text_value,
             })
     return aligned
 
