@@ -57,3 +57,13 @@ def test_musicxml_key_parser_preserves_minor_mode():
     assert _music21_key_from_name("Bb minor").mode == "minor"
     assert _music21_key_from_name("C").mode == "major"
     assert _music21_key_from_name("F#").mode == "major"
+
+
+def test_key_signature_cost_uses_enharmonic_minimum():
+    from musicmaster.transcribe.smart_key import _signature_cost
+
+    assert _signature_cost(0, "major") == 0       # C major
+    assert _signature_cost(5, "major") == 1       # F major
+    assert _signature_cost(10, "major") == 2      # Bb major
+    assert _signature_cost(1, "major") == 5       # C# / Db major
+    assert _signature_cost(9, "minor") == 0       # A minor shares C major signature
