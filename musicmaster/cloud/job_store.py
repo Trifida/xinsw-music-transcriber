@@ -381,3 +381,107 @@ class PostgresJobStore:
                 )
                 return row["status"]
             return None
+
+
+    def count_queued_jobs(self) -> int:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS total FROM music_jobs WHERE status = 'queued'")
+            row = cur.fetchone()
+            return int(row["total"] if row else 0)
+
+    def latest_worker(self) -> dict | None:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT worker_id, instance_uuid, status, active_job_id,
+                       last_seen_at, created_at, updated_at
+                FROM music_workers
+                ORDER BY created_at DESC
+                LIMIT 1
+                """
+            )
+            return cur.fetchone()
+
+    def prepare_worker(self, worker_id: str) -> dict:
+        worker = str(worker_id).strip()
+        if not worker or len(worker) > 128:
+            raise ValueError("worker_id must contain 1–128 characters.")
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO music_workers (worker_id, status)
+                VALUES (%s, 'starting')
+                ON CONFLICT (worker_id) DO UPDATE
+                SET status = 'starting', active_job_id = NULL,
+                    last_seen_at = now(), updated_at = now()
+                RETURNING *
+                """,
+                (worker,),
+            )
+            row = cur.fetchone()
+        if row is None:
+            raise JobStoreError("The worker record was not created.")
+        return row
+
+    def set_worker_instance(self, worker_id: str, instance_uuid: str) -> bool:
+        value = str(instance_uuid).strip()
+        if not value.startswith("pro-") or len(value) > 80:
+            raise ValueError("Invalid AutoDL Pro instance ID.")
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE music_workers
+                SET instance_uuid = %s, updated_at = now()
+                WHERE worker_id = %s
+                RETURNING worker_id
+                """,
+                (value, str(worker_id).strip()),
+            )
+            return cur.fetchone() is not None
+
+    def issue_bootstrap_token(
+        self, token_hash: str, worker_id: str, *, expires_seconds: int = 900
+    ) -> None:
+        digest = str(token_hash).strip().lower()
+        if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+            raise ValueError("token_hash must be a SHA-256 hex digest.")
+        expiry = max(60, min(int(expires_seconds), 1800))
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO music_worker_bootstrap_tokens
+                    (token_hash, worker_id, expires_at)
+                VALUES (%s, %s, now() + (%s * interval '1 second'))
+                """,
+                (digest, str(worker_id).strip(), expiry),
+            )
+
+    def set_bootstrap_instance(self, token_hash: str, instance_uuid: str) -> bool:
+        value = str(instance_uuid).strip()
+        if not value.startswith("pro-") or len(value) > 80:
+            raise ValueError("Invalid AutoDL Pro instance ID.")
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE music_worker_bootstrap_tokens
+                SET instance_uuid = %s
+                WHERE token_hash = %s AND used_at IS NULL AND expires_at > now()
+                RETURNING token_hash
+                """,
+                (value, str(token_hash).strip().lower()),
+            )
+            return cur.fetchone() is not None
+
+    def consume_bootstrap_token(self, token_hash: str) -> dict | None:
+        digest = str(token_hash).strip().lower()
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE music_worker_bootstrap_tokens
+                SET used_at = now()
+                WHERE token_hash = %s AND used_at IS NULL AND expires_at > now()
+                RETURNING worker_id, instance_uuid
+                """,
+                (digest,),
+            )
+            return cur.fetchone()
