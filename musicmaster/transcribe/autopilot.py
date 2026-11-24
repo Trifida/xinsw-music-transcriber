@@ -138,7 +138,14 @@ def main(argv=None):
             except Exception as e:
                 print("CONF-ERR", repr(e)); conf_txt = f"(置信度评估失败:{type(e).__name__}: {e})"
 
-        rep.append(f"## ② 引擎 + 定调(L2)\n- 引擎:{ENGINES[engine]}\n- 调:**1={key}**\n- 音符数:{len(notes)}\n")
+        rep.append(f"## ② 引擎 + 定调(L2)\\n- 引擎:{ENGINES[engine]}\\n- 调:**1={key}**\\n- 定调来源:{key_source}\\n- 音符数:{len(notes)}\\n")
+        if key_analysis:
+            rep.append(f"- 智能定调状态:{key_analysis['status']}；候选置信度:{key_analysis['confidence']}\\n")
+            rep.append("- 候选调性：" + "、".join(
+                f"{x['label']}({x['score']:.3f})" for x in key_analysis["candidates"]
+            ) + "\\n")
+            if key_analysis["status"] == "ambiguous":
+                rep.append("> 调性证据接近，当前仅给出首选候选；建议结合伴奏/完整乐句人工确认，不将其视为确定结论。\\n")
         if conf_txt:
             rep.append("## ③ 扒谱可信度(L3)\n```\n" + conf_txt + "\n```\n")
         # 文件清单按【实际产物】动态生成,避免谎报不存在的 jianpu.pdf(修审计 M3)
