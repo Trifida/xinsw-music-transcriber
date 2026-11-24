@@ -1,14 +1,14 @@
+import importlib
 import threading
-import xml.etree.ElementTree as ET
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 
 from musicmaster.web import server
 from musicmaster.web import runners
-from musicmaster.core import render as render_module
+
+render_module = importlib.import_module("musicmaster.core.render")
 
 
 MUSICXML = """<?xml version="1.0" encoding="UTF-8"?>
