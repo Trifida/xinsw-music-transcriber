@@ -323,6 +323,23 @@ def _detect_key_name(notes: List[Note]):
     return best[1]
 
 
+def _music21_key_from_name(key_name: str):
+    """Parse explicit key labels such as C, F#, Am, Bb minor, or E小调."""
+    import re
+    from music21 import key as m21key
+
+    raw = str(key_name).strip().replace("♭", "b").replace("♯", "#")
+    is_minor = bool(re.search(r"(?:小调|minor|\bm\s*$)", raw, flags=re.IGNORECASE))
+    raw = re.sub(r"(?:小调|minor|major|\bm)\s*$", "", raw, flags=re.IGNORECASE).strip()
+    match = re.match(r"^([A-Ga-g])([#b-]?)$", raw)
+    if not match:
+        raise ValueError(f"无法识别调性名称: {key_name}")
+    tonic = match.group(1).upper() + match.group(2)
+    if tonic.endswith("b"):
+        tonic = tonic[:-1] + "-"
+    return m21key.Key(tonic, "minor" if is_minor else "major")
+
+
 def target_to_musicxml(
     target: Target, out_path: PathLike, *, key_name: Optional[str] = None
 ) -> Path:
@@ -346,7 +363,7 @@ def target_to_musicxml(
     # 调号(关键):显式优先,否则自动检测;写进 MusicXML 后 jianpu-ly / Verovio 据此渲染。
     try:
         if key_name:
-            part.append(m21key.Key(key_name))
+            part.append(_music21_key_from_name(key_name))
         else:
             det = _detect_key_name(target["notes"])
             if det:
