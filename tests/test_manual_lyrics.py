@@ -2,7 +2,9 @@ import pytest
 import xml.etree.ElementTree as ET
 
 from musicmaster.core.vocalparse import align_manual_lyrics, vocalparse_events_to_musicxml, musicxml_lyric_alignment
-from musicmaster.transcribe.lyrics import attach_lyrics_to_musicxml, read_lyric_slots
+from musicmaster.transcribe.lyrics import (
+    attach_lyrics_to_musicxml, is_editable_melody_musicxml, read_lyric_slots,
+)
 
 
 def _events():
@@ -85,3 +87,54 @@ def test_musicxml_lyric_slots_are_editable_one_per_pitched_note(tmp_path):
     attach_lyrics_to_musicxml(path, ["我", "—", "好"])
     updated = read_lyric_slots(path)
     assert [slot["lyric"] for slot in updated] == ["我", "—", "好"]
+
+
+
+def test_vocalparse_musicxml_is_eligible_for_lyric_editing(tmp_path):
+    path = vocalparse_events_to_musicxml(
+        [
+            {"start_beat": 0, "duration_beats": 1, "pitch_midi": 60},
+            {"start_beat": 1, "duration_beats": 1, "is_rest": True},
+            {"start_beat": 2, "duration_beats": 5, "pitch_midi": 62},
+        ],
+        100,
+        tmp_path / "vocalparse.musicxml",
+    )
+    assert is_editable_melody_musicxml(path)
+
+
+def test_chord_musicxml_is_not_eligible_for_lyric_editing(tmp_path):
+    path = tmp_path / "chord.musicxml"
+    path.write_text(
+        """<?xml version="1.0"?>
+        <score-partwise version="3.1">
+          <part-list><score-part id="P1"><part-name>Voice</part-name></score-part></part-list>
+          <part id="P1"><measure number="1">
+            <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note>
+            <note><chord/><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration></note>
+          </measure></part>
+        </score-partwise>""",
+        encoding="utf-8",
+    )
+    assert not is_editable_melody_musicxml(path)
+
+
+def test_multi_part_musicxml_is_not_eligible_for_lyric_editing(tmp_path):
+    path = tmp_path / "multi-part.musicxml"
+    path.write_text(
+        """<?xml version="1.0"?>
+        <score-partwise version="3.1">
+          <part-list>
+            <score-part id="P1"><part-name>Voice</part-name></score-part>
+            <score-part id="P2"><part-name>Accompaniment</part-name></score-part>
+          </part-list>
+          <part id="P1"><measure number="1">
+            <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note>
+          </measure></part>
+          <part id="P2"><measure number="1">
+            <note><pitch><step>C</step><octave>3</octave></pitch><duration>1</duration></note>
+          </measure></part>
+        </score-partwise>""",
+        encoding="utf-8",
+    )
+    assert not is_editable_melody_musicxml(path)
