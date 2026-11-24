@@ -88,14 +88,27 @@ def main(argv=None):
         (out / "notes.json").write_text(json.dumps(target, ensure_ascii=False, indent=2), encoding="utf-8")
 
         # ===== 定调(稳健,不被少数坏音带偏)=====
+        key_analysis = None
         if a.key:
             key = a.key
+            key_source = "user"
         else:
             try:
+                from .smart_key import analyze_key
+                key_analysis = analyze_key(notes, tempo=target.get("tempo"))
+                key = key_analysis["key"] or "C"
+                if key_analysis.get("mode") == "minor":
+                    key += "m"
+                key_source = "smart-auto"
+                (out / "key_analysis.json").write_text(
+                    json.dumps(key_analysis, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+            except Exception as e:
+                # Conservative fallback keeps transcription available if analysis fails.
                 tonic, _m, _s = confidence._detect_scale_robust(notes)
                 key = confidence.PC[tonic]
-            except Exception:
-                key = "C"
+                key_source = "legacy-fallback"
+                rep.append(f"> 智能定调模块暂不可用，回退旧版音级集合分析：{type(e).__name__}。\\n")
 
         # ===== 渲染:MIDI + 五线谱 +(单音才出)简谱(各步独立兜底)=====
         try:
