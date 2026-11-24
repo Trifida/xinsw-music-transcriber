@@ -108,9 +108,10 @@ def is_editable_melody_musicxml(musicxml_path: str | Path) -> bool:
             if any(_local_name(child) == "pitch" for child in node):
                 pitched_notes += 1
                 voice = next(
-                    (child.text or "").strip()
-                    for child in node if _local_name(child) == "voice"
-                , "")
+                    ((child.text or "").strip()
+                     for child in node if _local_name(child) == "voice"),
+                    "",
+                )
                 if voice:
                     voices.add(voice)
     return pitched_notes > 0 and len(voices) <= 1
