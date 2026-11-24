@@ -42,9 +42,7 @@ def lyric_job(tmp_path, monkeypatch):
     return job
 
 
-def test_manual_lyrics_api_renders_both_scores_and_updates_job(lyric_job, monkeypatch):
-    calls = []
-
+def _fake_renderer(calls):
     def fake_render(musicxml, out_dir, *, formats, jianpu_format="svg", require_all=False):
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
@@ -63,8 +61,12 @@ def test_manual_lyrics_api_renders_both_scores_and_updates_job(lyric_job, monkey
             score.write_text(f"<svg>{ext}</svg>" if ext == "svg" else "PDF", encoding="utf-8")
             result["jianpu"] = score
         return result
+    return fake_render
 
-    monkeypatch.setattr(render_module, "render", fake_render)
+
+def test_manual_lyrics_api_renders_both_scores_and_updates_job(lyric_job, monkeypatch):
+    calls = []
+    monkeypatch.setattr(render_module, "render", _fake_renderer(calls))
 
     response = server.api_update_job_lyrics("job-1", ["你", "—", "好"])
 
@@ -79,6 +81,38 @@ def test_manual_lyrics_api_renders_both_scores_and_updates_job(lyric_job, monkey
     assert response["result"]["jianpu_svg"] == "<svg>svg</svg>"
     assert (Path(lyric_job.job_dir) / "jianpu.pdf").read_text(encoding="utf-8") == "PDF"
     assert lyric_job.result is response["result"]
+
+
+def test_manual_lyrics_api_accepts_vocalparse_musicxml_with_rests_and_ties(
+    lyric_job, monkeypatch
+):
+    from musicmaster.core.vocalparse import vocalparse_events_to_musicxml
+    from musicmaster.transcribe.lyrics import read_lyric_slots
+
+    events = [
+        {"start_beat": 0, "duration_beats": 1, "pitch_midi": 60},
+        {"start_beat": 1, "duration_beats": 1, "is_rest": True},
+        # Five beats crosses the 4/4 barline and is exported as tied fragments.
+        {"start_beat": 2, "duration_beats": 5, "pitch_midi": 62},
+        {"start_beat": 7, "duration_beats": 1, "pitch_midi": 64},
+    ]
+    musicxml = Path(lyric_job.job_dir) / "out.musicxml"
+    vocalparse_events_to_musicxml(events, 100, musicxml)
+
+    before = read_lyric_slots(musicxml)
+    assert len(before) == 3
+    assert [slot["pitch"] for slot in before] == ["C4", "D4", "E4"]
+
+    calls = []
+    monkeypatch.setattr(render_module, "render", _fake_renderer(calls))
+    response = server.api_update_job_lyrics("job-1", ["你", "好", "吗"])
+
+    assert response["ok"] is True
+    assert [slot["lyric"] for slot in response["result"]["lyric_slots"]] == ["你", "好", "吗"]
+    assert calls == [
+        (("staff", "jianpu"), "svg", True),
+        (("jianpu",), "pdf", True),
+    ]
 
 
 def test_manual_lyrics_api_does_not_replace_original_if_render_fails(lyric_job, monkeypatch):
