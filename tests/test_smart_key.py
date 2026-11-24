@@ -81,3 +81,12 @@ def test_smart_key_detects_phrase_endings_from_silence_gaps():
     result = analyze_key(notes, tempo=120)
     assert result["phrase_endings"] == ["E", "C"]
     assert all("phrase_end_share" in item for item in result["candidates"])
+
+
+def test_detected_key_spellings_avoid_unusual_theoretical_keys():
+    from musicmaster.transcribe.smart_key import MAJOR_KEY_NAMES, MINOR_KEY_NAMES
+
+    assert MAJOR_KEY_NAMES[3] == "Eb"
+    assert MAJOR_KEY_NAMES[8] == "Ab"
+    assert MAJOR_KEY_NAMES[10] == "Bb"
+    assert MINOR_KEY_NAMES[10] == "Bb"
