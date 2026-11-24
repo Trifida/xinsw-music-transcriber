@@ -309,3 +309,24 @@ def test_worker_downloads_source_once_and_keeps_lease_through_completion(
     assert events.count("download") == 1
     assert events.index("heartbeat") < events.index("download")
     assert events.index("complete") > events.index("artifact-complete")
+
+
+def test_worker_bundle_endpoint_requires_auth_and_returns_pinned_digest(api, monkeypatch):
+    client, _, objects = api
+    commit = "a" * 40
+    digest = "b" * 64
+    object_key = f"worker-bundles/{commit}/{digest}.tar.gz"
+    monkeypatch.setenv("MUSICMASTER_WORKER_BUNDLE_COMMIT", commit)
+    monkeypatch.setenv("MUSICMASTER_WORKER_BUNDLE_SHA256", digest)
+    monkeypatch.setenv("MUSICMASTER_WORKER_BUNDLE_KEY", object_key)
+
+    assert client.get("/api/internal/worker/bundle").status_code == 401
+    response = client.get(
+        "/api/internal/worker/bundle",
+        headers={"Authorization": "Bearer test-worker-secret"},
+    )
+    assert response.status_code == 200
+    assert response.json()["repository_commit"] == commit
+    assert response.json()["sha256"] == digest
+    assert response.json()["object_key"] == object_key
+    assert response.json()["url"].startswith("https://")
