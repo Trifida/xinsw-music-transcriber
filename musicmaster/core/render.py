@@ -433,12 +433,14 @@ def render(
         lilypond_timeout: LilyPond 子进程超时(秒)。
         require_all:      True → 任一请求格式不可用即抛错;
                           False(默认)→ best-effort,跳过不可用格式。
-                          注意:若 `formats` 只含单一格式,则该格式**必须**成功
-                          (否则调用方拿不到任何东西),此时按"必需"处理。
+                          注意:若 `formats` 只含单一格式,则该格式**必须**成功。
+        all_staff_pages:  True(默认)→ 输出全部五线谱页,并保留 staff.svg 为第一页;
+                          False→仅输出 page 指定页。
 
     Returns:
         Dict[str, Path],键 ⊆ {"staff","jianpu"}(可能还含 "jianpu_ly" 指向中间 .ly)。
-        - "staff":     staff.svg 路径(Verovio)。
+        - "staff":     staff.svg 路径(Verovio,第一页)。
+        - "staff_page_N": 第 N 页五线谱路径(仅在 all_staff_pages=True 且 N≥2 时出现)。
         - "jianpu":    jianpu.<svg|pdf> 路径(LilyPond 渲染成功时)。
         - "jianpu_ly": jianpu.ly 中间源路径(只要 jianpu-ly 可用就有,即便 LilyPond 缺失)。
 
