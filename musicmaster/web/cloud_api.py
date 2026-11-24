@@ -6,6 +6,7 @@ the independent production site and the authenticated GPU worker.
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
 import os
 import re
@@ -64,6 +65,10 @@ def _public_job(job: dict[str, Any]) -> dict[str, Any]:
         "started_at", "completed_at",
     )
     return {key: job.get(key) for key in allowed}
+
+
+class BootstrapRequest(BaseModel):
+    bootstrap_token: str = Field(min_length=32, max_length=256)
 
 
 class WorkerRegister(BaseModel):
@@ -218,6 +223,27 @@ def get_artifact_download_url(job_id: str, artifact_id: int) -> dict:
     except ObjectStoreError:
         raise HTTPException(status_code=503, detail="暂时无法生成文件下载链接。") from None
     return {"url": url, "expires_in": 900, "file_name": artifact["file_name"]}
+
+
+@router.post("/api/internal/bootstrap")
+def bootstrap_worker(body: BootstrapRequest) -> dict:
+    """Exchange one short-lived bootstrap secret for the worker API token exactly once."""
+    worker_token = os.environ.get("MUSICMASTER_WORKER_TOKEN", "").strip()
+    if not worker_token:
+        raise HTTPException(status_code=503, detail="Worker API is not configured.")
+    store, _ = _components()
+    digest = hashlib.sha256(body.bootstrap_token.encode("utf-8")).hexdigest()
+    try:
+        record = store.consume_bootstrap_token(digest)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=f"Bootstrap lookup failed: {type(exc).__name__}") from None
+    if record is None:
+        raise HTTPException(status_code=401, detail="Bootstrap token is invalid, expired or already used.")
+    return {
+        "worker_token": worker_token,
+        "worker_id": record["worker_id"],
+        "instance_uuid": record.get("instance_uuid"),
+    }
 
 
 @router.post("/api/internal/workers/register", dependencies=[Depends(_worker_auth)])
