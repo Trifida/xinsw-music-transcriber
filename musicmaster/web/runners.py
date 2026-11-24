@@ -329,7 +329,7 @@ def run_convert(job, file_path: str, direction: str, key: str = "") -> dict:
 
 # ─────────────────────────── 记谱 ─────────────────────────── #
 def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
-                   lyrics_text: str = "", auto_lyrics: bool = True) -> dict:
+                   lyrics_text: str = "", auto_lyrics: bool = False) -> dict:
     if not audio_path:
         return {"ok": False, "message": "请先上传清唱音频。"}
     from musicmaster.transcribe import autopilot
