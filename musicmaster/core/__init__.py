@@ -43,6 +43,7 @@ from .separate import (
 from .render import (
     render,
     render_staff_svg,
+    render_staff_svgs,
     render_jianpu,
     musicxml_to_lilypond,
     lilypond_executable,
@@ -67,6 +68,7 @@ __all__ = [
     "is_transcription_available",
     "render",
     "render_staff_svg",
+    "render_staff_svgs",
     "render_jianpu",
     "musicxml_to_lilypond",
     "lilypond_executable",
