@@ -300,6 +300,11 @@ def test_captured_colab_sample_roundtrips_notes_rests_and_lyrics(tmp_path):
     assert [(item["start_beat"], item["lyric"]) for item in actual_lyrics] == expected_lyrics
     assert len(actual_lyrics) == 33
     assert all(lyric not in ("SP", "·") for _, lyric in expected_lyrics)
+    # The model's middle-dot marker is provisional and must not be silently
+    # converted into a MusicXML melisma extender.
+    import xml.etree.ElementTree as ET
+    root = ET.parse(musicxml_path).getroot()
+    assert not any(node.tag.endswith("extend") for node in root.iter())
 
 
 def test_lyric_alignment_keeps_one_anchor_and_preserves_continuation_marker(vocalparse_events):
