@@ -1,0 +1,282 @@
+# -*- coding: utf-8 -*-
+"""Long-polling GPU worker for the authenticated cloud job API."""
+from __future__ import annotations
+
+import http.client
+import json
+import mimetypes
+import os
+import shutil
+import socket
+import sys
+import tempfile
+import time
+import traceback
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+
+def _config() -> tuple[str, str, str, str | None]:
+    base = os.environ.get("MUSICMASTER_API_URL", "").strip().rstrip("/")
+    token = os.environ.get("MUSICMASTER_WORKER_TOKEN", "").strip()
+    worker_id = os.environ.get("MUSICMASTER_WORKER_ID", "").strip() or socket.gethostname()
+    instance_id = os.environ.get("MUSICMASTER_INSTANCE_UUID", "").strip() or None
+    if not base.startswith("https://"):
+        raise ValueError("MUSICMASTER_API_URL must be an HTTPS URL.")
+    if not token:
+        raise ValueError("MUSICMASTER_WORKER_TOKEN is required.")
+    return base, token, worker_id, instance_id
+
+
+def _api(
+    base: str,
+    token: str,
+    method: str,
+    path: str,
+    payload: dict[str, Any] | None = None,
+    *,
+    timeout: int = 30,
+) -> dict:
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+    request = urllib.request.Request(
+        base + path,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:500]
+        raise RuntimeError(f"Worker API HTTP {exc.code}: {detail}") from None
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError(f"Worker API connection failed: {type(exc).__name__}") from None
+    try:
+        result = json.loads(raw.decode("utf-8")) if raw else {}
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise RuntimeError("Worker API returned invalid JSON.") from None
+    if not isinstance(result, dict):
+        raise RuntimeError("Worker API response must be a JSON object.")
+    return result
+
+
+def _download(url: str, destination: Path) -> None:
+    request = urllib.request.Request(url, headers={"User-Agent": "XinsW-Music-Worker/1"})
+    try:
+        with urllib.request.urlopen(request, timeout=1800) as response, destination.open("wb") as out:
+            shutil.copyfileobj(response, out, length=1024 * 1024)
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError(f"Audio download failed: {type(exc).__name__}") from None
+
+
+def _put_file(url: str, file_path: Path, content_type: str) -> None:
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https" or not parts.hostname:
+        raise ValueError("The artifact upload URL must be HTTPS.")
+    path = urllib.parse.urlunsplit(("", "", parts.path, parts.query, ""))
+    size = file_path.stat().st_size
+    connection = http.client.HTTPSConnection(parts.hostname, parts.port or 443, timeout=1800)
+    try:
+        connection.putrequest("PUT", path)
+        connection.putheader("Host", parts.netloc)
+        connection.putheader("Content-Type", content_type)
+        connection.putheader("Content-Length", str(size))
+        connection.endheaders()
+        with file_path.open("rb") as source:
+            while True:
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                connection.send(chunk)
+        response = connection.getresponse()
+        detail = response.read(500).decode("utf-8", errors="replace")
+        if response.status not in (200, 201, 204):
+            raise RuntimeError(f"Artifact upload failed (HTTP {response.status}): {detail}")
+    finally:
+        connection.close()
+
+
+def _artifact_role(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in {".wav", ".mp3", ".flac", ".m4a", ".ogg"}:
+        return "audio"
+    if suffix in {".mid", ".midi", ".musicxml", ".xml", ".pdf", ".svg", ".ly"}:
+        return "score"
+    return "metadata"
+
+
+def _process_job(
+    base: str,
+    token: str,
+    worker_id: str,
+    job: dict[str, Any],
+) -> None:
+    from musicmaster.workflows.full_transcribe import run_full_transcription
+
+    job_id = str(job["id"])
+    options = job.get("options") or {}
+    source_name = Path(str(job.get("source_filename") or "source-audio")).name
+    work_root = Path(os.environ.get("MUSICMASTER_WORKER_DATA", tempfile.gettempdir()))
+    work_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f"xinsw-{job_id[:8]}-", dir=work_root) as temp:
+        root = Path(temp)
+        source = root / source_name
+        output = root / "output"
+        _download(str(job["source_url"]), source)
+
+        last_sent = {"at": 0.0}
+
+        def progress(value: float, stage: str) -> None:
+            now = time.monotonic()
+            if value >= 1.0 or now - last_sent["at"] >= 4:
+                _api(
+                    base, token, "POST", f"/api/internal/jobs/{job_id}/heartbeat",
+                    {
+                        "worker_id": worker_id,
+                        "progress": max(0.0, min(0.99, float(value))),
+                        "stage": stage,
+                        "lease_seconds": 300,
+                    },
+                )
+                last_sent["at"] = now
+
+        result = run_full_transcription(
+            source,
+            output,
+            engine=str(options.get("engine") or "crepe"),
+            key=str(options.get("key") or ""),
+            stages=str(options.get("stages") or "1,2,3"),
+            denoise=str(options.get("denoise") or "dereverb"),
+            progress_callback=progress,
+        )
+
+        manifest_path = output / "job_result.json"
+        if not manifest_path.is_file():
+            raise RuntimeError("Full transcription completed without job_result.json.")
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        relative_paths = {
+            manifest.get("separation", {}).get("final_vocal"),
+            manifest.get("separation", {}).get("accompaniment"),
+            *((manifest.get("transcription", {}).get("files") or {}).values()),
+            "job_result.json",
+        }
+        files = []
+        for relative in sorted(path for path in relative_paths if path):
+            file_path = (output / relative).resolve()
+            try:
+                file_path.relative_to(output.resolve())
+            except ValueError:
+                raise RuntimeError("The workflow returned an unsafe artifact path.") from None
+            if file_path.is_file():
+                files.append(file_path)
+        required_names = {"notes.json", "out.mid", "out.musicxml"}
+        if not required_names.issubset({path.name for path in files}):
+            raise RuntimeError("The workflow did not produce notes.json, out.mid and out.musicxml.")
+
+        for file_path in files:
+            filename = file_path.name
+            content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+            upload = _api(
+                base, token, "POST", f"/api/internal/jobs/{job_id}/artifact-url",
+                {
+                    "worker_id": worker_id,
+                    "file_name": filename,
+                    "role": _artifact_role(file_path),
+                    "content_type": content_type,
+                },
+            )
+            _put_file(str(upload["url"]), file_path, content_type)
+            _api(
+                base, token, "POST", f"/api/internal/jobs/{job_id}/artifact-complete",
+                {
+                    "worker_id": worker_id,
+                    "object_key": upload["object_key"],
+                    "file_name": filename,
+                    "role": _artifact_role(file_path),
+                    "content_type": content_type,
+                },
+            )
+
+        _api(
+            base, token, "POST", f"/api/internal/jobs/{job_id}/complete",
+            {"worker_id": worker_id, "result": manifest},
+        )
+
+
+def run() -> int:
+    base, token, worker_id, instance_id = _config()
+    idle_limit = max(60, int(os.environ.get("MUSICMASTER_WORKER_IDLE_SECONDS", "300")))
+    poll_seconds = max(2, min(30, int(os.environ.get("MUSICMASTER_WORKER_POLL_SECONDS", "5"))))
+    _api(
+        base, token, "POST", "/api/internal/workers/register",
+        {"worker_id": worker_id, "instance_uuid": instance_id},
+    )
+    print(f"[cloud-worker] registered: {worker_id}", flush=True)
+    idle_since = time.monotonic()
+
+    while True:
+        try:
+            claimed = _api(
+                base, token, "POST", "/api/internal/jobs/claim",
+                {"worker_id": worker_id, "lease_seconds": 300},
+            )
+            job = claimed.get("job")
+            if job is None:
+                _api(
+                    base, token, "POST", "/api/internal/workers/heartbeat",
+                    {"worker_id": worker_id, "status": "idle"},
+                )
+                if time.monotonic() - idle_since >= idle_limit:
+                    _api(
+                        base, token, "POST", "/api/internal/workers/heartbeat",
+                        {"worker_id": worker_id, "status": "stopping"},
+                    )
+                    print("[cloud-worker] idle timeout reached; exiting for instance shutdown.", flush=True)
+                    return 0
+                time.sleep(poll_seconds)
+                continue
+
+            idle_since = time.monotonic()
+            job_id = str(job["id"])
+            print(f"[cloud-worker] claimed job {job_id}", flush=True)
+            try:
+                _process_job(base, token, worker_id, job)
+                print(f"[cloud-worker] completed job {job_id}", flush=True)
+            except Exception as exc:  # noqa: BLE001
+                detail = f"{type(exc).__name__}: {exc}"
+                print(f"[cloud-worker] job {job_id} failed: {detail}", flush=True)
+                print(traceback.format_exc()[-3000:], file=sys.stderr, flush=True)
+                try:
+                    _api(
+                        base, token, "POST", f"/api/internal/jobs/{job_id}/fail",
+                        {"worker_id": worker_id, "error": detail[:1000], "retryable": False},
+                    )
+                except Exception as report_error:  # noqa: BLE001
+                    print(f"[cloud-worker] could not report failure: {type(report_error).__name__}", flush=True)
+        except KeyboardInterrupt:
+            break
+        except Exception as exc:  # noqa: BLE001
+            print(f"[cloud-worker] loop error: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+            time.sleep(min(30, poll_seconds * 2))
+
+    try:
+        _api(
+            base, token, "POST", "/api/internal/workers/heartbeat",
+            {"worker_id": worker_id, "status": "stopped"},
+        )
+    except Exception:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(run())
