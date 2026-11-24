@@ -1,4 +1,5 @@
 import pytest
+import xml.etree.ElementTree as ET
 
 from musicmaster.core.vocalparse import align_manual_lyrics, vocalparse_events_to_musicxml, musicxml_lyric_alignment
 
@@ -51,3 +52,8 @@ def test_manual_lyrics_are_written_into_musicxml(tmp_path):
     path = vocalparse_events_to_musicxml(events, 100, tmp_path / "with-lyrics.musicxml")
     aligned = musicxml_lyric_alignment(path)
     assert [item["lyric"] for item in aligned] == ["你", "好"]
+    root = ET.parse(path).getroot()
+    notes = [node for node in root.iter() if node.tag.endswith("note")]
+    lyric_nodes = [next((child for child in note if child.tag.endswith("lyric")), None) for note in notes]
+    assert lyric_nodes[0].find("extend").attrib["type"] == "start"
+    assert lyric_nodes[1].find("extend").attrib["type"] == "stop"
