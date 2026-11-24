@@ -12,6 +12,8 @@ from math import sqrt
 from typing import Dict, Iterable, List, Optional, Tuple
 
 PITCH_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+MAJOR_KEY_NAMES = ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"]
+MINOR_KEY_NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"]
 MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
 MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
 MAJOR_STEPS = {0, 2, 4, 5, 7, 9, 11}
@@ -110,8 +112,8 @@ def analyze_key(notes: Iterable[Dict], tempo: Optional[float] = None,
                      + 0.12 * in_scale_share + 0.08 * min(1.0, tonic_share * 4)
                      + 0.12 * phrase_end_share + ending_bonus)
             candidates.append({
-                "key": PITCH_NAMES[tonic], "mode": mode,
-                "label": PITCH_NAMES[tonic] + ("大调" if mode == "major" else "小调"),
+                "key": (MAJOR_KEY_NAMES if mode == "major" else MINOR_KEY_NAMES)[tonic], "mode": mode,
+                "label": (MAJOR_KEY_NAMES if mode == "major" else MINOR_KEY_NAMES)[tonic] + ("大调" if mode == "major" else "小调"),
                 "score": round(score, 6),
                 "signature_cost": _signature_cost(tonic, mode),
                 "in_scale_share": round(in_scale_share, 4),
