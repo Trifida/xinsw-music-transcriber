@@ -204,6 +204,40 @@ def render_staff_svg(musicxml: PathLike, out_svg: PathLike, *, page: int = 1) ->
     return out_svg
 
 
+def render_staff_svgs(musicxml: PathLike, out_dir: PathLike, *, stem: str = "staff") -> List[Path]:
+    """渲染 MusicXML 的全部五线谱页面。
+    为每页写出 <stem>-page-NNN.svg，同时把第一页复制为兼容旧接口的 <stem>.svg。
+    """
+    if not _verovio_importable():
+        raise RuntimeError("五线谱渲染需要 verovio:请 pip install verovio。")
+    import verovio
+    xml_text = _read_musicxml_text(musicxml)
+    tk = verovio.toolkit(False)
+    rp = _ascii_verovio_resource_dir()
+    if rp:
+        tk.setResourcePath(rp)
+    try:
+        tk.setInputFrom("musicxml")
+    except Exception:
+        pass
+    if not tk.loadData(xml_text):
+        raise RuntimeError("Verovio 无法解析该 MusicXML(loadData 返回 False)。")
+    page_count = max(1, int(tk.getPageCount() or 1))
+    output_dir = Path(out_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pages: List[Path] = []
+    for page_number in range(1, page_count + 1):
+        svg = tk.renderToSVG(page_number)
+        if not svg or "<svg" not in svg[:200]:
+            raise RuntimeError(f"Verovio 第 {page_number} 页渲染结果不是有效 SVG。")
+        page_path = output_dir / f"{stem}-page-{page_number:03d}.svg"
+        page_path.write_text(svg, encoding="utf-8")
+        pages.append(page_path)
+    # 旧版调用方仍可通过 staff.svg 读取第一页。
+    (output_dir / f"{stem}.svg").write_text(pages[0].read_text(encoding="utf-8"), encoding="utf-8")
+    return pages
+
+
 # --------------------------------------------------------------------------- #
 # 简谱:MusicXML → jianpu-ly → LilyPond .ly 源(纯 Python)。
 # --------------------------------------------------------------------------- #
@@ -383,6 +417,7 @@ def render(
     jianpu_format: str = DEFAULT_JIANPU_FORMAT,
     lilypond_timeout: float = DEFAULT_LILYPOND_TIMEOUT,
     require_all: bool = False,
+    all_staff_pages: bool = True,
 ) -> Dict[str, Path]:
     """谱面渲染:MusicXML → {staff.svg(Verovio), jianpu.svg/pdf(jianpu-ly+LilyPond)}。
 
@@ -436,8 +471,14 @@ def render(
     if "staff" in fmts:
         staff_required = require_all or single
         if _verovio_importable():
-            staff_path = render_staff_svg(src, out_dir / _STAFF_NAME, page=page)
-            result["staff"] = staff_path
+            if all_staff_pages:
+                staff_pages = render_staff_svgs(src, out_dir, stem="staff")
+                result["staff"] = out_dir / _STAFF_NAME
+                for page_number, page_path in enumerate(staff_pages[1:], start=2):
+                    result[f"staff_page_{page_number}"] = page_path
+            else:
+                staff_path = render_staff_svg(src, out_dir / _STAFF_NAME, page=page)
+                result["staff"] = staff_path
         elif staff_required:
             raise RuntimeError(
                 "请求了 staff 但 verovio 不可用:请 `pip install verovio`(LGPL,作为库加载)。"
