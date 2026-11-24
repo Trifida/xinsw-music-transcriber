@@ -20,6 +20,32 @@ fi
 
 "$SYSTEM_PYTHON" -c 'import sys; raise SystemExit("Python 3.10+ is required") if sys.version_info < (3, 10) else None'
 
+# Exchange the one-time bootstrap token before lengthy environment/model setup.
+if [[ -z "${MUSICMASTER_WORKER_TOKEN:-}" ]]; then
+  BOOTSTRAP_JSON="$("$SYSTEM_PYTHON" - "${MUSICMASTER_API_URL}" "${MUSICMASTER_BOOTSTRAP_TOKEN}" <<'PY'
+import json
+import sys
+import urllib.request
+
+base, token = sys.argv[1].rstrip("/"), sys.argv[2]
+request = urllib.request.Request(
+    base + "/api/internal/bootstrap",
+    data=json.dumps({"bootstrap_token": token}).encode("utf-8"),
+    headers={"Content-Type": "application/json", "Accept": "application/json"},
+    method="POST",
+)
+with urllib.request.urlopen(request, timeout=30) as response:
+    print(response.read().decode("utf-8"))
+PY
+)"
+  export MUSICMASTER_WORKER_TOKEN="$("$SYSTEM_PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["worker_token"])' <<<"$BOOTSTRAP_JSON")"
+  export MUSICMASTER_WORKER_ID="$("$SYSTEM_PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["worker_id"])' <<<"$BOOTSTRAP_JSON")"
+  INSTANCE_UUID="$("$SYSTEM_PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("instance_uuid") or "")' <<<"$BOOTSTRAP_JSON")"
+  if [[ -n "$INSTANCE_UUID" ]]; then export MUSICMASTER_INSTANCE_UUID="$INSTANCE_UUID"; fi
+  unset BOOTSTRAP_JSON
+  unset MUSICMASTER_BOOTSTRAP_TOKEN
+fi
+
 if [[ ! -x "$CORE_PY" ]]; then
   "$SYSTEM_PYTHON" scripts/setup_core.py --venv "$CORE_VENV"
 fi
