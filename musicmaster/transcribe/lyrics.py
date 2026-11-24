@@ -36,6 +36,10 @@ def tokenize_lyrics(value: str) -> list[str]:
         if char.isspace() or char == "\u3000":
             index += 1
             continue
+        if char in {"—", "~", "·"}:
+            tokens.append(char)
+            index += 1
+            continue
         if _is_punctuation(char):
             if char in OPENING_PUNCTUATION or not tokens:
                 prefix += char
@@ -100,10 +104,25 @@ def attach_lyrics_to_musicxml(musicxml_path: str | Path, tokens: Iterable[str]) 
 
     lyric_tokens = [str(token) for token in tokens if str(token)]
     assigned = min(len(lyric_tokens), len(slots))
-    for note, token in zip(slots, lyric_tokens[:assigned]):
+    previous_has_text = False
+    for index, (note, token) in enumerate(zip(slots, lyric_tokens[:assigned])):
+        next_token = lyric_tokens[index + 1] if index + 1 < assigned else None
+        if token in {"—", "~"}:
+            if not previous_has_text:
+                raise ValueError("歌词延续符前面必须先有一个实际歌词音节")
+            lyric = ET.SubElement(note, q("lyric"))
+            extend_type = "continue" if next_token in {"—", "~"} else "stop"
+            ET.SubElement(lyric, q("extend"), {"type": extend_type})
+            continue
+        if token == "·":
+            previous_has_text = False
+            continue
         lyric = ET.SubElement(note, q("lyric"))
         ET.SubElement(lyric, q("syllabic")).text = "single"
         ET.SubElement(lyric, q("text")).text = token
+        if next_token in {"—", "~"}:
+            ET.SubElement(lyric, q("extend"), {"type": "start"})
+        previous_has_text = True
 
     tree.write(path, encoding="utf-8", xml_declaration=True)
     return {
