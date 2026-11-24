@@ -160,6 +160,8 @@ def main(argv=None):
             flist.append("jianpu.ly 简谱排版源稿(已保留，可由服务器重新生成 PDF)")
         if (out / "confidence.json").is_file():
             flist.append("confidence.json 逐音可信度")
+        if (out / "key_analysis.json").is_file():
+            flist.append("key_analysis.json 智能定调分析")
         rep.append("## ④ 文件清单\n" + "\n".join(f"- {x}" for x in flist) + "\n")
         rep.append("\n> 先看体检档位,再看可信度【存疑段】——只核对那几处,其余放心。复音引擎(basic-pitch/bytedance)只出五线谱。\n")
         print("=> 渲染:", rendered)
