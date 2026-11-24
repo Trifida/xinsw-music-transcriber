@@ -77,6 +77,45 @@ def _local_name(element: ET.Element) -> str:
 
 
 
+
+def is_editable_melody_musicxml(musicxml_path: str | Path) -> bool:
+    """Return whether a MusicXML file represents one editable monophonic melody.
+
+    Lyric slots are meaningful only for a single melodic line. Reject scores
+    with multiple parts, explicit chord notes, or multiple voices/backup
+    passages rather than silently assigning syllables to accompaniment notes.
+    """
+    try:
+        root = ET.parse(Path(musicxml_path)).getroot()
+    except (OSError, ET.ParseError, TypeError, ValueError):
+        return False
+
+    if _local_name(root) != "score-partwise":
+        return False
+    parts = [node for node in root if _local_name(node) == "part"]
+    if len(parts) != 1:
+        return False
+
+    voices: set[str] = set()
+    pitched_notes = 0
+    for node in parts[0].iter():
+        name = _local_name(node)
+        if name in {"backup", "forward"}:
+            return False
+        if name == "note":
+            if any(_local_name(child) == "chord" for child in node):
+                return False
+            if any(_local_name(child) == "pitch" for child in node):
+                pitched_notes += 1
+                voice = next(
+                    (child.text or "").strip()
+                    for child in node if _local_name(child) == "voice"
+                , "")
+                if voice:
+                    voices.add(voice)
+    return pitched_notes > 0 and len(voices) <= 1
+
+
 def read_lyric_slots(musicxml_path: str | Path) -> list[dict]:
     """Return one editable lyric cell for each pitched note that can receive a syllable."""
     root = ET.parse(Path(musicxml_path)).getroot()
