@@ -33,7 +33,7 @@ def test_manual_lyrics_keep_english_words_together():
 
 def test_manual_lyrics_reject_count_mismatch():
     with pytest.raises(ValueError, match="歌词音节数与可分配音符数不一致"):
-        align_manual_lyrics(_events(), 100, "只有三个字")
+        align_manual_lyrics(_events(), 100, "只有三字")
 
 
 def test_manual_lyrics_reject_melisma_without_previous_syllable():
