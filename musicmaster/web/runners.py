@@ -329,7 +329,7 @@ def run_convert(job, file_path: str, direction: str, key: str = "") -> dict:
 
 # ─────────────────────────── 记谱 ─────────────────────────── #
 def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
-                   lyrics_text: str = "", auto_lyrics: bool = False) -> dict:
+                   lyrics_text: str = "") -> dict:
     if not audio_path:
         return {"ok": False, "message": "请先上传清唱音频。"}
     from musicmaster.transcribe import autopilot
@@ -387,51 +387,6 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                     lyrics_source = "user-provided"
                     lyrics_provider = None
                     lyrics_model = None
-                elif auto_lyrics:
-                    from musicmaster.transcribe.lyric_asr import (
-                        ASRNotConfigured, ASRRequestError, get_asr_status, transcribe_lyrics,
-                    )
-                    asr_status = get_asr_status()
-                    if asr_status.get("available"):
-                        job.set_stage("旋律已识别，正在识别歌词…", 0.935)
-                        try:
-                            asr_result = transcribe_lyrics(audio_path)
-                            lyric_text = asr_result["text"]
-                            lyrics_source = "automatic-asr" if lyric_text else "automatic-asr-empty"
-                            lyrics_provider = asr_result.get("provider")
-                            lyrics_model = asr_result.get("model")
-                        except (ASRNotConfigured, ASRRequestError) as asr_error:
-                            lyrics_info = {
-                                "source": "unavailable", "status": "request-failed",
-                                "alignmentStatus": "not-attempted", "tokenCount": 0,
-                                "assignedCount": 0, "unassignedCount": 0,
-                                "message": f"歌词识别服务暂不可用：{type(asr_error).__name__}",
-                            }
-                    else:
-                        lyrics_info = {
-                            "source": "not-configured", "status": "not-configured",
-                            "alignmentStatus": "not-attempted", "tokenCount": 0,
-                            "assignedCount": 0, "unassignedCount": 0,
-                            "message": "自动歌词识别服务尚未配置；可先粘贴歌词使用逐字排版。",
-                            "reason": asr_status.get("status"),
-                        }
-                else:
-                    lyrics_info = {
-                        "source": "not-provided", "status": "not-provided",
-                        "alignmentStatus": "not-attempted", "tokenCount": 0,
-                        "assignedCount": 0, "unassignedCount": 0,
-                        "message": "本次未提供歌词，已生成无歌词乐谱；可在谱面页逐音歌词校正区填写并保存，无需重新运行模型。",
-                    }
-
-                if not lyric_text and lyrics_source == "automatic-asr-empty":
-                    lyrics_info = {
-                        "source": "automatic-asr-empty", "status": "empty-transcript",
-                        "alignmentStatus": "not-attempted", "tokenCount": 0,
-                        "assignedCount": 0, "unassignedCount": 0,
-                        "provider": lyrics_provider, "model": lyrics_model,
-                        "message": "语音识别服务没有识别到清晰歌词；可粘贴歌词后重新记谱。",
-                    }
-
                 if lyric_text:
                     tokens = tokenize_lyrics(lyric_text)
                     aligned = attach_lyrics_to_musicxml(mx, tokens)
@@ -493,7 +448,7 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
         report = (d / "报告.md").read_text(encoding="utf-8") if (d / "报告.md").is_file() else "(无报告)"
         if rc != 0:
             report = f"> 扒谱以非零码({rc})结束,可能转录失败,详见下方报告。\n\n" + report
-        report += "\n\n## ⑤ 歌词识别与对齐\n"
+        report += "\n\n## ⑤ 用户输入歌词与对齐\n"
         report += f"- 来源：{lyrics_info.get('source')}\n"
         report += f"- 已分配：{lyrics_info.get('assignedCount', 0)}/{lyrics_info.get('tokenCount', 0)} 个歌词单位\n"
         if lyrics_info.get("lyricSlots") is not None:
