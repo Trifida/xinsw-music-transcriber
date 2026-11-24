@@ -10,6 +10,7 @@ import shutil
 import socket
 import sys
 import tempfile
+import threading
 import time
 import traceback
 import urllib.error
@@ -132,31 +133,63 @@ def _process_job(
         output = root / "output"
         _download(str(job["source_url"]), source)
 
-        last_sent = {"at": 0.0}
+        state = {"progress": 0.01, "stage": "下载原始音频…", "last_sent": 0.0}
+        state_lock = threading.Lock()
+        stop_heartbeat = threading.Event()
+
+        def send_heartbeat() -> None:
+            with state_lock:
+                progress_value = state["progress"]
+                stage_label = state["stage"]
+            _api(
+                base, token, "POST", f"/api/internal/jobs/{job_id}/heartbeat",
+                {
+                    "worker_id": worker_id,
+                    "progress": max(0.0, min(0.99, float(progress_value))),
+                    "stage": stage_label,
+                    "lease_seconds": 300,
+                },
+            )
+
+        def heartbeat_loop() -> None:
+            while not stop_heartbeat.wait(30):
+                try:
+                    send_heartbeat()
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[cloud-worker] heartbeat warning: {type(exc).__name__}", flush=True)
+
+        heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+        heartbeat_thread.start()
 
         def progress(value: float, stage: str) -> None:
             now = time.monotonic()
-            if value >= 1.0 or now - last_sent["at"] >= 4:
-                _api(
-                    base, token, "POST", f"/api/internal/jobs/{job_id}/heartbeat",
-                    {
-                        "worker_id": worker_id,
-                        "progress": max(0.0, min(0.99, float(value))),
-                        "stage": stage,
-                        "lease_seconds": 300,
-                    },
-                )
-                last_sent["at"] = now
+            with state_lock:
+                state["progress"] = max(0.0, min(0.99, float(value)))
+                state["stage"] = str(stage)[:200]
+                should_send = now - state["last_sent"] >= 4
+                if should_send:
+                    state["last_sent"] = now
+            if should_send:
+                send_heartbeat()
 
-        result = run_full_transcription(
-            source,
-            output,
-            engine=str(options.get("engine") or "crepe"),
-            key=str(options.get("key") or ""),
-            stages=str(options.get("stages") or "1,2,3"),
-            denoise=str(options.get("denoise") or "dereverb"),
-            progress_callback=progress,
-        )
+        try:
+            _download(str(job["source_url"]), source)
+            with state_lock:
+                state["progress"] = 0.03
+                state["stage"] = "音频已下载，开始分离与识别…"
+
+            result = run_full_transcription(
+                source,
+                output,
+                engine=str(options.get("engine") or "crepe"),
+                key=str(options.get("key") or ""),
+                stages=str(options.get("stages") or "1,2,3"),
+                denoise=str(options.get("denoise") or "dereverb"),
+                progress_callback=progress,
+            )
+        finally:
+            stop_heartbeat.set()
+            heartbeat_thread.join(timeout=5)
 
         manifest_path = output / "job_result.json"
         if not manifest_path.is_file():
@@ -214,7 +247,7 @@ def _process_job(
 
 def run() -> int:
     base, token, worker_id, instance_id = _config()
-    idle_limit = max(60, int(os.environ.get("MUSICMASTER_WORKER_IDLE_SECONDS", "300")))
+    idle_limit = max(0, int(os.environ.get("MUSICMASTER_WORKER_IDLE_SECONDS", "0")))
     poll_seconds = max(2, min(30, int(os.environ.get("MUSICMASTER_WORKER_POLL_SECONDS", "5"))))
     _api(
         base, token, "POST", "/api/internal/workers/register",
@@ -235,7 +268,7 @@ def run() -> int:
                     base, token, "POST", "/api/internal/workers/heartbeat",
                     {"worker_id": worker_id, "status": "idle"},
                 )
-                if time.monotonic() - idle_since >= idle_limit:
+                if idle_limit > 0 and time.monotonic() - idle_since >= idle_limit:
                     _api(
                         base, token, "POST", "/api/internal/workers/heartbeat",
                         {"worker_id": worker_id, "status": "stopping"},
