@@ -299,6 +299,12 @@ def _run_lilypond(
         str(out_basename),
         str(ly_path),
     ]
+    # 清理同基名的旧产物，防止本次失败时误把上一次的谱图当作新结果。
+    # LilyPond 多页 SVG 可能使用 <base>-1.svg / <base>-page1.svg 命名。
+    for stale in out_basename.parent.glob(f"{out_basename.name}*.{fmt}"):
+        if stale.is_file():
+            stale.unlink()
+
     # 显式独立子进程;不继承交互;带超时上界(CPU-only 防卡死)。
     proc = subprocess.run(
         cmd,
@@ -308,15 +314,16 @@ def _run_lilypond(
         cwd=str(ly_path.parent),
     )
     produced = out_basename.with_suffix(f".{fmt}")
-    # LilyPond 多页 SVG 会写成 <base>-1.svg/<base>-page1.svg;单页通常直接 <base>.svg。
     if not produced.exists():
         cands = sorted(out_basename.parent.glob(f"{out_basename.name}*.{fmt}"))
         if cands:
             produced = cands[0]
-    if proc.returncode != 0 and not produced.exists():
+
+    # 非零退出码始终视为失败；即使 LilyPond 留下部分文件，也不能误报成功。
+    if proc.returncode != 0:
         err = (proc.stderr or b"").decode("utf-8", "replace")[-600:]
         raise RuntimeError(
-            f"LilyPond 渲染失败(returncode={proc.returncode}):\n{err}"
+            f"LilyPond 渲染失败(returncode={proc.returncode}):\\n{err}"
         )
     if not produced.exists():
         raise RuntimeError(
