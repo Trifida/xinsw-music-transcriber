@@ -30,6 +30,7 @@ from fastapi.staticfiles import StaticFiles
 
 from musicmaster.web.jobs import JobManager
 from musicmaster.web import runners
+from musicmaster.web.cloud_api import router as cloud_router
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
@@ -42,6 +43,7 @@ UPLOADS = OUTPUT / "_uploads"
 JM = JobManager(OUTPUT, max_workers=int(os.environ.get("MUSICMASTER_WORKERS", "2")))
 
 app = FastAPI(title="MusicMaster", docs_url="/api/docs", openapi_url="/api/openapi.json")
+app.include_router(cloud_router)
 
 
 def _save_upload(up: UploadFile | None) -> str | None:
