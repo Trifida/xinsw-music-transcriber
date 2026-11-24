@@ -328,7 +328,7 @@ def _tokenize_manual_lyrics(lyrics: str) -> List[str]:
     if not isinstance(lyrics, str):
         raise TypeError("lyrics must be a string")
     raw_tokens = re.findall(
-        r"[A-Za-z]+(?:['’][A-Za-z]+)*|[0-9]+|[\\u3400-\\u9fff]|[—~·]|[^\\s]",
+        r"[A-Za-z]+(?:['’][A-Za-z]+)*|[0-9]+|[\u3400-\u9fff]|[—~·]|[^\s]",
         lyrics,
     )
     tokens: List[str] = []
