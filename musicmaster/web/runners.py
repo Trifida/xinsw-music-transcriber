@@ -371,7 +371,7 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
             "source": "not-provided", "status": "not-provided",
             "alignmentStatus": "not-attempted", "tokenCount": 0,
             "assignedCount": 0, "unassignedCount": 0,
-            "message": "本次未提供歌词，已生成无歌词乐谱；粘贴歌词后重新记谱即可。",
+            "message": "本次未提供歌词，已生成无歌词乐谱；可在谱面页逐音歌词校正区填写并保存，无需重新运行模型。",
         }
         lyric_text = ""
         lyrics_source = None
@@ -420,7 +420,7 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                         "source": "not-provided", "status": "not-provided",
                         "alignmentStatus": "not-attempted", "tokenCount": 0,
                         "assignedCount": 0, "unassignedCount": 0,
-                        "message": "本次未提供歌词，已生成无歌词乐谱；粘贴歌词后重新记谱即可。",
+                        "message": "本次未提供歌词，已生成无歌词乐谱；可在谱面页逐音歌词校正区填写并保存，无需重新运行模型。",
                     }
 
                 if not lyric_text and lyrics_source == "automatic-asr-empty":
