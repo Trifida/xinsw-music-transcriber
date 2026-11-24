@@ -99,11 +99,6 @@ def vocalparse_events_to_musicxml(
         element = note.Rest() if event["is_rest"] else note.Note(int(event["pitch_midi"]))
         element.duration.quarterLength = float(event["duration_beats"])
 
-        lyric = event.get("lyric")
-        is_continuation = bool(event.get("is_lyric_continuation", False))
-        if not event["is_rest"] and lyric and lyric not in ("SP", "·") and not is_continuation:
-            element.addLyric(str(lyric))
-
         part.insert(float(event["start_beat"]), element)
 
     score = stream.Score()
@@ -112,7 +107,24 @@ def vocalparse_events_to_musicxml(
     destination = Path(out_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     written = score.write("musicxml", fp=str(destination))
-    return Path(written) if written else destination
+    destination = Path(written) if written else destination
+
+    # Apply lyric anchors and MusicXML <extend> melisma markers after notation
+    # splitting. The shared lyric writer skips tied fragments at bar boundaries.
+    lyric_tokens: List[str] = []
+    for event in normalized:
+        if event["is_rest"]:
+            continue
+        if bool(event.get("is_lyric_continuation", False)):
+            lyric_tokens.append("—")
+        elif event.get("lyric") not in (None, "", "SP", "·"):
+            lyric_tokens.append(str(event["lyric"]))
+        else:
+            lyric_tokens.append("·")
+    if any(token != "·" for token in lyric_tokens):
+        from musicmaster.transcribe.lyrics import attach_lyrics_to_musicxml
+        attach_lyrics_to_musicxml(destination, lyric_tokens)
+    return destination
 
 
 def _merge_tied_notes(parsed_notes: Iterable[Any]) -> Tuple[List[Dict[str, float]], List[str]]:
