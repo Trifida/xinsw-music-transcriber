@@ -47,3 +47,13 @@ def test_smart_key_keeps_chromatic_notes_as_evidence_not_errors():
     assert result["key"] is not None
     assert result["transposed"] is False
     assert any("调性轮廓" in item for item in result["evidence"])
+
+
+def test_musicxml_key_parser_preserves_minor_mode():
+    from musicmaster.core.transcribe import _music21_key_from_name
+
+    assert _music21_key_from_name("Am").mode == "minor"
+    assert _music21_key_from_name("E小调").mode == "minor"
+    assert _music21_key_from_name("Bb minor").mode == "minor"
+    assert _music21_key_from_name("C").mode == "major"
+    assert _music21_key_from_name("F#").mode == "major"
