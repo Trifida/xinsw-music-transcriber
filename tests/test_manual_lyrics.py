@@ -44,11 +44,15 @@ def test_manual_lyrics_reject_melisma_without_previous_syllable():
 
 
 def test_manual_lyrics_are_written_into_musicxml(tmp_path):
-    events = [
-        {"start_beat": 0, "duration_beats": 1, "pitch_midi": 60, "lyric": "你"},
-        {"start_beat": 1, "duration_beats": 1, "pitch_midi": 62, "lyric": None, "is_lyric_continuation": True},
-        {"start_beat": 2, "duration_beats": 1, "pitch_midi": 64, "lyric": "好"},
-    ]
+    events = align_manual_lyrics(
+        [
+            {"start_beat": 0, "duration_beats": 1, "pitch_midi": 60},
+            {"start_beat": 1, "duration_beats": 1, "pitch_midi": 62},
+            {"start_beat": 2, "duration_beats": 1, "pitch_midi": 64},
+        ],
+        100,
+        "你—好",
+    )
     path = vocalparse_events_to_musicxml(events, 100, tmp_path / "with-lyrics.musicxml")
     aligned = musicxml_lyric_alignment(path)
     assert [item["lyric"] for item in aligned] == ["你", "好"]
