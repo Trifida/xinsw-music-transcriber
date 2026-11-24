@@ -427,15 +427,19 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                     aligned = attach_lyrics_to_musicxml(mx, tokens)
                     assigned = aligned["assignedCount"]
                     total = aligned["tokenCount"]
+                    lyric_slots = aligned["lyricSlots"]
+                    unlabeled_notes = max(0, lyric_slots - assigned)
                     lyrics_info = {
                         "source": lyrics_source, "status": "completed",
                         "alignmentStatus": (
-                            "aligned" if assigned == total and total else
+                            "aligned" if assigned == total and unlabeled_notes == 0 else
                             "partially-aligned" if assigned else
                             "unmatched" if total else "not-attempted"
                         ),
                         "tokenCount": total, "assignedCount": assigned,
+                        "lyricSlots": lyric_slots,
                         "unassignedCount": max(0, total - assigned),
+                        "unlabeledNoteCount": unlabeled_notes,
                         "provider": lyrics_provider, "model": lyrics_model,
                         "message": "歌词按旋律音符顺序初步对齐，请核对识别文字与每字对应位置。",
                     }
@@ -481,7 +485,9 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
             report = f"> 扒谱以非零码({rc})结束,可能转录失败,详见下方报告。\n\n" + report
         report += "\n\n## ⑤ 歌词识别与对齐\n"
         report += f"- 来源：{lyrics_info.get('source')}\n"
-        report += f"- 对齐：{lyrics_info.get('assignedCount', 0)}/{lyrics_info.get('tokenCount', 0)} 个歌词单位\n"
+        report += f"- 已分配：{lyrics_info.get('assignedCount', 0)}/{lyrics_info.get('tokenCount', 0)} 个歌词单位\n"
+        if lyrics_info.get("lyricSlots") is not None:
+            report += f"- 可分配旋律音符：{lyrics_info.get('lyricSlots', 0)} 个；尚无歌词：{lyrics_info.get('unlabeledNoteCount', 0)} 个\n"
         if lyrics_info.get("message"):
             report += f"- 说明：{lyrics_info['message']}\n"
         if lyrics_info.get("unassignedCount"):
