@@ -98,7 +98,7 @@ def test_best_effort_staff_survives_jianpu_source_failure(tmp_path, monkeypatch)
         return destination
 
     monkeypatch.setattr(render_module, "_verovio_importable", lambda: True)
-    monkeypatch.setattr(render_module, "render_staff_svg", fake_staff)
+    monkeypatch.setattr(render_module, "render_staff_svgs", lambda _source, _out, stem="staff": [fake_staff(_source, staff, page=1)])
     monkeypatch.setattr(render_module, "_jianpu_ly_importable", lambda: True)
     monkeypatch.setattr(
         render_module,
@@ -112,3 +112,44 @@ def test_best_effort_staff_survives_jianpu_source_failure(tmp_path, monkeypatch)
 
     assert result == {"staff": staff}
     assert staff.is_file()
+
+
+
+def test_render_staff_svgs_writes_every_page_and_legacy_first_page(tmp_path, monkeypatch):
+    import sys
+    from types import ModuleType
+
+    musicxml = tmp_path / "input.musicxml"
+    musicxml.write_text("<score-partwise/>", encoding="utf-8")
+
+    class FakeToolkit:
+        def __init__(self, *_args):
+            self.pages = []
+
+        def setInputFrom(self, _kind):
+            pass
+
+        def loadData(self, _xml):
+            return True
+
+        def getPageCount(self):
+            return 2
+
+        def renderToSVG(self, page):
+            self.pages.append(page)
+            return f'<svg><text>page {page}</text></svg>'
+
+    fake_verovio = ModuleType("verovio")
+    fake_verovio.toolkit = FakeToolkit
+    monkeypatch.setitem(sys.modules, "verovio", fake_verovio)
+    monkeypatch.setattr(render_module, "_verovio_importable", lambda: True)
+    monkeypatch.setattr(render_module, "_ascii_verovio_resource_dir", lambda: None)
+
+    pages = render_module.render_staff_svgs(musicxml, tmp_path / "out")
+
+    assert [path.name for path in pages] == ["staff-page-001.svg", "staff-page-002.svg"]
+    assert "page 1" in pages[0].read_text(encoding="utf-8")
+    assert "page 2" in pages[1].read_text(encoding="utf-8")
+    legacy = tmp_path / "out" / "staff.svg"
+    assert legacy.is_file()
+    assert legacy.read_text(encoding="utf-8") == pages[0].read_text(encoding="utf-8")
