@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Colab 免费临时运行入口的静态契约测试。"""
+"""唯一正式 Colab 入口的静态契约测试。"""
 import json
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-NOTEBOOK = REPO / "notebooks" / "XinsW_Colab_Free_v2.ipynb"
+NOTEBOOK = REPO / "notebooks" / "XinsW_Music_Transcriber_Main.ipynb"
 
 
-def test_colab_notebook_is_valid_and_uses_free_ephemeral_runtime():
+def test_single_colab_notebook_is_valid_and_uses_vocalparse_baseline():
     notebook = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
     assert notebook["nbformat"] == 4
     cells = notebook["cells"]
@@ -16,12 +16,16 @@ def test_colab_notebook_is_valid_and_uses_free_ephemeral_runtime():
         for cell in cells
         for line in cell.get("source", [])
     )
-    assert "zipball/" in source
-    assert "google.colab.kernel.proxyPort(7860)" in source
-    assert "MUSICMASTER_HOST" in source
-    assert "model-full.h5" in source
-    assert "prepare_crepe_model.py" in source
-    assert "tensorflow==2.15.0" not in source
-    assert "render.com" not in source.lower()
-    assert "api_key" not in source.lower()
-    assert "xinsw.html" in source
+
+    assert "feature/vocalparse-event-musicxml" in source
+    assert "vocalparse_tokens_to_events" in source
+    assert "vocalparse_events_to_musicxml" in source
+    assert "musicxml_roundtrip_errors" in source
+    assert "XinsW_Lead_Transcription" in source
+    assert "GH_TOKEN" in source
+    assert "V2" in source
+    assert "CREPE" in source  # 明确标记为非当前主线，而非旧模型入口
+    assert "pip install crepe" not in source.lower()
+    assert "import crepe" not in source.lower()
+    assert "import torchcrepe" not in source.lower()
+    assert "from torchcrepe" not in source.lower()
