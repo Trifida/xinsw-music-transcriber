@@ -159,9 +159,10 @@ def _process_job(
         root = Path(temp)
         source = root / source_name
         output = root / "output"
-        _download(str(job["source_url"]), source)
-
-        state = {"progress": 0.01, "stage": "下载原始音频…", "last_sent": 0.0}
+        # Start lease heartbeats before network I/O: a large source download may
+        # outlive the initial claim lease. Keep heartbeats alive through artifact
+        # uploads and the completion acknowledgement, not only model inference.
+        state = {"progress": 0.01, "stage": "准备下载原始音频…", "last_sent": 0.0}
         state_lock = threading.Lock()
         stop_heartbeat = threading.Event()
 
@@ -201,6 +202,7 @@ def _process_job(
                 send_heartbeat()
 
         try:
+            send_heartbeat()
             _download(str(job["source_url"]), source)
             with state_lock:
                 state["progress"] = 0.03
@@ -215,62 +217,62 @@ def _process_job(
                 denoise=str(options.get("denoise") or "dereverb"),
                 progress_callback=progress,
             )
-        finally:
-            stop_heartbeat.set()
-            heartbeat_thread.join(timeout=5)
 
-        manifest_path = output / "job_result.json"
+            manifest_path = output / "job_result.json"
         if not manifest_path.is_file():
             raise RuntimeError("Full transcription completed without job_result.json.")
 
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        relative_paths = {
-            manifest.get("separation", {}).get("final_vocal"),
-            manifest.get("separation", {}).get("accompaniment"),
-            *((manifest.get("transcription", {}).get("files") or {}).values()),
-            "job_result.json",
-        }
-        files = []
-        for relative in sorted(path for path in relative_paths if path):
-            file_path = (output / relative).resolve()
-            try:
-                file_path.relative_to(output.resolve())
-            except ValueError:
-                raise RuntimeError("The workflow returned an unsafe artifact path.") from None
-            if file_path.is_file():
-                files.append(file_path)
-        required_names = {"notes.json", "out.mid", "out.musicxml"}
-        if not required_names.issubset({path.name for path in files}):
-            raise RuntimeError("The workflow did not produce notes.json, out.mid and out.musicxml.")
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            relative_paths = {
+                manifest.get("separation", {}).get("final_vocal"),
+                manifest.get("separation", {}).get("accompaniment"),
+                *((manifest.get("transcription", {}).get("files") or {}).values()),
+                "job_result.json",
+            }
+            files = []
+            for relative in sorted(path for path in relative_paths if path):
+                file_path = (output / relative).resolve()
+                try:
+                    file_path.relative_to(output.resolve())
+                except ValueError:
+                    raise RuntimeError("The workflow returned an unsafe artifact path.") from None
+                if file_path.is_file():
+                    files.append(file_path)
+            required_names = {"notes.json", "out.mid", "out.musicxml"}
+            if not required_names.issubset({path.name for path in files}):
+                raise RuntimeError("The workflow did not produce notes.json, out.mid and out.musicxml.")
 
-        for file_path in files:
-            filename = file_path.name
-            content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-            upload = _api(
-                base, token, "POST", f"/api/internal/jobs/{job_id}/artifact-url",
-                {
-                    "worker_id": worker_id,
-                    "file_name": filename,
-                    "role": _artifact_role(file_path),
-                    "content_type": content_type,
-                },
-            )
-            _put_file(str(upload["url"]), file_path, content_type)
+            for file_path in files:
+                filename = file_path.name
+                content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+                upload = _api(
+                    base, token, "POST", f"/api/internal/jobs/{job_id}/artifact-url",
+                    {
+                        "worker_id": worker_id,
+                        "file_name": filename,
+                        "role": _artifact_role(file_path),
+                        "content_type": content_type,
+                    },
+                )
+                _put_file(str(upload["url"]), file_path, content_type)
+                _api(
+                    base, token, "POST", f"/api/internal/jobs/{job_id}/artifact-complete",
+                    {
+                        "worker_id": worker_id,
+                        "object_key": upload["object_key"],
+                        "file_name": filename,
+                        "role": _artifact_role(file_path),
+                        "content_type": content_type,
+                    },
+                )
+
             _api(
-                base, token, "POST", f"/api/internal/jobs/{job_id}/artifact-complete",
-                {
-                    "worker_id": worker_id,
-                    "object_key": upload["object_key"],
-                    "file_name": filename,
-                    "role": _artifact_role(file_path),
-                    "content_type": content_type,
-                },
+                base, token, "POST", f"/api/internal/jobs/{job_id}/complete",
+                {"worker_id": worker_id, "result": manifest},
             )
-
-        _api(
-            base, token, "POST", f"/api/internal/jobs/{job_id}/complete",
-            {"worker_id": worker_id, "result": manifest},
-        )
+        finally:
+            stop_heartbeat.set()
+            heartbeat_thread.join(timeout=5)
 
 
 def run() -> int:
