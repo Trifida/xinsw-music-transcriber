@@ -169,13 +169,20 @@ def api_update_job_lyrics(job_id: str, tokens: list[str] = Body(...)) -> dict:
     if len(tokens) > 2000 or any(not isinstance(token, str) or len(token) > 80 for token in tokens):
         raise HTTPException(status_code=422, detail="歌词格数量或单格文字长度超出限制")
 
-    from musicmaster.transcribe.lyrics import attach_lyrics_to_musicxml, read_lyric_slots
+    from musicmaster.transcribe.lyrics import (
+        attach_lyrics_to_musicxml, is_editable_melody_musicxml, read_lyric_slots,
+    )
     from musicmaster.core.render import render as render_score
 
     job_dir = Path(job.job_dir).resolve()
     musicxml = job_dir / "out.musicxml"
     if not musicxml.is_file():
         raise HTTPException(status_code=404, detail="找不到本次记谱的 MusicXML 源文件")
+    if not is_editable_melody_musicxml(musicxml):
+        raise HTTPException(
+            status_code=409,
+            detail="当前 MusicXML 不是单声部单旋律谱，暂不支持逐音歌词校正",
+        )
     current_slots = read_lyric_slots(musicxml)
     if len(tokens) != len(current_slots):
         raise HTTPException(
