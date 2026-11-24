@@ -502,8 +502,10 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
         downloads = _downloads(d, only=wanted)
         if not downloads:
             downloads = _downloads(d)
+        from musicmaster.transcribe.lyrics import read_lyric_slots
+        lyric_slots = read_lyric_slots(mx) if rc == 0 and engine == "crepe" and mx.is_file() else []
         return {"ok": rc == 0, "report_md": report, "staff_svg": staff_svg,
-                "jianpu_svg": jianpu_svg,
+                "jianpu_svg": jianpu_svg, "lyric_slots": lyric_slots,
                 "jianpu_page_count": 1 if jianpu_svg else None,
                 "lyrics_text": lyric_text, "lyrics_info": lyrics_info,
                 "confidence_pct": confidence_pct, "spots": spots, "downloads": downloads}

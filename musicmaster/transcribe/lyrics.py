@@ -76,6 +76,53 @@ def _local_name(element: ET.Element) -> str:
     return element.tag.rsplit("}", 1)[-1]
 
 
+
+def read_lyric_slots(musicxml_path: str | Path) -> list[dict]:
+    """Return one editable lyric cell for each pitched note that can receive a syllable."""
+    root = ET.parse(Path(musicxml_path)).getroot()
+    slots: list[dict] = []
+    for note in (node for node in root.iter() if _local_name(node) == "note"):
+        if not any(_local_name(child) == "pitch" for child in note):
+            continue
+        if any(
+            _local_name(child) == "tie" and child.attrib.get("type") == "stop"
+            for child in note
+        ):
+            continue
+
+        pitch_node = next(child for child in note if _local_name(child) == "pitch")
+        step = next((child.text or "" for child in pitch_node if _local_name(child) == "step"), "")
+        octave = next((child.text or "" for child in pitch_node if _local_name(child) == "octave"), "")
+        alter_text = next((child.text or "0" for child in pitch_node if _local_name(child) == "alter"), "0")
+        try:
+            alter = int(float(alter_text))
+        except (TypeError, ValueError):
+            alter = 0
+        accidental = "#" if alter > 0 else "b" if alter < 0 else ""
+        duration = next((child.text or "" for child in note if _local_name(child) == "duration"), "")
+        lyric_node = next((child for child in note if _local_name(child) == "lyric"), None)
+        lyric_text = ""
+        extend_type = ""
+        if lyric_node is not None:
+            lyric_text = next(
+                (child.text or "" for child in lyric_node if _local_name(child) == "text"), ""
+            )
+            extend_node = next(
+                (child for child in lyric_node if _local_name(child) == "extend"), None
+            )
+            if extend_node is not None:
+                extend_type = extend_node.attrib.get("type", "")
+        if not lyric_text and extend_type in {"continue", "stop"}:
+            lyric_text = "—"
+        slots.append({
+            "index": len(slots),
+            "pitch": f"{step}{accidental}{octave}",
+            "duration": duration,
+            "lyric": lyric_text,
+            "extend": extend_type,
+        })
+    return slots
+
 def attach_lyrics_to_musicxml(musicxml_path: str | Path, tokens: Iterable[str]) -> dict:
     """Write lyric tokens onto successive pitched notes in a MusicXML partwise file.
 

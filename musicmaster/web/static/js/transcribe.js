@@ -52,6 +52,7 @@
     // ── 产出三 pane(按 DOM 顺序:解读 / 谱面 / 带走) ──
     var panes = panel.querySelectorAll('.out-body .out-pane');
     var paneRead = panes[0], paneSheet = panes[1], paneTake = panes[2];
+    var currentJob = null;
 
     function onProgress(job) {
       if (job && job.stage) MM.setBusyText(btn, job.stage);
@@ -128,6 +129,84 @@
       pre.style.display = result.report_md != null ? '' : 'none';
     }
 
+
+    function renderLyricEditor(result, sheet) {
+      var slots = result.lyric_slots;
+      if (!Array.isArray(slots) || !slots.length) return;
+
+      var editor = document.createElement('section');
+      editor.className = 'lyric-editor';
+      editor.style.cssText = 'margin-top:24px;padding:18px;border:1px solid #ded8ce;border-radius:12px;background:#fff;color:#211e26';
+      var heading = document.createElement('div');
+      heading.textContent = '逐音歌词校正';
+      heading.style.cssText = 'font-size:17px;font-weight:600;margin-bottom:5px';
+      editor.appendChild(heading);
+      var hint = document.createElement('div');
+      hint.textContent = '每个格子对应一个可填歌词的旋律音符。直接改字；拖腔续音填“—”；不需要歌词的音符留空。';
+      hint.style.cssText = 'font-size:12px;line-height:1.7;color:#777;margin-bottom:14px';
+      editor.appendChild(hint);
+
+      var grid = document.createElement('div');
+      grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px';
+      slots.forEach(function (slot, index) {
+        var cell = document.createElement('label');
+        cell.style.cssText = 'display:flex;flex-direction:column;gap:5px;padding:7px;border:1px solid #e5e0d8;border-radius:8px;min-width:0';
+        var meta = document.createElement('span');
+        meta.textContent = (index + 1) + ' · ' + (slot.pitch || '音符');
+        meta.style.cssText = 'font-size:10px;color:#888;white-space:nowrap';
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.value = slot.lyric || '';
+        input.maxLength = 80;
+        input.setAttribute('data-lyric-slot', String(index));
+        input.setAttribute('aria-label', '第 ' + (index + 1) + ' 个音符的歌词');
+        input.placeholder = '空白';
+        input.style.cssText = 'width:100%;min-width:0;box-sizing:border-box;padding:7px 4px;border:1px solid #d8d2c8;border-radius:6px;background:#fff;color:#211e26;font-size:14px;text-align:center';
+        cell.appendChild(meta);
+        cell.appendChild(input);
+        grid.appendChild(cell);
+      });
+      editor.appendChild(grid);
+
+      var save = document.createElement('button');
+      save.type = 'button';
+      save.textContent = '保存歌词修改并更新两种谱面';
+      save.style.cssText = 'margin-top:14px;padding:10px 16px;border:0;border-radius:8px;background:#5b4a72;color:#fff;cursor:pointer;font-size:13px';
+      save.addEventListener('click', function () {
+        if (!currentJob || !currentJob.id) {
+          MM.toast('找不到当前记谱任务，请重新记谱后再校正。', 'error');
+          return;
+        }
+        var inputs = editor.querySelectorAll('input[data-lyric-slot]');
+        var tokens = Array.prototype.map.call(inputs, function (input) {
+          return input.value.trim() || '·';
+        });
+        save.disabled = true;
+        save.textContent = '正在保存并重新排版…';
+        fetch('/api/job/' + encodeURIComponent(currentJob.id) + '/lyrics', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(tokens)
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.detail || '歌词保存失败');
+            return data;
+          });
+        }).then(function (data) {
+          currentJob.result = data.result;
+          renderSheet(data.result);
+          renderTake(currentJob, data.result);
+          MM.toast('歌词已保存，简谱和五线谱已更新。', 'success');
+        }).catch(function (error) {
+          MM.toast(error.message || String(error), 'error');
+          save.disabled = false;
+          save.textContent = '保存歌词修改并更新两种谱面';
+        });
+      });
+      editor.appendChild(save);
+      sheet.appendChild(editor);
+    }
+
     // 谱面 pane:有 staff_svg 就替换 .sheet 内容
     function renderSheet(result) {
       if (!paneSheet) return;
@@ -155,6 +234,7 @@
         });
         var staff = sheet.querySelector('.staff-preview');
         if (staff) MM.fitSheetSvg(staff);
+        renderLyricEditor(result, sheet);
         return;
       }
 
@@ -162,6 +242,7 @@
         sheet.innerHTML = result.staff_svg;
         MM.fitSheetSvg(sheet);
       }
+      renderLyricEditor(result, sheet);
     }
 
     // 带走 pane:下载网格
@@ -172,6 +253,7 @@
     }
 
     function onResult(job) {
+      currentJob = job;
       // 硬失败:任务执行出错(无 result)
       if (job.status === 'error') {
         MM.toast(job.error || '记谱任务出错了。', 'error');

@@ -24,7 +24,7 @@ import uuid
 import webbrowser
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -154,6 +154,87 @@ def api_job(job_id: str) -> JSONResponse:
     if job is None:
         raise HTTPException(status_code=404, detail="未知 job_id")
     return JSONResponse(job.to_public())
+
+
+@app.post("/api/job/{job_id}/lyrics")
+def api_update_job_lyrics(job_id: str, tokens: list[str] = Body(...)) -> dict:
+    """Update per-note lyrics and re-render both scores without rerunning audio inference."""
+    job = JM.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="未知 job_id")
+    if job.kind != "transcribe" or job.status != "done" or not isinstance(job.result, dict):
+        raise HTTPException(status_code=409, detail="只有已经完成的记谱任务可以校正歌词")
+    if not job.result.get("ok"):
+        raise HTTPException(status_code=409, detail="当前记谱任务没有可编辑的成功谱面")
+    if len(tokens) > 2000 or any(not isinstance(token, str) or len(token) > 80 for token in tokens):
+        raise HTTPException(status_code=422, detail="歌词格数量或单格文字长度超出限制")
+
+    from musicmaster.transcribe.lyrics import attach_lyrics_to_musicxml, read_lyric_slots
+    from musicmaster.core.render import render as render_score
+
+    job_dir = Path(job.job_dir).resolve()
+    musicxml = job_dir / "out.musicxml"
+    if not musicxml.is_file():
+        raise HTTPException(status_code=404, detail="找不到本次记谱的 MusicXML 源文件")
+    current_slots = read_lyric_slots(musicxml)
+    if len(tokens) != len(current_slots):
+        raise HTTPException(
+            status_code=422,
+            detail=f"歌词格数量不匹配：当前有 {len(current_slots)} 个可编辑音符格，收到 {len(tokens)} 格",
+        )
+
+    normalized = [token.strip() if token.strip() else "·" for token in tokens]
+    temp_dir = job_dir / ".lyrics-edit"
+    temp_dir.mkdir(exist_ok=True)
+    edited_musicxml = temp_dir / "edited.musicxml"
+    import shutil as _shutil
+    _shutil.copy2(musicxml, edited_musicxml)
+    try:
+        alignment = attach_lyrics_to_musicxml(edited_musicxml, normalized)
+        rendered = render_score(
+            str(edited_musicxml), str(temp_dir),
+            formats=("staff", "jianpu"), jianpu_format="svg", require_all=True,
+        )
+        render_score(
+            str(edited_musicxml), str(temp_dir),
+            formats=("jianpu",), jianpu_format="pdf", require_all=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"歌词已校验，但双谱重新排版未完成：{type(exc).__name__}: {str(exc)[:180]}",
+        ) from exc
+
+    _shutil.copy2(edited_musicxml, musicxml)
+    for name in ("staff.svg", "jianpu.svg", "jianpu.pdf", "jianpu.ly"):
+        candidate = temp_dir / name
+        if candidate.is_file():
+            _shutil.copy2(candidate, job_dir / name)
+
+    result = dict(job.result)
+    result["lyric_slots"] = read_lyric_slots(musicxml)
+    result["staff_svg"] = runners._read_svg(job_dir / "staff.svg")
+    result["jianpu_svg"] = runners._read_svg(job_dir / "jianpu.svg")
+    result["jianpu_page_count"] = 1 if result["jianpu_svg"] else None
+    result["lyrics_text"] = "".join(token for token in normalized if token not in {"—", "·"})
+    result["lyrics_info"] = {
+        "source": "manual-editor", "status": "completed",
+        "alignmentStatus": "aligned",
+        "tokenCount": alignment["tokenCount"],
+        "assignedCount": sum(1 for token in normalized if token not in {"—", "·"}),
+        "lyricSlots": alignment["lyricSlots"],
+        "unassignedCount": 0,
+        "unlabeledNoteCount": sum(1 for token in normalized if token == "·"),
+        "message": "逐音歌词已保存，简谱和五线谱已从同一份 MusicXML 重新生成。",
+    }
+    wanted = ["notes.json", "out.mid", "out.musicxml", "jianpu.pdf", "jianpu.ly", "jianpu.svg",
+              "lyrics.txt", "lyrics_alignment.json", "confidence.json", "staff.svg"]
+    result["downloads"] = runners._downloads(job_dir, only=wanted)
+    with job._lock:
+        job.result = result
+    return {"ok": True, "result": result}
 
 
 @app.get("/api/file/{job_id}/{name:path}")

@@ -2,6 +2,7 @@ import pytest
 import xml.etree.ElementTree as ET
 
 from musicmaster.core.vocalparse import align_manual_lyrics, vocalparse_events_to_musicxml, musicxml_lyric_alignment
+from musicmaster.transcribe.lyrics import attach_lyrics_to_musicxml, read_lyric_slots
 
 
 def _events():
@@ -61,3 +62,26 @@ def test_manual_lyrics_are_written_into_musicxml(tmp_path):
     lyric_nodes = [next((child for child in note if child.tag.endswith("lyric")), None) for note in notes]
     assert next(child for child in lyric_nodes[0] if child.tag.endswith("extend")).attrib["type"] == "start"
     assert next(child for child in lyric_nodes[1] if child.tag.endswith("extend")).attrib["type"] == "stop"
+
+
+
+def test_musicxml_lyric_slots_are_editable_one_per_pitched_note(tmp_path):
+    events = align_manual_lyrics(
+        [
+            {"start_beat": 0, "duration_beats": 1, "pitch_midi": 60},
+            {"start_beat": 1, "duration_beats": 1, "pitch_midi": 62},
+            {"start_beat": 2, "duration_beats": 1, "is_rest": True},
+            {"start_beat": 3, "duration_beats": 1, "pitch_midi": 64},
+        ],
+        100,
+        "你—好",
+    )
+    path = vocalparse_events_to_musicxml(events, 100, tmp_path / "editable.musicxml")
+    slots = read_lyric_slots(path)
+    assert len(slots) == 3
+    assert [slot["lyric"] for slot in slots] == ["你", "—", "好"]
+    assert [slot["index"] for slot in slots] == [0, 1, 2]
+
+    attach_lyrics_to_musicxml(path, ["我", "—", "好"])
+    updated = read_lyric_slots(path)
+    assert [slot["lyric"] for slot in updated] == ["我", "—", "好"]
