@@ -32,6 +32,9 @@
 - 已删除当前工作分支中的三个过时 Notebook：`Inspect_TorchCREPE_NPZ.ipynb`、`TorchCREPE_VocalParse_CrossCheck.ipynb`、`vocalparse_unified.ipynb`。Google Drive 中的历史结果、NPZ 数据和诊断脚本未删除。
 - 已将 `tests/test_colab_notebook.py` 从不存在的旧入口 `XinsW_Colab_Free_v2.ipynb` 改为检查唯一正式入口 `XinsW_Music_Transcriber_Main.ipynb`。
 - 保留 `VocalParse_AudioOnly_vs_AudioLyric.ipynb`：它有独立回归测试，属于 VocalParse 模式对照实验，不是旧 CREPE 入口；暂不删除。
+- 已从 V1 活动路径移除自动歌词识别：runner 不再接受 `auto_lyrics`，API 不再暴露该参数或 ASR 健康状态，前端不再发送该字段，页面不再显示自动识别开关；逐音歌词编辑、保存和重新排版入口保留。
+- `musicmaster/transcribe/lyric_asr.py` 仅作为 V2 技术储备保留，并明确标注为 dormant / V2-only；没有删除 ASR 历史代码或其技术储备。
+- 新增 `tests/test_v1_lyrics_contract.py`，锁定 V1 仅手动歌词的 API、runner、前端和健康检查边界。
 - 上述 GitHub 文件修改已提交，但尚未在 Google Colab 运行测试，不能标记为 Colab 验证通过。
 
 ## 代码清理的安全阻塞点
