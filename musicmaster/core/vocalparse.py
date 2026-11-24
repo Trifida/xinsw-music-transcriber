@@ -377,6 +377,7 @@ def align_manual_lyrics(
     for event in aligned:
         if event["is_rest"]:
             event["lyric"] = None
+            previous_has_lyric = False
             continue
         if bool(event.get("is_lyric_continuation", False)) or str(event.get("raw_word") or "") == "·":
             event["lyric"] = None
