@@ -115,8 +115,12 @@ def vocalparse_events_to_musicxml(
     for event in normalized:
         if event["is_rest"]:
             continue
-        if bool(event.get("is_lyric_continuation", False)):
+        if bool(event.get("manual_lyric_continuation", False)):
             lyric_tokens.append("—")
+        elif bool(event.get("is_lyric_continuation", False)):
+            # The model's middle-dot marker is still provisional; do not
+            # reinterpret it as a melisma until its semantics are confirmed.
+            lyric_tokens.append("·")
         elif event.get("lyric") not in (None, "", "SP", "·"):
             lyric_tokens.append(str(event["lyric"]))
         else:
@@ -394,6 +398,7 @@ def align_manual_lyrics(
         if bool(event.get("is_lyric_continuation", False)) or str(event.get("raw_word") or "") == "·":
             event["lyric"] = None
             event["is_lyric_continuation"] = True
+            event["manual_lyric_continuation"] = False
             continue
         if token_index >= len(tokens):
             if strict:
@@ -408,13 +413,16 @@ def align_manual_lyrics(
                 raise ValueError("歌词延续符“—”前面必须先有一个实际歌词音节。")
             event["lyric"] = None
             event["is_lyric_continuation"] = True
+            event["manual_lyric_continuation"] = True
         elif token == "·":
             event["lyric"] = None
             event["is_lyric_continuation"] = False
+            event["manual_lyric_continuation"] = False
             previous_has_lyric = False
         else:
             event["lyric"] = token
             event["is_lyric_continuation"] = False
+            event["manual_lyric_continuation"] = False
             event["lyric_source"] = "manual"
             previous_has_lyric = True
     if strict and token_index != len(tokens):
