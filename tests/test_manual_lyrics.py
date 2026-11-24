@@ -138,3 +138,26 @@ def test_multi_part_musicxml_is_not_eligible_for_lyric_editing(tmp_path):
         encoding="utf-8",
     )
     assert not is_editable_melody_musicxml(path)
+
+
+
+def test_timewise_monophonic_musicxml_is_eligible_for_lyric_editing(tmp_path):
+    path = tmp_path / "timewise.musicxml"
+    path.write_text(
+        """<?xml version="1.0"?>
+        <score-timewise version="3.1">
+          <part-list><score-part id="P1"><part-name>Voice</part-name></score-part></part-list>
+          <measure number="1">
+            <part id="P1">
+              <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note>
+            </part>
+          </measure>
+          <measure number="2">
+            <part id="P1">
+              <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration></note>
+            </part>
+          </measure>
+        </score-timewise>""",
+        encoding="utf-8",
+    )
+    assert is_editable_melody_musicxml(path)
