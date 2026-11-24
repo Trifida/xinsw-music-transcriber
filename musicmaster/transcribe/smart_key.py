@@ -70,6 +70,18 @@ def analyze_key(notes: Iterable[Dict], tempo: Optional[float] = None,
     stotal = sum(sustained) or 1.0
     sustained = [x / stotal for x in sustained]
 
+    # Detect phrase endings from meaningful gaps. Tempo is only used to scale
+    # the silence threshold; no beat/downbeat claims are made from tempo alone.
+    beat_s = 60.0 / tempo if tempo and tempo > 0 else 0.5
+    phrase_gap_s = max(0.18, 0.35 * beat_s)
+    phrase_end_pcs = []
+    for idx, note in enumerate(seq):
+        is_last = idx == len(seq) - 1
+        gap_after = (float(seq[idx + 1]["start_s"]) - float(note["end_s"])) if not is_last else 0.0
+        if is_last or gap_after >= phrase_gap_s:
+            phrase_end_pcs.append(int(note["midi"]) % 12)
+    phrase_end_hist = [phrase_end_pcs.count(pc) / max(1, len(phrase_end_pcs)) for pc in range(12)]
+
     # Last two notes can reveal leading-tone -> tonic resolution.
     penult_pc = int(seq[-2]["midi"]) % 12 if len(seq) > 1 else None
     candidates = []
@@ -94,15 +106,17 @@ def analyze_key(notes: Iterable[Dict], tempo: Optional[float] = None,
             # duration, but do not label chromatic notes as errors.
             in_scale_share = sum(hist[pc] for pc in range(12)
                                  if (pc - tonic) % 12 in steps) / total
-            score = (0.55 * tonal_fit + 0.20 * sustained_fit
+            phrase_end_share = phrase_end_hist[tonic]
+            score = (0.50 * tonal_fit + 0.18 * sustained_fit
                      + 0.12 * in_scale_share + 0.08 * min(1.0, tonic_share * 4)
-                     + ending_bonus)
+                     + 0.12 * phrase_end_share + ending_bonus)
             candidates.append({
                 "key": PITCH_NAMES[tonic], "mode": mode,
                 "label": PITCH_NAMES[tonic] + ("大调" if mode == "major" else "小调"),
                 "score": round(score, 6),
                 "signature_cost": _signature_cost(tonic, mode),
                 "in_scale_share": round(in_scale_share, 4),
+                "phrase_end_share": round(phrase_end_share, 4),
             })
 
     candidates.sort(key=lambda x: (x["score"], -x["signature_cost"]), reverse=True)
@@ -124,13 +138,14 @@ def analyze_key(notes: Iterable[Dict], tempo: Optional[float] = None,
     evidence = [
         "综合音级时值分布与调性轮廓",
         "对较长音符增加结构权重",
-        "参考末音及末两音的主音解决关系",
+        "参考停顿识别出的乐句结束音及末两音解决关系",
         "调号复杂度只用于近似同分候选的可读性决胜",
     ]
     return {
         "key": chosen["key"], "mode": chosen["mode"], "label": chosen["label"],
         "confidence": round(confidence, 3), "status": status,
         "ending_pitch_class": PITCH_NAMES[ending_pc],
+        "phrase_endings": [PITCH_NAMES[pc] for pc in phrase_end_pcs],
         "tempo_used": tempo if tempo and tempo > 0 else None,
         "candidates": [chosen] + [c for c in sorted(candidates, key=lambda c: c["score"], reverse=True) if c is not chosen][:max(0, top_n - 1)],
         "evidence": evidence,
