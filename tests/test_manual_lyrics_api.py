@@ -136,3 +136,24 @@ def test_manual_lyrics_api_rejects_wrong_slot_count(lyric_job):
         server.api_update_job_lyrics("job-1", ["只有两个"])
 
     assert exc.value.status_code == 422
+
+
+
+def test_manual_lyrics_api_rejects_chord_musicxml(lyric_job):
+    path = Path(lyric_job.job_dir) / "out.musicxml"
+    path.write_text(
+        """<?xml version="1.0"?>
+        <score-partwise version="3.1">
+          <part-list><score-part id="P1"><part-name>Voice</part-name></score-part></part-list>
+          <part id="P1"><measure number="1">
+            <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note>
+            <note><chord/><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration></note>
+          </measure></part>
+        </score-partwise>""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        server.api_update_job_lyrics("job-1", ["你", "好"])
+
+    assert exc.value.status_code == 409
