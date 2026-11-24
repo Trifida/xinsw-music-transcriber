@@ -191,7 +191,7 @@ def api_update_job_lyrics(job_id: str, tokens: list[str] = Body(...)) -> dict:
     _shutil.copy2(musicxml, edited_musicxml)
     try:
         alignment = attach_lyrics_to_musicxml(edited_musicxml, normalized)
-        rendered = render_score(
+        render_score(
             str(edited_musicxml), str(temp_dir),
             formats=("staff", "jianpu"), jianpu_format="svg", require_all=True,
         )
@@ -223,12 +223,17 @@ def api_update_job_lyrics(job_id: str, tokens: list[str] = Body(...)) -> dict:
         "source": "manual-editor", "status": "completed",
         "alignmentStatus": "aligned",
         "tokenCount": alignment["tokenCount"],
-        "assignedCount": sum(1 for token in normalized if token not in {"—", "·"}),
+        "assignedCount": alignment["assignedCount"],
         "lyricSlots": alignment["lyricSlots"],
         "unassignedCount": 0,
         "unlabeledNoteCount": sum(1 for token in normalized if token == "·"),
         "message": "逐音歌词已保存，简谱和五线谱已从同一份 MusicXML 重新生成。",
     }
+    (job_dir / "lyrics.txt").write_text("\n".join(normalized), encoding="utf-8")
+    import json as _json
+    (job_dir / "lyrics_alignment.json").write_text(
+        _json.dumps(result["lyrics_info"], ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     wanted = ["notes.json", "out.mid", "out.musicxml", "jianpu.pdf", "jianpu.ly", "jianpu.svg",
               "lyrics.txt", "lyrics_alignment.json", "confidence.json", "staff.svg"]
     result["downloads"] = runners._downloads(job_dir, only=wanted)
