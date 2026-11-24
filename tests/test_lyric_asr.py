@@ -1,3 +1,5 @@
+"""V2 technical-reserve tests only; this adapter is not part of the V1 request path."""
+
 import os
 import tempfile
 import unittest
