@@ -27,6 +27,19 @@
 4. 不重新运行已成功的 VocalParse 推理，不重新下载模型；优先复用 Drive 中已保存的识别结果。
 5. 未经 Colab 验证的改动不得标记为已通过；不删除历史分支或历史提交作为“清理”手段。
 
+## 2026-11-24 Colab Notebook 单元格整理
+
+- 已将唯一正式 Notebook `notebooks/XinsW_Music_Transcriber_Main.ipynb` 精简为 9 个单元格（4 个代码单元）：连接 Google Drive → 获取固定 GitHub 工作分支 → 缺失时准备谱面排版依赖 → 读取已有 MusicXML 并生成简谱/五线谱。
+- 已移除临时运行环境盘点、Drive 顶层目录盘点、重复的工作内容说明，以及从 GitHub 测试夹具恢复 25 秒样本的临时验证流程；Notebook 不再自动选择最新 `restore_*` 测试目录，而是明确指向已确认的 `restore_20261123T150049_359290Z/vocalparse.musicxml`。新歌曲只需修改 `MUSICXML_PATH`。
+- 排版依赖改为缺失时才安装；不安装任何音频识别模型。每次排版结果保存到独立的 `score_render_*` 目录，不覆盖原 MusicXML 或历史输出。
+- 已更新 `tests/test_colab_notebook.py`，锁定 9 单元格的日常工作链路，并防止测试夹具、旧识别引擎和环境盘点重新混入。
+- 以上是 GitHub 静态内容核对；尚未在 Google Colab 实际运行整本 Notebook，未标记为运行验证通过。
+
+## 简谱排版链路的待恢复项
+
+- 下午曾在 Colab 本地文件 `/content/xinsw-music-transcriber/musicmaster/core/render.py` 临时加入双附点八分休止符拆分与移除 `WithStaff` 的修改，但当时正式转换遇到第 8 小节 `barcheck fail`，且旧模块缓存刷新后尚未完成正式代码验证。
+- 当前 GitHub 工作分支的 `musicmaster/core/render.py` 尚不包含 `_expand_double_dotted_eighth_rests` 或 `WithStaff` 处理。因此本轮 Notebook 精简保留了项目渲染模块调用，但不能据此宣称上述特殊休止符与纯简谱修复已进入正式代码或通过验证。后续需从可靠代码恢复该处理，并用当前 MusicXML 做实际 SVG 回归验证。
+
 ## 2026-11-24 清理执行记录（本轮）
 
 - 已删除当前工作分支中的三个过时 Notebook：`Inspect_TorchCREPE_NPZ.ipynb`、`TorchCREPE_VocalParse_CrossCheck.ipynb`、`vocalparse_unified.ipynb`。Google Drive 中的历史结果、NPZ 数据和诊断脚本未删除。
