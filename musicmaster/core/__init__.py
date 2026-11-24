@@ -27,6 +27,7 @@ from .vocalparse import (
     vocalparse_tokens_to_events,
     musicxml_roundtrip_errors,
     vocalparse_lyric_alignment,
+    align_manual_lyrics,
     musicxml_lyric_alignment,
     render_vocalparse_result,
 )
@@ -60,6 +61,7 @@ __all__ = [
     "vocalparse_tokens_to_events",
     "musicxml_roundtrip_errors",
     "vocalparse_lyric_alignment",
+    "align_manual_lyrics",
     "musicxml_lyric_alignment",
     "render_vocalparse_result",
     "compare_vocalparse_to_pitch_track",
