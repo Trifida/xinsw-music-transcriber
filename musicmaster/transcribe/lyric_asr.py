@@ -1,4 +1,4 @@
-"""Optional OpenAI-compatible speech-to-text adapters reused from jianpu-gongfang."""
+"""V2-only dormant ASR adapter. V1 must never import or call this module."""
 import os
 from pathlib import Path
 from urllib.parse import urlparse
