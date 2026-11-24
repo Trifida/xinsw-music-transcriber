@@ -246,6 +246,33 @@ def bootstrap_worker(body: BootstrapRequest) -> dict:
     }
 
 
+@router.get("/api/internal/worker/bundle", dependencies=[Depends(_worker_auth)])
+def get_worker_source_bundle() -> dict:
+    """Return a short-lived URL for the immutable, pre-published worker source bundle."""
+    commit = os.environ.get("MUSICMASTER_WORKER_BUNDLE_COMMIT", "").strip().lower()
+    digest = os.environ.get("MUSICMASTER_WORKER_BUNDLE_SHA256", "").strip().lower()
+    object_key = os.environ.get("MUSICMASTER_WORKER_BUNDLE_KEY", "").strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise HTTPException(status_code=503, detail="Worker source bundle commit is not configured.")
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise HTTPException(status_code=503, detail="Worker source bundle checksum is not configured.")
+    expected_prefix = f"worker-bundles/{commit}/"
+    if not object_key.startswith(expected_prefix) or not object_key.endswith(f"/{digest}.tar.gz"):
+        raise HTTPException(status_code=503, detail="Worker source bundle object key is invalid.")
+    _, objects = _components()
+    try:
+        url = objects.presigned_download(object_key, expires_seconds=600)
+    except ObjectStoreError:
+        raise HTTPException(status_code=503, detail="Could not issue worker source bundle URL.") from None
+    return {
+        "repository_commit": commit,
+        "object_key": object_key,
+        "sha256": digest,
+        "url": url,
+        "expires_in": 600,
+    }
+
+
 @router.post("/api/internal/workers/register", dependencies=[Depends(_worker_auth)])
 def register_worker(body: WorkerRegister) -> dict:
     store, _ = _components()
