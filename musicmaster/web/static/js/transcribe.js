@@ -235,7 +235,7 @@
       var lyricsEl = panel.querySelector('.lyric-input');
       var autoLyricsEl = panel.querySelector('.auto-lyrics');
       if (lyricsEl) lyricsEl.value = '';
-      if (autoLyricsEl) autoLyricsEl.checked = true;
+      if (autoLyricsEl) autoLyricsEl.checked = false;
       if (btn && btn._mmProg) btn._mmProg.hide();
       if (paneTake) MM.renderDownloads(paneTake.querySelector('.dl-grid'), '', []);
       var au = panel.querySelectorAll('audio');
