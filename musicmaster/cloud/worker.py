@@ -159,9 +159,10 @@ def _process_job(
         root = Path(temp)
         source = root / source_name
         output = root / "output"
-        # Start lease heartbeats before network I/O: a large source download may
-        # outlive the initial claim lease. Keep heartbeats alive through artifact
-        # uploads and the completion acknowledgement, not only model inference.
+
+        # Renew the claim before any potentially long network/model operation.
+        # Keep the lease alive until all artifacts are uploaded and completion
+        # has been acknowledged by the API.
         state = {"progress": 0.01, "stage": "准备下载原始音频…", "last_sent": 0.0}
         state_lock = threading.Lock()
         stop_heartbeat = threading.Event()
@@ -208,7 +209,7 @@ def _process_job(
                 state["progress"] = 0.03
                 state["stage"] = "音频已下载，开始分离与识别…"
 
-            result = run_full_transcription(
+            run_full_transcription(
                 source,
                 output,
                 engine=str(options.get("engine") or "crepe"),
@@ -219,8 +220,8 @@ def _process_job(
             )
 
             manifest_path = output / "job_result.json"
-        if not manifest_path.is_file():
-            raise RuntimeError("Full transcription completed without job_result.json.")
+            if not manifest_path.is_file():
+                raise RuntimeError("Full transcription completed without job_result.json.")
 
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             relative_paths = {
@@ -238,9 +239,12 @@ def _process_job(
                     raise RuntimeError("The workflow returned an unsafe artifact path.") from None
                 if file_path.is_file():
                     files.append(file_path)
+
             required_names = {"notes.json", "out.mid", "out.musicxml"}
             if not required_names.issubset({path.name for path in files}):
-                raise RuntimeError("The workflow did not produce notes.json, out.mid and out.musicxml.")
+                raise RuntimeError(
+                    "The workflow did not produce notes.json, out.mid and out.musicxml."
+                )
 
             for file_path in files:
                 filename = file_path.name
@@ -273,7 +277,6 @@ def _process_job(
         finally:
             stop_heartbeat.set()
             heartbeat_thread.join(timeout=5)
-
 
 def run() -> int:
     base, token, worker_id, instance_id = _config()
