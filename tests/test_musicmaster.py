@@ -104,6 +104,7 @@ def test_render_staff_svg(tmp_path):
 
 def test_transcribe_synthetic_scale_crepe(tmp_path):
     """合成 C 大调音阶 → 默认引擎 CREPE 扒谱 → 还原音高(覆盖默认引擎安装链/predict 路径)。"""
+    pytest.importorskip("crepe", reason="CREPE is an optional transcription extra")
     import librosa
     from musicmaster.transcribe import transcribe2
 
@@ -146,6 +147,7 @@ def test_vocal_redlines_locked():
 
 def test_crepe_autopilot_end_to_end_outputs_editable_scores(tmp_path):
     """CREPE 一键流程:质量门→扒谱→MIDI/MusicXML→五线谱/简谱源→可信度报告。"""
+    pytest.importorskip("crepe", reason="CREPE is an optional transcription extra")
     import json
     import librosa
     from musicmaster.transcribe import autopilot

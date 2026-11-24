@@ -329,7 +329,7 @@ def run_convert(job, file_path: str, direction: str, key: str = "") -> dict:
 
 # ─────────────────────────── 记谱 ─────────────────────────── #
 def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
-                   lyrics_text: str = "", auto_lyrics: bool = True) -> dict:
+                   lyrics_text: str = "", auto_lyrics: bool = False) -> dict:
     if not audio_path:
         return {"ok": False, "message": "请先上传清唱音频。"}
     from musicmaster.transcribe import autopilot
@@ -357,17 +357,27 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
 
         # Lyrics are optional and must never turn a successful melody transcription into a failed job.
         mx = d / "out.musicxml"
+        lyric_editable = False
+        if rc == 0 and mx.is_file():
+            try:
+                from musicmaster.transcribe.lyrics import is_editable_melody_musicxml
+                lyric_editable = is_editable_melody_musicxml(mx)
+            except Exception as eligibility_error:  # noqa: BLE001
+                print(
+                    f"[Lyrics] MusicXML eligibility check skipped: {type(eligibility_error).__name__}",
+                    flush=True,
+                )
         lyrics_info = {
-            "source": "not-configured", "status": "not-configured",
+            "source": "not-provided", "status": "not-provided",
             "alignmentStatus": "not-attempted", "tokenCount": 0,
             "assignedCount": 0, "unassignedCount": 0,
-            "message": "尚未配置自动歌词识别服务；可粘贴歌词后重新记谱。",
+            "message": "本次未提供歌词，已生成无歌词乐谱；可在谱面页逐音歌词校正区填写并保存，无需重新运行模型。",
         }
         lyric_text = ""
         lyrics_source = None
         lyrics_provider = None
         lyrics_model = None
-        if rc == 0 and engine == "crepe" and mx.is_file():
+        if lyric_editable:
             try:
                 from musicmaster.transcribe.lyrics import (
                     tokenize_lyrics, attach_lyrics_to_musicxml,
@@ -407,10 +417,10 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                         }
                 else:
                     lyrics_info = {
-                        "source": "not-configured", "status": "not-configured",
+                        "source": "not-provided", "status": "not-provided",
                         "alignmentStatus": "not-attempted", "tokenCount": 0,
                         "assignedCount": 0, "unassignedCount": 0,
-                        "message": "本次未启用自动歌词识别；可粘贴歌词后重新记谱。",
+                        "message": "本次未提供歌词，已生成无歌词乐谱；可在谱面页逐音歌词校正区填写并保存，无需重新运行模型。",
                     }
 
                 if not lyric_text and lyrics_source == "automatic-asr-empty":
@@ -427,15 +437,19 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                     aligned = attach_lyrics_to_musicxml(mx, tokens)
                     assigned = aligned["assignedCount"]
                     total = aligned["tokenCount"]
+                    lyric_slots = aligned["lyricSlots"]
+                    unlabeled_notes = max(0, lyric_slots - assigned)
                     lyrics_info = {
                         "source": lyrics_source, "status": "completed",
                         "alignmentStatus": (
-                            "aligned" if assigned == total and total else
+                            "aligned" if assigned == total and unlabeled_notes == 0 else
                             "partially-aligned" if assigned else
                             "unmatched" if total else "not-attempted"
                         ),
                         "tokenCount": total, "assignedCount": assigned,
+                        "lyricSlots": lyric_slots,
                         "unassignedCount": max(0, total - assigned),
+                        "unlabeledNoteCount": unlabeled_notes,
                         "provider": lyrics_provider, "model": lyrics_model,
                         "message": "歌词按旋律音符顺序初步对齐，请核对识别文字与每字对应位置。",
                     }
@@ -452,17 +466,17 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                     "message": f"歌词处理未完成：{type(lyric_error).__name__}",
                 }
                 print(f"[Lyrics] optional lyric step skipped: {type(lyric_error).__name__}: {lyric_error}", flush=True)
-        elif engine != "crepe":
+        elif rc == 0 and mx.is_file():
             lyrics_info = {
-                "source": "unavailable", "status": "not-configured",
+                "source": "unavailable", "status": "not-supported",
                 "alignmentStatus": "not-attempted", "tokenCount": 0,
                 "assignedCount": 0, "unassignedCount": 0,
-                "message": "当前使用的是多音符/钢琴识别引擎，暂不自动对齐单旋律歌词。",
+                "message": "当前 MusicXML 不是单声部单旋律谱，暂不开放逐音歌词对齐。",
             }
 
         # Re-render from the lyric-enriched MusicXML so both numbered and staff scores carry lyrics.
         jianpu_svg = None
-        if rc == 0 and engine == "crepe" and mx.is_file():
+        if lyric_editable:
             try:
                 job.set_stage("正在排版带歌词的简谱与五线谱…", 0.94)
                 from musicmaster.core.render import render as render_score
@@ -481,7 +495,9 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
             report = f"> 扒谱以非零码({rc})结束,可能转录失败,详见下方报告。\n\n" + report
         report += "\n\n## ⑤ 歌词识别与对齐\n"
         report += f"- 来源：{lyrics_info.get('source')}\n"
-        report += f"- 对齐：{lyrics_info.get('assignedCount', 0)}/{lyrics_info.get('tokenCount', 0)} 个歌词单位\n"
+        report += f"- 已分配：{lyrics_info.get('assignedCount', 0)}/{lyrics_info.get('tokenCount', 0)} 个歌词单位\n"
+        if lyrics_info.get("lyricSlots") is not None:
+            report += f"- 可分配旋律音符：{lyrics_info.get('lyricSlots', 0)} 个；尚无歌词：{lyrics_info.get('unlabeledNoteCount', 0)} 个\n"
         if lyrics_info.get("message"):
             report += f"- 说明：{lyrics_info['message']}\n"
         if lyrics_info.get("unassignedCount"):
@@ -496,8 +512,10 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
         downloads = _downloads(d, only=wanted)
         if not downloads:
             downloads = _downloads(d)
+        from musicmaster.transcribe.lyrics import read_lyric_slots
+        lyric_slots = read_lyric_slots(mx) if lyric_editable else []
         return {"ok": rc == 0, "report_md": report, "staff_svg": staff_svg,
-                "jianpu_svg": jianpu_svg,
+                "jianpu_svg": jianpu_svg, "lyric_slots": lyric_slots,
                 "jianpu_page_count": 1 if jianpu_svg else None,
                 "lyrics_text": lyric_text, "lyrics_info": lyrics_info,
                 "confidence_pct": confidence_pct, "spots": spots, "downloads": downloads}

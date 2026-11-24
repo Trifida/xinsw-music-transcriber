@@ -20,6 +20,17 @@ M8 渲染(render)已落地(TASK-004;五线谱 Verovio/LGPL 作为库,
 #    (合并日志 Entry#11 曾因此崩过一次。)
 from .contracts import F0, Note, Target, TargetF0Frames, CorrectParams
 from .correct import correct
+from .vocalparse_diagnostics import compare_vocalparse_to_pitch_track
+from .vocalparse import (
+    vocalparse_events_to_musicxml,
+    vocalparse_result_to_musicxml,
+    vocalparse_tokens_to_events,
+    musicxml_roundtrip_errors,
+    vocalparse_lyric_alignment,
+    align_manual_lyrics,
+    musicxml_lyric_alignment,
+    render_vocalparse_result,
+)
 from .transcribe import (
     transcribe,
     transcribe_to_files,
@@ -33,6 +44,7 @@ from .separate import (
 from .render import (
     render,
     render_staff_svg,
+    render_staff_svgs,
     render_jianpu,
     musicxml_to_lilypond,
     lilypond_executable,
@@ -44,11 +56,21 @@ __all__ = [
     "separation_quality",
     "is_separation_available",
     "correct",
+    "vocalparse_events_to_musicxml",
+    "vocalparse_result_to_musicxml",
+    "vocalparse_tokens_to_events",
+    "musicxml_roundtrip_errors",
+    "vocalparse_lyric_alignment",
+    "align_manual_lyrics",
+    "musicxml_lyric_alignment",
+    "render_vocalparse_result",
+    "compare_vocalparse_to_pitch_track",
     "transcribe",
     "transcribe_to_files",
     "is_transcription_available",
     "render",
     "render_staff_svg",
+    "render_staff_svgs",
     "render_jianpu",
     "musicxml_to_lilypond",
     "lilypond_executable",

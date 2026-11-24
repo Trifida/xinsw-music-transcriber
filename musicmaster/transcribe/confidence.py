@@ -30,6 +30,18 @@ PC = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 MAJ_DEG = {0: "1", 2: "2", 4: "3", 5: "4", 7: "5", 9: "6", 11: "7",
            1: "#1", 3: "#2", 6: "#4", 8: "#5", 10: "b7"}
 
+# L3 状态阈值：保守标记证据不足，不把“未验证”当成正确或错误。
+STATUS_HIGH = "高可信"
+STATUS_PENDING = "待验证"
+STATUS_SUSPECT = "存疑"
+MIN_VALIDATION_FRAMES = 3
+MIN_VALIDATION_COVERAGE = 0.50
+MIN_CREPE_CONF = 0.70
+MIN_MODEL_AGREEMENT = 0.80
+# 调外音序列与报告区间均需考虑真实时间间隔，避免把隔很久的音符拼成一段。
+MAX_OUT_OF_KEY_GAP_S = 0.15
+MAX_PASSAGE_GAP_S = 0.75
+
 
 def _frame_tracks(path, fmin="C2", fmax="C6", hop_ms=10.0):
     """CREPE(16k) + pyin(原生)两条 f0,统一到 10ms 时间轴。
@@ -49,19 +61,27 @@ def _frame_tracks(path, fmin="C2", fmax="C6", hop_ms=10.0):
     return t, cm, np.asarray(c, float), pm, pv
 
 
-def _out_of_key_runs(in_scale):
-    """每个音所在【连续调外段】长度(调内=0)。这是抓'一起漂移'的主信号。"""
+def _out_of_key_runs(in_scale, notes=None, max_gap_s=MAX_OUT_OF_KEY_GAP_S):
+    """返回每个音所属的连续调外段长度。
+
+    除了音符列表相邻，还要求前后音符的实际间隔不超过 max_gap_s；
+    中间有休止或明显断句时，不把两处变化音当成同一段异常。
+    """
     n = len(in_scale); run = [0] * n; i = 0
     while i < n:
-        if not in_scale[i]:
-            j = i
-            while j < n and not in_scale[j]:
-                j += 1
-            for k in range(i, j):
-                run[k] = j - i
-            i = j
-        else:
+        if in_scale[i]:
             i += 1
+            continue
+        j = i + 1
+        while j < n and not in_scale[j]:
+            if notes is not None:
+                gap = float(notes[j]["start_s"]) - float(notes[j - 1]["end_s"])
+                if gap > max_gap_s:
+                    break
+            j += 1
+        for k in range(i, j):
+            run[k] = j - i
+        i = j
     return run
 
 
@@ -85,7 +105,9 @@ def assess(path, notes, key=None, gate_tier=None, fmin="C2", fmax="C6"):
     notes = sorted(notes, key=lambda x: x["start_s"])
     N = len(notes)
     if N == 0:
-        return {"overall": 0, "levels": {}, "passages": [], "notes": [], "key": None}
+        return {"overall": 0, "scored_notes": 0, "levels": {"高": 0, "中": 0, "低": 0},
+                "statuses": {STATUS_HIGH: 0, STATUS_PENDING: 0, STATUS_SUSPECT: 0},
+                "passages": [], "notes": [], "key": None}
 
     # ---- 1. 定调(给了就用,否则 K-S 自动)----
     if key:
@@ -101,7 +123,7 @@ def assess(path, notes, key=None, gate_tier=None, fmin="C2", fmax="C6"):
         tonic, mode, steps = _detect_scale_robust(notes)
     scale_pcs = {(tonic + s) % 12 for s in steps}
     in_scale = [(int(n["midi"]) % 12) in scale_pcs for n in notes]
-    run_len = _out_of_key_runs(in_scale)
+    run_len = _out_of_key_runs(in_scale, notes)
 
     # ---- 2. 帧级两算法 + 自信(用于副信号)----
     t, cm, cc, pm, pv = _frame_tracks(path, fmin=fmin, fmax=fmax)
@@ -115,9 +137,19 @@ def assess(path, notes, key=None, gate_tier=None, fmin="C2", fmax="C6"):
         reasons = []
         # 自信
         cconf = float(np.mean(cc[fm])) if fm.any() else 0.0
-        # 双算法一致(仅两者都有声的帧)
+        # 双算法一致：不仅要求两者都有声，还要求有效帧数量和覆盖率足够。
         both = fm & (cc > 0.5) & (pv > 0.5)
-        agree = float(np.mean(np.abs(cm[both] - pm[both]) <= 0.5)) if both.any() else None
+        validation_frames = int(np.count_nonzero(both))
+        frame_count = int(np.count_nonzero(fm))
+        validation_coverage = validation_frames / frame_count if frame_count else 0.0
+        raw_agree = (float(np.mean(np.abs(cm[both] - pm[both]) <= 0.5))
+                     if validation_frames else None)
+        has_validation = (
+            validation_frames >= MIN_VALIDATION_FRAMES
+            and validation_coverage >= MIN_VALIDATION_COVERAGE
+        )
+        # 帧数/覆盖率不足时保留为“待验证”，不把少量帧的偶然一致当成验证通过。
+        agree = raw_agree if has_validation else None
 
         # —— 主信号:乐理合理性 ——
         if in_scale[i]:
@@ -125,79 +157,119 @@ def assess(path, notes, key=None, gate_tier=None, fmin="C2", fmax="C6"):
         elif run_len[i] >= 3:
             c_key = 0.25; reasons.append("连续调外(疑似整段被拖飘)")
         elif run_len[i] == 2:
-            c_key = 0.5; reasons.append("成对调外")
+            c_key = 0.5; reasons.append("连续两个调外音(需要确认是否为正常变化音)")
         else:
             c_key = 0.72; reasons.append("单个调外(也可能是真变化音)")
         # —— 副信号:双算法分歧 ——
         if agree is None:
-            c_agree = 1.0
+            c_agree = 1.0  # 不参与数值评分；conf 置空，状态明确标为“待验证”
+            reasons.append("双模型验证证据不足")
         else:
             c_agree = 0.3 + 0.7 * agree
-            if agree < 0.8:
+            if agree < MIN_MODEL_AGREEMENT:
                 reasons.append("两算法分歧")
         # —— 跟踪自信 ——
         c_self = 1.0 if cconf >= 0.30 else 0.6
         if cconf < 0.30:
             reasons.append("跟踪自信低")
+        if cconf < MIN_CREPE_CONF:
+            reasons.append("CREPE自信度偏低")
+        if gate_tier in ("太差", "差"):
+            reasons.append("录音质量门档位较低")
 
-        conf = max(0.0, min(1.0, c_key * c_agree * c_self * gmul))
-        level = "高" if conf >= 0.70 else ("中" if conf >= 0.40 else "低")
+        # 状态与数值评分分开：证据不足不等于错，也不应获得满额验证分。
+        if run_len[i] >= 3 or (agree is not None and agree < MIN_MODEL_AGREEMENT):
+            status = STATUS_SUSPECT
+        elif (run_len[i] == 2 or agree is None or cconf < MIN_CREPE_CONF
+              or gate_tier in ("太差", "差")):
+            status = STATUS_PENDING
+        else:
+            status = STATUS_HIGH
+
+        # conf 只对具备足够双模型证据的音符计算；None 表示“没有足够证据评分”。
+        conf_value = max(0.0, min(1.0, c_key * c_agree * c_self * gmul))
+        conf = round(conf_value, 3) if agree is not None else None
+        level = {STATUS_HIGH: "高", STATUS_PENDING: "中", STATUS_SUSPECT: "低"}[status]
         deg = MAJ_DEG.get((int(n["midi"]) - tonic) % 12, "?")
         out_notes.append({"i": i, "midi": int(n["midi"]), "start_s": round(a, 3), "end_s": round(b, 3),
-                          "deg": deg, "conf": round(conf, 3), "level": level,
+                          "deg": deg, "conf": conf, "level": level, "status": status,
                           "in_key": in_scale[i], "crepe_conf": round(cconf, 3),
                           "agree": (round(agree, 3) if agree is not None else None),
+                          "validation_frames": validation_frames,
+                          "validation_coverage": round(validation_coverage, 3),
                           "reasons": reasons})
 
     # ---- 3. 汇总 + 存疑段合并 ----
-    overall = round(100.0 * float(np.mean([x["conf"] for x in out_notes])), 1)
+    scored = [x["conf"] for x in out_notes if x["conf"] is not None]
+    overall = round(100.0 * float(np.mean(scored)), 1) if scored else 0.0
     levels = {"高": 0, "中": 0, "低": 0}
+    statuses = {STATUS_HIGH: 0, STATUS_PENDING: 0, STATUS_SUSPECT: 0}
     for x in out_notes:
         levels[x["level"]] += 1
+        statuses[x["status"]] += 1
+
+    # 连续位置按状态分别合并，避免把“待验证”和“存疑”混成一种问题。
     passages = []
     cur = None
     for x in out_notes:
-        if x["level"] in ("低", "中"):
-            if cur is None:
-                cur = {"start_s": x["start_s"], "end_s": x["end_s"], "n": 1, "reasons": set(x["reasons"]), "min_conf": x["conf"]}
+        if x["status"] != STATUS_HIGH:
+            if (cur is None or cur["status"] != x["status"]
+                    or x["start_s"] - cur["end_s"] > MAX_PASSAGE_GAP_S):
+                if cur:
+                    passages.append(cur)
+                cur = {"status": x["status"], "start_s": x["start_s"], "end_s": x["end_s"],
+                       "n": 1, "reasons": set(x["reasons"]), "min_conf": x["conf"]}
             else:
-                cur["end_s"] = x["end_s"]; cur["n"] += 1; cur["reasons"] |= set(x["reasons"]); cur["min_conf"] = min(cur["min_conf"], x["conf"])
-        else:
-            if cur:
-                passages.append(cur); cur = None
+                cur["end_s"] = x["end_s"]
+                cur["n"] += 1
+                cur["reasons"] |= set(x["reasons"])
+                if x["conf"] is not None:
+                    cur["min_conf"] = (x["conf"] if cur["min_conf"] is None
+                                       else min(cur["min_conf"], x["conf"]))
+        elif cur:
+            passages.append(cur)
+            cur = None
     if cur:
         passages.append(cur)
     for p in passages:
         p["reasons"] = sorted(p["reasons"])
 
-    return {"overall": overall, "levels": levels, "passages": passages,
+    return {"overall": overall, "scored_notes": len(scored), "levels": levels, "statuses": statuses,
+            "passages": passages,
             "key": f"{PC[tonic]}{'小调' if mode.startswith('min') else '大调'}",
             "gate_tier": gate_tier, "notes": out_notes}
 
 
 def human_report(r):
     L = []
-    lv = r["levels"]
-    L.append(f"扒谱可信度:整体 {r['overall']}/100   调={r['key']}"
-             + (f"   (录音体检:{r['gate_tier']},已整体打折)" if r.get("gate_tier") in ("太差", "差") else ""))
-    L.append(f"  逐音:✅高可信 {lv.get('高',0)} | 🟡中 {lv.get('中',0)} | ⚠️低可信 {lv.get('低',0)}（共 {sum(lv.values())} 音）")
-    if r["passages"]:
-        L.append("  ⚠️ 存疑段(建议听 out.mid 这几处核对——可能扒错,也可能你真弹了变化音):")
-        for p in r["passages"]:
-            why = "、".join(p["reasons"]) or "可信度偏低"
-            L.append(f"    {p['start_s']:.1f}–{p['end_s']:.1f}s  ({p['n']}音,最低可信 {p['min_conf']:.2f})  ← {why}")
+    st = r.get("statuses", {})
+    L.append(f"扒谱评估  调={r['key']}")
+    scored_notes = r.get("scored_notes", 0)
+    if scored_notes:
+        L.append(f"  内部评估指数:{r['overall']}/100（仅统计 {scored_notes} 个有足够交叉验证证据的音符；不是准确率）")
     else:
-        L.append("  无存疑段,整体可放心。")
-    # 带标注简谱(低可信音用 ‹›? 包注)
+        L.append("  内部评估指数:暂无足够的交叉验证证据（不是准确率）")
+    L.append(f"  逐音状态:✅高可信 {st.get(STATUS_HIGH, 0)} | 🟡待验证 {st.get(STATUS_PENDING, 0)} | ⚠️存疑 {st.get(STATUS_SUSPECT, 0)}（共 {sum(st.values())} 音）")
+    if r.get("gate_tier") in ("太差", "差"):
+        L.append(f"  录音体检:{r['gate_tier']}，相关音符已标记为待验证或存疑。")
+    if r["passages"]:
+        L.append("  需要试听核对的位置（建议播放 out.mid 对照原音）:")
+        for p in r["passages"]:
+            why = "、".join(p["reasons"]) or "需要试听确认"
+            score_text = (f",内部参考值 {p['min_conf']:.2f}" if p["min_conf"] is not None else ",暂无足够评分证据")
+            L.append(f"    [{p['status']}] {p['start_s']:.1f}–{p['end_s']:.1f}s（{p['n']}音{score_text}）← {why}")
+    else:
+        L.append("  未发现明显存疑音符；仍建议抽样试听，不代表结果绝对正确。")
+    # 带标注简谱：存疑与待验证使用不同标记。
     seq = []
     for x in r["notes"]:
         s = x["deg"]
-        if x["level"] == "低":
-            s = f"‹{s}›?"
-        elif x["level"] == "中":
-            s = f"{s}?"
+        if x["status"] == STATUS_SUSPECT:
+            s = f"‹{s}›!"
+        elif x["status"] == STATUS_PENDING:
+            s = f"〈{s}〉?"
         seq.append(s)
-    L.append("  带标注简谱(‹›?=低可信,需核对):")
+    L.append("  带标注简谱（‹›!=存疑；〈〉?=待验证；无标记=高可信）:")
     L.append("    " + " ".join(seq))
     return "\n".join(L)
 

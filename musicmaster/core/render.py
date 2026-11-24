@@ -204,6 +204,49 @@ def render_staff_svg(musicxml: PathLike, out_svg: PathLike, *, page: int = 1) ->
     return out_svg
 
 
+def render_staff_svgs(musicxml: PathLike, out_dir: PathLike, *, stem: str = "staff") -> List[Path]:
+    """渲染 MusicXML 的全部五线谱页面。
+    为每页写出 <stem>-page-NNN.svg，同时把第一页复制为兼容旧接口的 <stem>.svg。
+    """
+    if not _verovio_importable():
+        raise RuntimeError("五线谱渲染需要 verovio:请 pip install verovio。")
+    import verovio
+    xml_text = _read_musicxml_text(musicxml)
+    tk = verovio.toolkit(False)
+    rp = _ascii_verovio_resource_dir()
+    if rp:
+        tk.setResourcePath(rp)
+    try:
+        tk.setInputFrom("musicxml")
+    except Exception:
+        pass
+    if not tk.loadData(xml_text):
+        raise RuntimeError("Verovio 无法解析该 MusicXML(loadData 返回 False)。")
+    page_count = max(1, int(tk.getPageCount() or 1))
+    output_dir = Path(out_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # 清理上次页数更多时遗留的页面，避免把旧页误认为本次结果。
+    for stale in output_dir.glob(f"{stem}-page-*.svg"):
+        if stale.is_file():
+            stale.unlink()
+    pages: List[Path] = []
+    try:
+        for page_number in range(1, page_count + 1):
+            svg = tk.renderToSVG(page_number)
+            if not svg or "<svg" not in svg[:200]:
+                raise RuntimeError(f"Verovio 第 {page_number} 页渲染结果不是有效 SVG。")
+            page_path = output_dir / f"{stem}-page-{page_number:03d}.svg"
+            page_path.write_text(svg, encoding="utf-8")
+            pages.append(page_path)
+    except Exception:
+        for partial in pages:
+            partial.unlink(missing_ok=True)
+        raise
+    # 旧版调用方仍可通过 staff.svg 读取第一页。
+    (output_dir / f"{stem}.svg").write_text(pages[0].read_text(encoding="utf-8"), encoding="utf-8")
+    return pages
+
+
 # --------------------------------------------------------------------------- #
 # 简谱:MusicXML → jianpu-ly → LilyPond .ly 源(纯 Python)。
 # --------------------------------------------------------------------------- #
@@ -299,6 +342,12 @@ def _run_lilypond(
         str(out_basename),
         str(ly_path),
     ]
+    # 清理同基名的旧产物，防止本次失败时误把上一次的谱图当作新结果。
+    # LilyPond 多页 SVG 可能使用 <base>-1.svg / <base>-page1.svg 命名。
+    for stale in out_basename.parent.glob(f"{out_basename.name}*.{fmt}"):
+        if stale.is_file():
+            stale.unlink()
+
     # 显式独立子进程;不继承交互;带超时上界(CPU-only 防卡死)。
     proc = subprocess.run(
         cmd,
@@ -308,15 +357,16 @@ def _run_lilypond(
         cwd=str(ly_path.parent),
     )
     produced = out_basename.with_suffix(f".{fmt}")
-    # LilyPond 多页 SVG 会写成 <base>-1.svg/<base>-page1.svg;单页通常直接 <base>.svg。
     if not produced.exists():
         cands = sorted(out_basename.parent.glob(f"{out_basename.name}*.{fmt}"))
         if cands:
             produced = cands[0]
-    if proc.returncode != 0 and not produced.exists():
+
+    # 非零退出码始终视为失败；即使 LilyPond 留下部分文件，也不能误报成功。
+    if proc.returncode != 0:
         err = (proc.stderr or b"").decode("utf-8", "replace")[-600:]
         raise RuntimeError(
-            f"LilyPond 渲染失败(returncode={proc.returncode}):\n{err}"
+            f"LilyPond 渲染失败(returncode={proc.returncode}):\\n{err}"
         )
     if not produced.exists():
         raise RuntimeError(
@@ -376,6 +426,7 @@ def render(
     jianpu_format: str = DEFAULT_JIANPU_FORMAT,
     lilypond_timeout: float = DEFAULT_LILYPOND_TIMEOUT,
     require_all: bool = False,
+    all_staff_pages: bool = True,
 ) -> Dict[str, Path]:
     """谱面渲染:MusicXML → {staff.svg(Verovio), jianpu.svg/pdf(jianpu-ly+LilyPond)}。
 
@@ -391,12 +442,14 @@ def render(
         lilypond_timeout: LilyPond 子进程超时(秒)。
         require_all:      True → 任一请求格式不可用即抛错;
                           False(默认)→ best-effort,跳过不可用格式。
-                          注意:若 `formats` 只含单一格式,则该格式**必须**成功
-                          (否则调用方拿不到任何东西),此时按"必需"处理。
+                          注意:若 `formats` 只含单一格式,则该格式**必须**成功。
+        all_staff_pages:  True(默认)→ 输出全部五线谱页,并保留 staff.svg 为第一页;
+                          False→仅输出 page 指定页。
 
     Returns:
         Dict[str, Path],键 ⊆ {"staff","jianpu"}(可能还含 "jianpu_ly" 指向中间 .ly)。
-        - "staff":     staff.svg 路径(Verovio)。
+        - "staff":     staff.svg 路径(Verovio,第一页)。
+        - "staff_page_N": 第 N 页五线谱路径(仅在 all_staff_pages=True 且 N≥2 时出现)。
         - "jianpu":    jianpu.<svg|pdf> 路径(LilyPond 渲染成功时)。
         - "jianpu_ly": jianpu.ly 中间源路径(只要 jianpu-ly 可用就有,即便 LilyPond 缺失)。
 
@@ -429,8 +482,14 @@ def render(
     if "staff" in fmts:
         staff_required = require_all or single
         if _verovio_importable():
-            staff_path = render_staff_svg(src, out_dir / _STAFF_NAME, page=page)
-            result["staff"] = staff_path
+            if all_staff_pages:
+                staff_pages = render_staff_svgs(src, out_dir, stem="staff")
+                result["staff"] = out_dir / _STAFF_NAME
+                for page_number, page_path in enumerate(staff_pages[1:], start=2):
+                    result[f"staff_page_{page_number}"] = page_path
+            else:
+                staff_path = render_staff_svg(src, out_dir / _STAFF_NAME, page=page)
+                result["staff"] = staff_path
         elif staff_required:
             raise RuntimeError(
                 "请求了 staff 但 verovio 不可用:请 `pip install verovio`(LGPL,作为库加载)。"

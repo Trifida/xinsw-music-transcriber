@@ -36,6 +36,10 @@ def tokenize_lyrics(value: str) -> list[str]:
         if char.isspace() or char == "\u3000":
             index += 1
             continue
+        if char in {"—", "~", "·"}:
+            tokens.append(char)
+            index += 1
+            continue
         if _is_punctuation(char):
             if char in OPENING_PUNCTUATION or not tokens:
                 prefix += char
@@ -72,6 +76,103 @@ def _local_name(element: ET.Element) -> str:
     return element.tag.rsplit("}", 1)[-1]
 
 
+
+
+def is_editable_melody_musicxml(musicxml_path: str | Path) -> bool:
+    """Return whether a MusicXML file represents one editable monophonic melody.
+
+    Lyric slots are meaningful only for a single melodic line. Reject scores
+    with multiple parts, explicit chord notes, or multiple voices/backup
+    passages rather than silently assigning syllables to accompaniment notes.
+    """
+    try:
+        root = ET.parse(Path(musicxml_path)).getroot()
+    except (OSError, ET.ParseError, TypeError, ValueError):
+        return False
+
+    root_kind = _local_name(root)
+    if root_kind == "score-partwise":
+        part_segments = [node for node in root if _local_name(node) == "part"]
+        if len(part_segments) != 1:
+            return False
+    elif root_kind == "score-timewise":
+        part_segments = [
+            node for node in root.iter()
+            if _local_name(node) == "part" and node.get("id")
+        ]
+        if len({node.get("id") for node in part_segments}) != 1 or not part_segments:
+            return False
+    else:
+        return False
+
+    voices: set[str] = set()
+    pitched_notes = 0
+    for part in part_segments:
+        for node in part.iter():
+            name = _local_name(node)
+            if name in {"backup", "forward"}:
+                return False
+            if name == "note":
+                if any(_local_name(child) == "chord" for child in node):
+                    return False
+                if any(_local_name(child) == "pitch" for child in node):
+                    pitched_notes += 1
+                    voice = next(
+                        ((child.text or "").strip()
+                         for child in node if _local_name(child) == "voice"),
+                        "",
+                    )
+                    if voice:
+                        voices.add(voice)
+    return pitched_notes > 0 and len(voices) <= 1
+
+
+def read_lyric_slots(musicxml_path: str | Path) -> list[dict]:
+    """Return one editable lyric cell for each pitched note that can receive a syllable."""
+    root = ET.parse(Path(musicxml_path)).getroot()
+    slots: list[dict] = []
+    for note in (node for node in root.iter() if _local_name(node) == "note"):
+        if not any(_local_name(child) == "pitch" for child in note):
+            continue
+        if any(
+            _local_name(child) == "tie" and child.attrib.get("type") == "stop"
+            for child in note
+        ):
+            continue
+
+        pitch_node = next(child for child in note if _local_name(child) == "pitch")
+        step = next((child.text or "" for child in pitch_node if _local_name(child) == "step"), "")
+        octave = next((child.text or "" for child in pitch_node if _local_name(child) == "octave"), "")
+        alter_text = next((child.text or "0" for child in pitch_node if _local_name(child) == "alter"), "0")
+        try:
+            alter = int(float(alter_text))
+        except (TypeError, ValueError):
+            alter = 0
+        accidental = "#" if alter > 0 else "b" if alter < 0 else ""
+        duration = next((child.text or "" for child in note if _local_name(child) == "duration"), "")
+        lyric_node = next((child for child in note if _local_name(child) == "lyric"), None)
+        lyric_text = ""
+        extend_type = ""
+        if lyric_node is not None:
+            lyric_text = next(
+                (child.text or "" for child in lyric_node if _local_name(child) == "text"), ""
+            )
+            extend_node = next(
+                (child for child in lyric_node if _local_name(child) == "extend"), None
+            )
+            if extend_node is not None:
+                extend_type = extend_node.attrib.get("type", "")
+        if not lyric_text and extend_type in {"continue", "stop"}:
+            lyric_text = "—"
+        slots.append({
+            "index": len(slots),
+            "pitch": f"{step}{accidental}{octave}",
+            "duration": duration,
+            "lyric": lyric_text,
+            "extend": extend_type,
+        })
+    return slots
+
 def attach_lyrics_to_musicxml(musicxml_path: str | Path, tokens: Iterable[str]) -> dict:
     """Write lyric tokens onto successive pitched notes in a MusicXML partwise file.
 
@@ -100,10 +201,25 @@ def attach_lyrics_to_musicxml(musicxml_path: str | Path, tokens: Iterable[str]) 
 
     lyric_tokens = [str(token) for token in tokens if str(token)]
     assigned = min(len(lyric_tokens), len(slots))
-    for note, token in zip(slots, lyric_tokens[:assigned]):
+    previous_has_text = False
+    for index, (note, token) in enumerate(zip(slots, lyric_tokens[:assigned])):
+        next_token = lyric_tokens[index + 1] if index + 1 < assigned else None
+        if token in {"—", "~"}:
+            if not previous_has_text:
+                raise ValueError("歌词延续符前面必须先有一个实际歌词音节")
+            lyric = ET.SubElement(note, q("lyric"))
+            extend_type = "continue" if next_token in {"—", "~"} else "stop"
+            ET.SubElement(lyric, q("extend"), {"type": extend_type})
+            continue
+        if token == "·":
+            previous_has_text = False
+            continue
         lyric = ET.SubElement(note, q("lyric"))
         ET.SubElement(lyric, q("syllabic")).text = "single"
         ET.SubElement(lyric, q("text")).text = token
+        if next_token in {"—", "~"}:
+            ET.SubElement(lyric, q("extend"), {"type": "start"})
+        previous_has_text = True
 
     tree.write(path, encoding="utf-8", xml_declaration=True)
     return {
