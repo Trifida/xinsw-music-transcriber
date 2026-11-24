@@ -1,4 +1,4 @@
-"""Optional OpenAI-compatible speech-to-text adapters reused from jianpu-gongfang."""
+"""V2-only dormant ASR adapter; never imported by the active V1 web or runner path."""
 import os
 from pathlib import Path
 from urllib.parse import urlparse
@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 import httpx
 
 
+# V2 technical reserve only. V1 accepts manually supplied lyrics and does not call this module.
 # Groq remains available as an optional cloud provider. FunASR is the preferred
 # self-hosted provider and must be pointed at an independently running API service.
 DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
