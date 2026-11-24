@@ -3,7 +3,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from musicmaster.core import render as render_function
 import importlib
 
 
@@ -66,3 +65,50 @@ def test_lilypond_zero_exit_without_output_is_failure(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="未产出预期"):
         render_module._run_lilypond(ly_path, out_base, "svg", 5)
+
+
+
+def test_best_effort_keeps_jianpu_source_without_lilypond(tmp_path, monkeypatch):
+    musicxml = tmp_path / "input.musicxml"
+    musicxml.write_text("<score-partwise/>", encoding="utf-8")
+    monkeypatch.setattr(render_module, "_verovio_importable", lambda: False)
+    monkeypatch.setattr(render_module, "_jianpu_ly_importable", lambda: True)
+    monkeypatch.setattr(
+        render_module, "musicxml_to_lilypond", lambda _path: "\\version \"2.24.0\"\\n\\score { { c'4 } }"
+    )
+    monkeypatch.setattr(render_module, "lilypond_executable", lambda: None)
+
+    result = render_module.render(
+        musicxml, tmp_path / "out", formats=("staff", "jianpu"), require_all=False
+    )
+
+    assert set(result) == {"jianpu_ly"}
+    assert result["jianpu_ly"].is_file()
+    assert result["jianpu_ly"].read_text(encoding="utf-8").startswith("\\version")
+
+
+def test_best_effort_staff_survives_jianpu_source_failure(tmp_path, monkeypatch):
+    musicxml = tmp_path / "input.musicxml"
+    musicxml.write_text("<score-partwise/>", encoding="utf-8")
+    staff = tmp_path / "out" / "staff.svg"
+
+    def fake_staff(_source, destination, *, page=1):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text("<svg>staff</svg>", encoding="utf-8")
+        return destination
+
+    monkeypatch.setattr(render_module, "_verovio_importable", lambda: True)
+    monkeypatch.setattr(render_module, "render_staff_svg", fake_staff)
+    monkeypatch.setattr(render_module, "_jianpu_ly_importable", lambda: True)
+    monkeypatch.setattr(
+        render_module,
+        "musicxml_to_lilypond",
+        lambda _path: (_ for _ in ()).throw(RuntimeError("jianpu conversion failed")),
+    )
+
+    result = render_module.render(
+        musicxml, tmp_path / "out", formats=("staff", "jianpu"), require_all=False
+    )
+
+    assert result == {"staff": staff}
+    assert staff.is_file()
