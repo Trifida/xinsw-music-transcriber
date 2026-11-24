@@ -55,5 +55,5 @@ def test_manual_lyrics_are_written_into_musicxml(tmp_path):
     root = ET.parse(path).getroot()
     notes = [node for node in root.iter() if node.tag.endswith("note")]
     lyric_nodes = [next((child for child in note if child.tag.endswith("lyric")), None) for note in notes]
-    assert lyric_nodes[0].find("extend").attrib["type"] == "start"
-    assert lyric_nodes[1].find("extend").attrib["type"] == "stop"
+    assert next(child for child in lyric_nodes[0] if child.tag.endswith("extend")).attrib["type"] == "start"
+    assert next(child for child in lyric_nodes[1] if child.tag.endswith("extend")).attrib["type"] == "stop"
