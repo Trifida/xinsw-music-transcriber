@@ -122,7 +122,7 @@ def test_publish_enforces_archive_size_limit(monkeypatch):
     commit = "e" * 40
     responses = [
         FakeResponse(json.dumps({"sha": commit}).encode()),
-        FakeResponse(gzip.compress(b"x" * 100)),
+        FakeResponse(b"\\x1f\\x8b" + b"x" * 200),
     ]
 
     def fake_urlopen(request, timeout):
@@ -130,7 +130,7 @@ def test_publish_enforces_archive_size_limit(monkeypatch):
 
     monkeypatch.setattr("musicmaster.cloud.source_bundle.urllib.request.urlopen", fake_urlopen)
     publisher = GitHubSourceBundlePublisher(
-        objects=FakeObjects(), token="secret", repository="owner/repo", max_bytes=32
+        objects=FakeObjects(), token="secret", repository="owner/repo", max_bytes=128
     )
     with pytest.raises(SourceBundleError, match="exceeds"):
         publisher.publish(commit)
