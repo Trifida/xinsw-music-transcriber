@@ -27,6 +27,20 @@
 4. 不重新运行已成功的 VocalParse 推理，不重新下载模型；优先复用 Drive 中已保存的识别结果。
 5. 未经 Colab 验证的改动不得标记为已通过；不删除历史分支或历史提交作为“清理”手段。
 
+## 2026-11-24 清理执行记录（本轮）
+
+- 已删除当前工作分支中的三个过时 Notebook：`Inspect_TorchCREPE_NPZ.ipynb`、`TorchCREPE_VocalParse_CrossCheck.ipynb`、`vocalparse_unified.ipynb`。Google Drive 中的历史结果、NPZ 数据和诊断脚本未删除。
+- 已将 `tests/test_colab_notebook.py` 从不存在的旧入口 `XinsW_Colab_Free_v2.ipynb` 改为检查唯一正式入口 `XinsW_Music_Transcriber_Main.ipynb`。
+- 保留 `VocalParse_AudioOnly_vs_AudioLyric.ipynb`：它有独立回归测试，属于 VocalParse 模式对照实验，不是旧 CREPE 入口；暂不删除。
+- 上述 GitHub 文件修改已提交，但尚未在 Google Colab 运行测试，不能标记为 Colab 验证通过。
+
+## 代码清理的安全阻塞点
+
+- 当前工作分支的 `musicmaster/web/runners.py` 仍通过 `musicmaster.transcribe.autopilot` 调用 CREPE 多引擎流程；`musicmaster/web/server.py` 的 `/api/transcribe` 仍默认 `engine="crepe"`。因此旧识别链路仍被现有网页/API 调用，不能只删除 autopilot 或依赖文件。
+- 当前工作分支的 `vocalparse.py` 是已保存 VocalParse 结果的事件转换 / MusicXML 适配器；当前 Colab 主 Notebook 使用历史 JSON 生成事件、MIDI、MusicXML 和谱面，并不等于网页端已经有 VocalParse 音频推理入口。
+- `main` 已有而当前工作分支缺少的近期有效改动包括 SmartKeyAnalyzer、增强后的歌词编辑/拖腔处理，以及 V1 API 移除自动歌词识别参数。必须逐文件选择性移植并补齐测试，不能整分支合并。
+- 下一步顺序：先移植并验证 main 上与 V1 相关的有效修复；再把网页/API 记谱入口改为明确的 VocalParse 主线或在新入口完成前停用旧引擎选择；随后才删除 CREPE/basic-pitch/ByteDance 专属模块、依赖和过时测试。拆声、互译、修音换音色保持不动。
+
 ## 当前尚未完成的整合事项
 
 - `main` 仍保留 CREPE 默认的旧 `autopilot.py` 和多引擎 API/网页入口；尚未从正式默认分支移除。
