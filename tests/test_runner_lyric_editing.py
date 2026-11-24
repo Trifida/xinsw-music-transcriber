@@ -1,6 +1,7 @@
+import importlib
 from pathlib import Path
 
-from musicmaster.core import render as _render_module
+_render_module = importlib.import_module("musicmaster.core.render")
 from musicmaster.transcribe import autopilot
 from musicmaster.web import runners
 
