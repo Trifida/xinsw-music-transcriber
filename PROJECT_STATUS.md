@@ -30,29 +30,23 @@ V1 包含：音频处理、人声分离、主旋律音高与节奏识别、自�
 - GitHub 仓库：Trifida/xinsw-music-transcriber
 - 地址：https://github.com/Trifida/xinsw-music-transcriber
 - 正式分支：main
-- 本地目录：D:\xinsw\xinsw-music-transcriber\xinsw-music-transcriber
-- 本地启动入口：仓库根目录的 启动.bat
-- 主界面：http://127.0.0.1:7860/
-- 健康检查：http://127.0.0.1:7860/api/health
+- 统一运行环境：Google Colab；后续代码测试和音频运行均在 Colab 执行，不要求本地电脑运行。
+- 统一 Notebook：Google Drive 中的 XinsW_Music_Transcriber_Main.ipynb。
+- 模型与测试数据：Google Drive；程序代码以 GitHub 指定分支为准。
 - 已知 main 基准提交（本轮盘点时）：3dc0dcfb67f5f91d636c5107ec2a0981c289505e（setup_core 安装顺序修复）
 - 正式开发规则：新功能优先在 main 上以小步提交开发；实验先开独立分支，验收后再选择性移植，不整条合并未经验证的实验分支。
 
-### 本地环境已确认
+### 历史本地环境记录（仅供追溯）
 
-- Windows 笔记本；Intel i7；16GB RAM；Intel 集成显卡；没有 NVIDIA CUDA GPU。
-- Python 3.11.9；Git 2.55.0。
-- 核心虚拟环境：仓库内 .venv。
-- 核心安装脚本：python scripts\setup_core.py，本机此前已成功完成。
-- 启动.bat 此前已成功打开本地网页；/api/health 曾返回 {"ok":true,"service":"musicmaster","static":true}。
-- CREPE full 模型此前已准备完成。
-- LilyPond CLI 尚未确认安装；PDF/SVG 乐谱渲染可能需要它。
-- 已知测试音频：D:\HuaweiMoveData\Users\mona\Desktop\soul\vocals.mp3，约 273.08 秒、44.1kHz、双声道。它是预先分离的人声素材，只适合单独测试人声记谱，**不是完整歌曲自动扒谱的最终输入验收样本**。
+此前 Windows 本地环境曾用于核心程序和网页验证，这些记录保留作历史参考。当前统一执行环境已经改为 Google Colab，不再要求办公室或家中电脑分别配置 Python、安装依赖或运行测试。
+
+当前 Colab 曾盘点到 Python 3.13.18、PyTorch 2.14.1+cpu、CUDA unavailable；这是当次运行时状态，不是最终环境配置。后续先核对旧 Notebook 的成功运行记录，再决定是否迁移依赖和模型加载步骤。
 
 ## 3. 页面与功能入口辨别
 
 ### A. 声谱坊主界面（正式 UI 候选入口）
 
-- URL：http://127.0.0.1:7860/
+- 服务页面：由当前运行环境提供的主界面（Colab 测试时以实际访问地址为准）
 - 文件：musicmaster/web/static/index.html
 - 前端桥接脚本：
   - musicmaster/web/static/js/api.js
@@ -66,7 +60,7 @@ V1 包含：音频处理、人声分离、主旋律音高与节奏识别、自�
 
 ### B. 独立心思维测试页（非正式完整歌曲入口）
 
-- URL：http://127.0.0.1:7860/xinsw.html
+- 页面路径：/xinsw.html（Colab 测试时以实际访问地址为准）
 - 文件：musicmaster/web/static/xinsw.html 及 musicmaster/web/static/js/xinsw.js
 - 已知行为：上传音频后调用 POST /api/transcribe，轮询 /api/job/<job_id>，固定使用 CREPE。
 - 定位：测试已分离主唱音轨的记谱流程。
@@ -85,7 +79,7 @@ V1 包含：音频处理、人声分离、主旋律音高与节奏识别、自�
 
 - 声谱坊页面每个按钮对应的服务端路由是否存在、是否可用。
 - 完整混音上传是否能在一个任务中自动完成拆声和记谱。
-- 当前 Windows Intel CPU/集显环境能否运行分离模型，以及耗时和峰值内存。
+- 当前 Colab 分配的 GPU / CPU 环境能否运行分离模型，以及耗时和峰值内存。
 - 分离模型是否已下载、版本与许可证是否适用。
 - 主唱提取质量、八度错误、音符起止、节奏和真实歌曲识别准确度。
 - V1 手动歌词输入、逐字对齐与简谱歌词排版的端到端质量；自动歌词识别明确留到 V2。
@@ -94,11 +88,13 @@ V1 包含：音频处理、人声分离、主旋律音高与节奏识别、自�
 ### 已知环境约束
 
 - scripts/setup_sep.py 当前说明的是独立拆声环境，依赖 audio-separator 与 CUDA/PyTorch GPU 路线。
-- 本机没有 NVIDIA GPU，因此不能直接把现有 CUDA 拆声安装说明视为本机可用。
-- 不安装 CUDA，不把 CREPE 直接应用于完整混音来代替人声分离。
-- 本机先做短音频 CPU 可行性验证，再决定是否采用更轻的 CPU 分离模型；不预先承诺处理速度。
+- Colab 当前运行时可能没有 GPU；不得把 CPU 版 PyTorch 当作 GPU 环境。
+- 不在环境盘点阶段安装或替换 PyTorch / CUDA；先核对旧 Notebook 成功记录。
+- 不把 CREPE 直接应用于完整混音来代替人声分离。
 
 ## 5. 值得保留的实验成果（不自动合并）
+
+历史私有 PR 中的 faster-whisper / WhisperX / CTC 自动歌词识别与对齐代码属于 V2 技术储备，不属于当前 V1 交付范围。
 
 ### A. 当前公开仓库的实验分支
 
