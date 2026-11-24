@@ -74,7 +74,7 @@ def test_best_effort_keeps_jianpu_source_without_lilypond(tmp_path, monkeypatch)
     monkeypatch.setattr(render_module, "_verovio_importable", lambda: False)
     monkeypatch.setattr(render_module, "_jianpu_ly_importable", lambda: True)
     monkeypatch.setattr(
-        render_module, "musicxml_to_lilypond", lambda _path: "\\version \"2.24.0\"\\n\\score { { c'4 } }"
+        render_module, "musicxml_to_lilypond", lambda _path: "\\version \"2.24.0\"\n\\score { { c'4 } }"
     )
     monkeypatch.setattr(render_module, "lilypond_executable", lambda: None)
 
