@@ -67,3 +67,17 @@ def test_key_signature_cost_uses_enharmonic_minimum():
     assert _signature_cost(10, "major") == 2      # Bb major
     assert _signature_cost(1, "major") == 5       # C# / Db major
     assert _signature_cost(9, "minor") == 0       # A minor shares C major signature
+
+
+def test_smart_key_detects_phrase_endings_from_silence_gaps():
+    from musicmaster.transcribe.smart_key import analyze_key
+
+    notes = [
+        {"midi": 60, "start_s": 0.0, "end_s": 0.5},
+        {"midi": 64, "start_s": 0.5, "end_s": 1.0},
+        {"midi": 67, "start_s": 1.4, "end_s": 1.9},
+        {"midi": 60, "start_s": 1.9, "end_s": 2.5},
+    ]
+    result = analyze_key(notes, tempo=120)
+    assert result["phrase_endings"] == ["E", "C"]
+    assert all("phrase_end_share" in item for item in result["candidates"])
