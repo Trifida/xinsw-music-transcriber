@@ -399,6 +399,7 @@ def align_manual_lyrics(
             event["lyric"] = None
             event["is_lyric_continuation"] = True
             event["manual_lyric_continuation"] = False
+            previous_has_lyric = False
             continue
         if token_index >= len(tokens):
             if strict:
