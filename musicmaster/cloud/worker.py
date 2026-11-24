@@ -23,12 +23,40 @@ from typing import Any
 def _config() -> tuple[str, str, str, str | None]:
     base = os.environ.get("MUSICMASTER_API_URL", "").strip().rstrip("/")
     token = os.environ.get("MUSICMASTER_WORKER_TOKEN", "").strip()
-    worker_id = os.environ.get("MUSICMASTER_WORKER_ID", "").strip() or socket.gethostname()
+    worker_id = os.environ.get("MUSICMASTER_WORKER_ID", "").strip()
     instance_id = os.environ.get("MUSICMASTER_INSTANCE_UUID", "").strip() or None
     if not base.startswith("https://"):
         raise ValueError("MUSICMASTER_API_URL must be an HTTPS URL.")
+
+    # AutoDL start_command carries a short-lived, single-use bootstrap token,
+    # never the long-lived worker credential.
+    bootstrap = os.environ.get("MUSICMASTER_BOOTSTRAP_TOKEN", "").strip()
+    if not token and bootstrap:
+        body = json.dumps({"bootstrap_token": bootstrap}).encode("utf-8")
+        request = urllib.request.Request(
+            base + "/api/internal/bootstrap",
+            data=body,
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                result = json.loads(response.read().decode("utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"Worker bootstrap failed: {type(exc).__name__}") from None
+        token = str(result.get("worker_token") or "").strip()
+        worker_id = worker_id or str(result.get("worker_id") or "").strip()
+        instance_id = instance_id or result.get("instance_uuid")
+        if token:
+            os.environ["MUSICMASTER_WORKER_TOKEN"] = token
+        if worker_id:
+            os.environ["MUSICMASTER_WORKER_ID"] = worker_id
+        if instance_id:
+            os.environ["MUSICMASTER_INSTANCE_UUID"] = str(instance_id)
+
+    worker_id = worker_id or socket.gethostname()
     if not token:
-        raise ValueError("MUSICMASTER_WORKER_TOKEN is required.")
+        raise ValueError("Set MUSICMASTER_WORKER_TOKEN or a valid MUSICMASTER_BOOTSTRAP_TOKEN.")
     return base, token, worker_id, instance_id
 
 
