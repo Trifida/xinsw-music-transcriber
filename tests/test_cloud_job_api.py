@@ -230,3 +230,82 @@ def test_worker_upload_role_classification(tmp_path):
     assert worker._artifact_role(tmp_path / "out.musicxml") == "score"
     assert worker._artifact_role(tmp_path / "final.wav") == "audio"
     assert worker._artifact_role(tmp_path / "notes.json") == "metadata"
+
+
+def test_worker_downloads_source_once_and_keeps_lease_through_completion(
+    monkeypatch, tmp_path
+):
+    import json
+    import sys
+    import types
+
+    events = []
+    job_id = str(uuid4())
+
+    def fake_download(url, destination):
+        events.append("download")
+        destination.write_bytes(b"audio")
+
+    def fake_transcribe(source, output, **kwargs):
+        events.append("transcribe")
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "notes.json").write_text("{}", encoding="utf-8")
+        (output / "out.mid").write_bytes(b"MIDI")
+        (output / "out.musicxml").write_text("<score-partwise/>", encoding="utf-8")
+        manifest = {
+            "separation": {},
+            "transcription": {
+                "files": {
+                    "notes": "notes.json",
+                    "midi": "out.mid",
+                    "musicxml": "out.musicxml",
+                }
+            },
+        }
+        (output / "job_result.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+        return manifest
+
+    workflow_module = types.ModuleType("musicmaster.workflows.full_transcribe")
+    workflow_module.run_full_transcription = fake_transcribe
+    monkeypatch.setitem(sys.modules, "musicmaster.workflows.full_transcribe", workflow_module)
+    monkeypatch.setattr(worker, "_download", fake_download)
+    monkeypatch.setattr(worker, "_put_file", lambda *args: events.append("upload"))
+
+    def fake_api(base, token, method, path, payload=None, **kwargs):
+        if path.endswith("/heartbeat"):
+            events.append("heartbeat")
+            return {"ok": True}
+        if path.endswith("/artifact-url"):
+            events.append("artifact-url")
+            return {
+                "url": "https://storage.example.test/upload",
+                "object_key": f"jobs/{job_id}/artifacts/test/{payload['file_name']}",
+            }
+        if path.endswith("/artifact-complete"):
+            events.append("artifact-complete")
+            return {"ok": True}
+        if path.endswith("/complete"):
+            events.append("complete")
+            return {"ok": True}
+        raise AssertionError(f"Unexpected worker API path: {path}")
+
+    monkeypatch.setattr(worker, "_api", fake_api)
+    monkeypatch.setenv("MUSICMASTER_WORKER_DATA", str(tmp_path))
+
+    worker._process_job(
+        "https://api.example.test",
+        "worker-secret",
+        "gpu-test",
+        {
+            "id": job_id,
+            "source_filename": "song.mp3",
+            "source_url": "https://storage.example.test/source",
+            "options": {},
+        },
+    )
+
+    assert events.count("download") == 1
+    assert events.index("heartbeat") < events.index("download")
+    assert events.index("complete") > events.index("artifact-complete")
