@@ -357,6 +357,16 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
 
         # Lyrics are optional and must never turn a successful melody transcription into a failed job.
         mx = d / "out.musicxml"
+        lyric_editable = False
+        if rc == 0 and mx.is_file():
+            try:
+                from musicmaster.transcribe.lyrics import is_editable_melody_musicxml
+                lyric_editable = is_editable_melody_musicxml(mx)
+            except Exception as eligibility_error:  # noqa: BLE001
+                print(
+                    f"[Lyrics] MusicXML eligibility check skipped: {type(eligibility_error).__name__}",
+                    flush=True,
+                )
         lyrics_info = {
             "source": "not-provided", "status": "not-provided",
             "alignmentStatus": "not-attempted", "tokenCount": 0,
@@ -367,7 +377,7 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
         lyrics_source = None
         lyrics_provider = None
         lyrics_model = None
-        if rc == 0 and engine == "crepe" and mx.is_file():
+        if lyric_editable:
             try:
                 from musicmaster.transcribe.lyrics import (
                     tokenize_lyrics, attach_lyrics_to_musicxml,
@@ -456,17 +466,17 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                     "message": f"歌词处理未完成：{type(lyric_error).__name__}",
                 }
                 print(f"[Lyrics] optional lyric step skipped: {type(lyric_error).__name__}: {lyric_error}", flush=True)
-        elif engine != "crepe":
+        elif rc == 0 and mx.is_file():
             lyrics_info = {
-                "source": "unavailable", "status": "not-configured",
+                "source": "unavailable", "status": "not-supported",
                 "alignmentStatus": "not-attempted", "tokenCount": 0,
                 "assignedCount": 0, "unassignedCount": 0,
-                "message": "当前使用的是多音符/钢琴识别引擎，暂不自动对齐单旋律歌词。",
+                "message": "当前 MusicXML 不是单声部单旋律谱，暂不开放逐音歌词对齐。",
             }
 
         # Re-render from the lyric-enriched MusicXML so both numbered and staff scores carry lyrics.
         jianpu_svg = None
-        if rc == 0 and engine == "crepe" and mx.is_file():
+        if lyric_editable:
             try:
                 job.set_stage("正在排版带歌词的简谱与五线谱…", 0.94)
                 from musicmaster.core.render import render as render_score
@@ -503,7 +513,7 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
         if not downloads:
             downloads = _downloads(d)
         from musicmaster.transcribe.lyrics import read_lyric_slots
-        lyric_slots = read_lyric_slots(mx) if rc == 0 and engine == "crepe" and mx.is_file() else []
+        lyric_slots = read_lyric_slots(mx) if lyric_editable else []
         return {"ok": rc == 0, "report_md": report, "staff_svg": staff_svg,
                 "jianpu_svg": jianpu_svg, "lyric_slots": lyric_slots,
                 "jianpu_page_count": 1 if jianpu_svg else None,
