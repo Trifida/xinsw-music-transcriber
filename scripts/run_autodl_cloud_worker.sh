@@ -13,7 +13,10 @@ CORE_PY="$CORE_VENV/bin/python"
 SEP_PY="$SEP_VENV/bin/python"
 
 : "${MUSICMASTER_API_URL:?Set MUSICMASTER_API_URL to the HTTPS production API URL}"
-: "${MUSICMASTER_WORKER_TOKEN:?Set MUSICMASTER_WORKER_TOKEN in the worker environment}"
+if [[ -z "${MUSICMASTER_WORKER_TOKEN:-}" && -z "${MUSICMASTER_BOOTSTRAP_TOKEN:-}" ]]; then
+  echo "Set MUSICMASTER_WORKER_TOKEN or MUSICMASTER_BOOTSTRAP_TOKEN in the worker environment." >&2
+  exit 1
+fi
 
 "$SYSTEM_PYTHON" -c 'import sys; raise SystemExit("Python 3.10+ is required") if sys.version_info < (3, 10) else None'
 
