@@ -68,6 +68,13 @@ class FakeStore:
     def fail_job(self, job_id, worker_id, error, retryable=False):
         return "failed"
 
+    def get_worker(self, worker_id):
+        return getattr(self, "worker_record", None)
+
+    def recover_worker_instance(self, worker_id, instance_uuid):
+        self.recovered_worker_instance = (worker_id, instance_uuid)
+        return getattr(self, "recovery_allowed", True)
+
     def run_with_dispatch_capacity(self, max_workers, operation):
         if not 1 <= int(max_workers) <= 10:
             raise ValueError("max_workers must be between 1 and 10.")
@@ -543,3 +550,101 @@ def test_idle_worker_batch_endpoint_executes_only_when_dry_run_false(api, monkey
     assert body["results"][1] == {
         "worker_id": "worker-b", "status": "error", "error": "RuntimeError"
     }
+
+
+
+def test_ambiguous_worker_recovery_links_one_exact_provider_match_only(api, monkeypatch):
+    client, store, _ = api
+    store.worker_record = {
+        "worker_id": "worker-test", "status": "error",
+        "instance_uuid": None, "active_job_id": None,
+    }
+    seen = {}
+
+    class FakeAutoDL:
+        def find_instances_by_name(self, name):
+            seen["name"] = name
+            return [{
+                "uuid": "pro-recovered",
+                "name": name,
+                "status": "shutdown",
+                "created_at": "2026-11-25T10:00:00+08:00",
+            }]
+
+    monkeypatch.setattr(cloud_api, "AutoDLProClient", FakeAutoDL)
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    response = client.post(
+        "/api/internal/dispatcher/workers/worker-test/recover-instance",
+        headers={"Authorization": "Bearer " + "d" * 40},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "linked"
+    assert body["instance_uuid"] == "pro-recovered"
+    assert body["provider_mutated"] is False
+    assert store.recovered_worker_instance == ("worker-test", "pro-recovered")
+    assert seen["name"].startswith("XW-")
+    assert len(seen["name"]) == 27
+
+
+def test_ambiguous_worker_recovery_does_not_link_when_no_listing_match(api, monkeypatch):
+    client, store, _ = api
+    store.worker_record = {
+        "worker_id": "worker-test", "status": "error",
+        "instance_uuid": None, "active_job_id": None,
+    }
+
+    class FakeAutoDL:
+        def find_instances_by_name(self, name):
+            return []
+
+    monkeypatch.setattr(cloud_api, "AutoDLProClient", FakeAutoDL)
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    response = client.post(
+        "/api/internal/dispatcher/workers/worker-test/recover-instance",
+        headers={"Authorization": "Bearer " + "d" * 40},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "not_found"
+    assert response.json()["retry_safe"] is False
+    assert not hasattr(store, "recovered_worker_instance")
+
+
+def test_ambiguous_worker_recovery_refuses_duplicate_provider_matches(api, monkeypatch):
+    client, store, _ = api
+    store.worker_record = {
+        "worker_id": "worker-test", "status": "error",
+        "instance_uuid": None, "active_job_id": None,
+    }
+
+    class FakeAutoDL:
+        def find_instances_by_name(self, name):
+            return [
+                {"uuid": "pro-one", "name": name},
+                {"uuid": "pro-two", "name": name},
+            ]
+
+    monkeypatch.setattr(cloud_api, "AutoDLProClient", FakeAutoDL)
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    response = client.post(
+        "/api/internal/dispatcher/workers/worker-test/recover-instance",
+        headers={"Authorization": "Bearer " + "d" * 40},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "ambiguous"
+    assert response.json()["linked"] is False
+    assert not hasattr(store, "recovered_worker_instance")
+
+
+def test_ambiguous_worker_recovery_rejects_non_error_worker(api, monkeypatch):
+    client, store, _ = api
+    store.worker_record = {
+        "worker_id": "worker-test", "status": "idle",
+        "instance_uuid": None, "active_job_id": None,
+    }
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    response = client.post(
+        "/api/internal/dispatcher/workers/worker-test/recover-instance",
+        headers={"Authorization": "Bearer " + "d" * 40},
+    )
+    assert response.status_code == 409
