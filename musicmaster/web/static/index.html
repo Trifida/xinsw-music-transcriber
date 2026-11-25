@@ -407,10 +407,10 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
     </div>
   </section>
 
-  <section class="console" id="console" data-accent="convert">
+  <section class="console" id="console" data-accent="transcribe">
     <div class="tabs" role="tablist" aria-label="四种手艺">
-      <button class="tab" data-c="convert"    id="tab-convert"    role="tab" aria-selected="true"  aria-controls="p-convert"><svg class="e" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-convert"></use></svg>互译</button>
-      <button class="tab" data-c="transcribe" id="tab-transcribe" role="tab" aria-selected="false" aria-controls="p-transcribe"><svg class="e" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-transcribe"></use></svg>记谱</button>
+      <button class="tab" data-c="transcribe" id="tab-transcribe" role="tab" aria-selected="true" aria-controls="p-transcribe"><svg class="e" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-transcribe"></use></svg>记谱</button>
+      <button class="tab" data-c="convert"    id="tab-convert"    role="tab" aria-selected="false" aria-controls="p-convert"><svg class="e" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-convert"></use></svg>互译</button>
       <button class="tab" data-c="separate"   id="tab-separate"   role="tab" aria-selected="false" aria-controls="p-separate"><svg class="e" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-separate"></use></svg>拆声</button>
       <button class="tab" data-c="vocal"      id="tab-vocal"      role="tab" aria-selected="false" aria-controls="p-vocal"><svg class="e" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-vocal"></use></svg>重塑</button>
     </div>
@@ -418,7 +418,7 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
     <div class="panels">
 
       <!-- ───────── 互译 ───────── -->
-      <div class="panel active" id="p-convert" role="tabpanel" aria-labelledby="tab-convert" tabindex="0">
+      <div class="panel" id="p-convert" role="tabpanel" aria-labelledby="tab-convert" tabindex="0">
         <div class="panel-head"><span class="kick">TRANSLATE</span><h2>简谱 ⇄ 五线谱</h2>
           <p>两种谱式互相翻译,以 music21 为枢轴,往返无损。也支持把已有的谱直接导入。</p></div>
         <div class="work">
@@ -483,20 +483,15 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
       </div>
 
       <!-- ───────── 记谱 ───────── -->
-      <div class="panel" id="p-transcribe" role="tabpanel" aria-labelledby="tab-transcribe" tabindex="0">
+      <div class="panel active" id="p-transcribe" role="tabpanel" aria-labelledby="tab-transcribe" tabindex="0">
         <div class="panel-head"><span class="kick">LISTEN</span><h2>把唱过的,记成谱</h2>
-          <p>放一段清唱或哼唱,誊成五线谱与简谱;并逐音标出它没太听准、想请你复核的地方。</p></div>
+          <p>放入声音素材,选择对应的声音类型,誊成五线谱与简谱;并逐音标出它没太听准、想请你复核的地方。</p></div>
         <div class="work">
           <div>
             <div class="card warm">
               <div class="card-h"><span class="idx">i.</span>音频输入</div>
-              <div class="out-tabs" role="group" aria-label="选择音频类型" style="margin:0 0 14px;max-width:320px">
-                <button type="button" class="out-tab on" data-source-mode="vocal" aria-pressed="true">单独人声</button>
-                <button type="button" class="out-tab" data-source-mode="full-song" aria-pressed="false">完整歌曲</button>
-              </div>
-              <div id="vocal-mode-fields">
-                <div class="field">
-                  <div class="player" data-player data-dur="32">
+              <div class="field" id="single-audio-input">
+                <div class="player" data-player data-dur="32">
                     <div class="deck"><div class="vinyl"><div class="disc"></div><span class="gloss"></span><svg class="label" viewBox="0 0 100 100"><use href="#vlbl" width="100" height="100"></use></svg><div class="tonearm"><span class="pivot"></span><span class="arm"></span></div></div></div>
                     <div class="pbody">
                       <div class="pname">我的清唱.wav <span class="psub">哼唱</span></div>
@@ -505,12 +500,14 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
                     </div>
                   </div>
                 </div>
-                <div class="field"><div class="label">这是什么样的声音</div>
-                  <div class="opts" role="radiogroup">
-                    <label class="opt"><input type="radio" name="tr" value="crepe" checked><span class="box"><span class="tick"></span><span><span class="ot">歌声 · 哼唱 · 单旋律</span><span class="od">一条线条的旋律,最拿手,还能出简谱<span class="tech">crepe</span></span></span></span></label>
-                    <label class="opt"><input type="radio" name="tr" value="basic-pitch"><span class="box"><span class="tick"></span><span><span class="ot">乐器 · 和弦 · 多个音</span><span class="od">同时响起的多个音<span class="tech">basic-pitch</span></span></span></span></label>
-                    <label class="opt"><input type="radio" name="tr" value="bytedance"><span class="box"><span class="tick"></span><span><span class="ot">干净的钢琴独奏</span><span class="od">清晰录制的真钢琴<span class="tech">bytedance</span></span></span></span></label>
-                  </div></div>
+              <div class="field"><div class="label">这是什么样的声音</div>
+                <div class="opts" role="radiogroup" aria-label="选择声音类型">
+                  <label class="opt"><input type="radio" name="tr" value="crepe" checked><span class="box"><span class="tick"></span><span><span class="ot">歌声 · 哼唱 · 单旋律</span><span class="od">一条线条的旋律,最拿手,还能出简谱<span class="tech">crepe</span></span></span></span></label>
+                  <label class="opt"><input type="radio" name="tr" value="basic-pitch"><span class="box"><span class="tick"></span><span><span class="ot">乐器 · 和弦 · 多个音</span><span class="od">同时响起的多个音<span class="tech">basic-pitch</span></span></span></span></label>
+                  <label class="opt"><input type="radio" name="tr" value="bytedance"><span class="box"><span class="tick"></span><span><span class="ot">干净的钢琴独奏</span><span class="od">清晰录制的真钢琴<span class="tech">bytedance</span></span></span></span></label>
+                  <label class="opt"><input type="radio" name="tr" value="full-song"><span class="box"><span class="tick"></span><span><span class="ot">完整乐曲</span><span class="od">包含人声与伴奏的完整混音歌曲，上传后进入云端处理流程</span></span></span></label>
+                </div></div>
+              <div id="single-source-fields">
                 <div class="field"><div class="label">调<span class="opt-mark">选填</span></div>
                   <input class="input" placeholder="如 C / G / D · 升号 F# · 降号 Bb · 留空自动定调">
                   <div class="help">大调写主音:<b>C D E F G A B</b>;<b>升号</b>加 #(F#、C#、G#…),<b>降号</b>加 b(Bb、Eb、Ab…)。拿不准就<b>留空</b>,它会自己听出调来,并把定的调写在谱头。</div></div>
@@ -532,10 +529,11 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
                   <label class="label" for="full-song-lyrics">歌词 <span class="opt-mark">选填，手动输入</span></label>
                   <textarea id="full-song-lyrics" rows="3" placeholder="可以先不填，之后也可以补充歌词。V1 不自动识别歌词。" style="width:100%;min-height:72px;resize:vertical;padding:12px;border:1px solid var(--border-2);border-radius:var(--r-sm);background:var(--surface);color:var(--t1);font:13px/1.7 var(--sans)"></textarea>
                 </div>
-                <button type="button" class="cast full-song-submit" id="full-song-submit"><span class="shine"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V3m0 0L7 8m5-5 5 5M4 16v4h16v-4" stroke-linecap="round" stroke-linejoin="round"/></svg>上传完整歌曲</button>
+                <button type="button" class="cast full-song-submit" id="full-song-submit"><span class="shine"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V3m0 0L7 8m5-5 5 5M4 16v4h16v-4" stroke-linecap="round" stroke-linejoin="round"/></svg>提交完整歌曲任务</button>
                 <div id="full-song-status" class="help" role="status" aria-live="polite" style="margin-top:12px;white-space:pre-wrap"></div>
+                <div id="full-song-artifacts" class="help" aria-live="polite" style="margin-top:8px"></div>
                 <button type="button" id="full-song-refresh" class="mm-clear" hidden>查询任务状态</button>
-                <div class="help" style="margin-top:10px">完整歌曲将上传到云端任务队列。GPU 自动调度尚未启用，当前可验证上传和入队，提交后不会自动开始扒谱。</div>
+                <div class="help" style="margin-top:10px">完整乐曲会上传到云端任务队列；是否自动启动 GPU Worker 由服务端调度配置控制，可在下方查询任务状态。</div>
               </div>
             </div>
             <details class="help"><summary><span class="q">?</span>它怎么知道该用哪种耳朵<span class="chev">⌄</span></summary>
@@ -543,6 +541,7 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
                 <tr><td class="a">歌声 / 哼唱</td><td class="b">单旋律深度音高跟踪<span class="tech">CREPE · 纯 CPU · 出简谱+逐音可信度</span></td></tr>
                 <tr><td class="a">乐器 / 和弦</td><td class="b">通用复音音符检测<span class="tech">basic-pitch · 人声别用它</span></td></tr>
                 <tr><td class="a">真钢琴</td><td class="b">钢琴专用高分辨率<span class="tech">bytedance · 仅干净 44.1k</span></td></tr>
+                <tr><td class="a">完整乐曲</td><td class="b">上传完整混音，进入云端整曲任务流程<span class="tech">云端任务队列 · GPU 自动调度待接通</span></td></tr>
               </table><div class="help">选错也不会出乱子——门口会先体检素材,听不准的地方会替你标出来。</div></div></details>
           </div>
           <div>

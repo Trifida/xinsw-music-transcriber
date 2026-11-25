@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from io import BytesIO
 from uuid import uuid4
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -36,6 +37,9 @@ class FakeStore:
 
     def get_job(self, job_id):
         return self.jobs.get(str(job_id))
+
+    def count_queued_jobs(self):
+        return sum(1 for row in self.jobs.values() if row.get("status") == "queued")
 
     def list_artifacts(self, job_id):
         return list(self.artifacts)
@@ -156,8 +160,9 @@ def test_worker_auth_rejects_missing_token_and_accepts_valid_token(api):
     assert response.json() == {"job": None}
 
 
-def test_cloud_upload_creates_private_object_and_queues_job(api):
+def test_cloud_upload_creates_private_object_and_queues_job(api, monkeypatch):
     client, store, objects = api
+    monkeypatch.delenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", raising=False)
     response = client.post(
         "/api/cloud/jobs",
         files={"audio": ("原曲.mp3", b"audio-bytes", "audio/mpeg")},
@@ -169,11 +174,79 @@ def test_cloud_upload_creates_private_object_and_queues_job(api):
     assert response.status_code == 200
     result = response.json()
     assert result["status"] == "queued"
+    assert result["dispatch"] == "disabled"
     assert objects.uploaded[0] == b"audio-bytes"
     assert objects.uploaded[1].startswith(f"jobs/{result['job_id']}/source/")
     assert store.jobs[result["job_id"]]["status"] == "queued"
     assert store.jobs[result["job_id"]]["source_size_bytes"] == len(b"audio-bytes")
     assert store.jobs[result["job_id"]]["options"]["lyrics"] == "春风又绿江南岸"
+
+
+def test_cloud_upload_schedules_opt_in_dispatch_with_stable_job_key(api, monkeypatch):
+    client, store, objects = api
+    monkeypatch.setenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", "true")
+    dispatched = []
+    monkeypatch.setattr(
+        cloud_api, "provision_cloud_worker",
+        lambda *, idempotency_key: dispatched.append(idempotency_key) or {
+            "worker_id": "dispatch-test", "status": "starting",
+        },
+    )
+
+    response = client.post(
+        "/api/cloud/jobs",
+        files={"audio": ("原曲.mp3", b"audio-bytes", "audio/mpeg")},
+        data={"engine": "crepe", "lyrics": "手动歌词"},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["status"] == "queued"
+    assert result["dispatch"] == "scheduled"
+    assert dispatched == [f"cloud-job-{result['job_id']}"]
+    assert store.jobs[result["job_id"]]["status"] == "queued"
+
+
+def test_queued_job_dispatch_sweep_is_opt_in_and_uses_stable_minute_key(api, monkeypatch):
+    client, store, _ = api
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    headers = {"Authorization": "Bearer " + "d" * 40}
+
+    disabled = client.post(
+        "/api/internal/dispatcher/dispatch-queued", headers=headers
+    )
+    assert disabled.status_code == 200
+    assert disabled.json()["status"] == "disabled"
+
+    monkeypatch.setenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", "true")
+
+    class FixedDateTime:
+        @staticmethod
+        def now(tz):
+            return datetime(2026, 11, 25, 12, 30, tzinfo=tz)
+
+    monkeypatch.setattr(cloud_api, "datetime", FixedDateTime)
+    store.jobs["queued-job"] = {"id": "queued-job", "status": "queued"}
+    calls = []
+    monkeypatch.setattr(
+        cloud_api, "provision_cloud_worker",
+        lambda *, idempotency_key: calls.append(idempotency_key) or {
+            "worker_id": "dispatch-test", "status": "starting",
+        },
+    )
+    first = client.post(
+        "/api/internal/dispatcher/dispatch-queued", headers=headers
+    )
+    second = client.post(
+        "/api/internal/dispatcher/dispatch-queued", headers=headers
+    )
+
+    assert first.status_code == 200
+    assert first.json()["status"] == "worker_dispatch_requested"
+    assert first.json()["queued_jobs"] == 1
+    assert second.status_code == 200
+    assert calls[0] == calls[1]
+    assert calls[0].startswith("queue-sweep-")
 
 
 def test_cloud_upload_rejects_oversized_lyrics(api):
@@ -747,3 +820,30 @@ def test_ambiguous_worker_recovery_rejects_non_error_worker(api, monkeypatch):
         headers={"Authorization": "Bearer " + "d" * 40},
     )
     assert response.status_code == 409
+
+
+
+def test_transcription_home_and_fourth_source_type_contract():
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "musicmaster/web/static/index.html").read_text(encoding="utf-8")
+    upload_js = (root / "musicmaster/web/static/js/full-song-upload.js").read_text(encoding="utf-8")
+
+    assert html.index('id="tab-transcribe"') < html.index('id="tab-convert"')
+    assert 'id="tab-transcribe" role="tab" aria-selected="true"' in html
+    assert '<div class="panel active" id="p-transcribe"' in html
+    assert '<div class="panel active" id="p-convert"' not in html
+
+    assert 'name="tr" value="crepe"' in html
+    assert 'name="tr" value="basic-pitch"' in html
+    assert 'name="tr" value="bytedance"' in html
+    assert 'name="tr" value="full-song"' in html
+    assert 'data-source-mode=' not in html
+    assert 'input[name="tr"]' in upload_js
+    assert 'id="single-audio-input"' in html
+    assert 'id="single-source-fields"' in html
+    assert 'id="full-song-fields" hidden' in html
+    assert 'id="full-song-file"' in html
+    assert 'id="full-song-lyrics"' in html
+    assert 'id="full-song-artifacts"' in html
+    assert '/artifacts/' in upload_js
+    assert "noopener noreferrer" in upload_js
