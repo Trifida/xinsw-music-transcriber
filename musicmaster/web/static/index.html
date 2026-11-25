@@ -488,8 +488,26 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
           <p>放一段清唱或哼唱,誊成五线谱与简谱;并逐音标出它没太听准、想请你复核的地方。</p></div>
         <div class="work">
           <div>
+            <div class="card warm full-song-card" style="margin-bottom:18px;border-color:rgba(167,139,250,.35)">
+              <div class="card-h"><span class="idx">i.</span>上传完整歌曲 <span class="opt-mark">整曲扒谱入口</span></div>
+              <p class="help" style="margin:4px 0 12px">上传原始完整歌曲。任务流程将先分离人声与伴奏，再从主唱音轨提取旋律；无需提前手动拆声。</p>
+              <div class="field">
+                <label class="label" for="full-song-file">完整歌曲音频</label>
+                <input id="full-song-file" type="file" accept=".mp3,.wav,.flac,.m4a,.ogg,audio/*" style="display:block;width:100%;padding:12px;border:1px dashed var(--border-2);border-radius:var(--r-sm);background:var(--surface);color:var(--t1)">
+                <div class="help">支持 MP3 / WAV / FLAC / M4A / OGG，单个文件最大 250 MB。</div>
+                <div id="full-song-filename" class="help" aria-live="polite">尚未选择歌曲</div>
+              </div>
+              <div class="field">
+                <label class="label" for="full-song-lyrics">歌词 <span class="opt-mark">选填，手动输入</span></label>
+                <textarea id="full-song-lyrics" rows="3" placeholder="可以先不填，之后也可以补充歌词。V1 不自动识别歌词。" style="width:100%;min-height:72px;resize:vertical;padding:12px;border:1px solid var(--border-2);border-radius:var(--r-sm);background:var(--surface);color:var(--t1);font:13px/1.7 var(--sans)"></textarea>
+              </div>
+              <button type="button" class="cast full-song-submit" id="full-song-submit"><span class="shine"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V3m0 0L7 8m5-5 5 5M4 16v4h16v-4" stroke-linecap="round" stroke-linejoin="round"/></svg>上传完整歌曲</button>
+              <div id="full-song-status" class="help" role="status" aria-live="polite" style="margin-top:12px;white-space:pre-wrap"></div>
+              <button type="button" id="full-song-refresh" class="mm-clear" hidden>查询任务状态</button>
+              <div class="help" style="margin-top:10px">说明：此入口将完整音频上传到云端持久任务队列。GPU 自动启动调度尚未完成，当前阶段可验证上传和入队，不能保证提交后立即开始扒谱。</div>
+            </div>
             <div class="card warm">
-              <div class="card-h"><span class="idx">i.</span>放一段歌声</div>
+              <div class="card-h"><span class="idx">ii.</span>已有单独人声音频？继续使用单独记谱</div>
               <div class="field">
                 <div class="player" data-player data-dur="32">
                   <div class="deck"><div class="vinyl"><div class="disc"></div><span class="gloss"></span><svg class="label" viewBox="0 0 100 100"><use href="#vlbl" width="100" height="100"></use></svg><div class="tonearm"><span class="pivot"></span><span class="arm"></span></div></div></div>
@@ -788,6 +806,7 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
 <script src="js/api.js"></script>
 <script src="js/convert.js"></script>
 <script src="js/transcribe.js"></script>
+<script src="js/full-song-upload.js"></script>
 <script src="js/separate.js"></script>
 <script src="js/vocal.js"></script>
 </body>

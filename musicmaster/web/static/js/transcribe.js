@@ -46,7 +46,7 @@
     var player = panel.querySelector('.card [data-player]');
     var getFile = player ? MM.makeUploadPlayer(player, 'audio/*', null) : function () { return null; };
 
-    var btn = panel.querySelector('.cast');
+    var btn = panel.querySelector('.cast:not(.full-song-submit)');
     var prog = MM.progress(btn, { comfort: true, messages: COMFORT_MSGS });
 
     // ── 产出三 pane(按 DOM 顺序:解读 / 谱面 / 带走) ──
