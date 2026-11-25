@@ -17,6 +17,56 @@ class AutoDLProError(RuntimeError):
     """AutoDL Pro API 返回错误或请求失败。"""
 
 
+
+def build_worker_start_command(api_url: str, bootstrap_token: str) -> str:
+    """Build a self-contained AutoDL start command without a preinstalled repo checkout.
+
+    The small bootstrap helper is compressed into the start command itself. It
+    exchanges only the single-use bootstrap token, downloads the pinned source
+    bundle, verifies its digest, and execs the worker launcher from that bundle.
+    """
+    import base64
+    import shlex
+    import zlib
+    from pathlib import Path
+    from urllib.parse import urlsplit
+
+    api = str(api_url or "").strip().rstrip("/")
+    parsed = urlsplit(api)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+            or parsed.password or parsed.query or parsed.fragment):
+        raise ValueError("api_url must be a clean HTTPS base URL.")
+    token = str(bootstrap_token or "").strip()
+    if not 32 <= len(token) <= 256:
+        raise ValueError("bootstrap_token must contain 32–256 characters.")
+
+    helper_path = Path(__file__).resolve().parents[2] / "scripts" / "bootstrap_worker_bundle.py"
+    try:
+        helper = helper_path.read_bytes()
+    except OSError as exc:
+        raise AutoDLProError("The worker bootstrap helper is missing on the API host.") from exc
+    encoded = base64.b64encode(zlib.compress(helper, level=9)).decode("ascii")
+    return "\\n".join([
+        "set -euo pipefail",
+        f"export MUSICMASTER_API_URL={shlex.quote(api)}",
+        f"export MUSICMASTER_BOOTSTRAP_TOKEN={shlex.quote(token)}",
+        "python3 - <<'PY'",
+        "import base64, zlib",
+        "from pathlib import Path",
+        f"payload = {encoded!r}",
+        "Path('/tmp/xinsw-bootstrap-worker-bundle.py').write_bytes(zlib.decompress(base64.b64decode(payload)))",
+        "PY",
+        "BOOTSTRAP_JSON=\"$(python3 /tmp/xinsw-bootstrap-worker-bundle.py)\"",
+        "BUNDLE_ROOT=\"$(python3 -c 'import json,sys; print(json.load(sys.stdin)[\"bundle_root\"])' <<<\"$BOOTSTRAP_JSON\")\"",
+        "export MUSICMASTER_WORKER_TOKEN=\"$(python3 -c 'import json,sys; print(json.load(sys.stdin)[\"worker_token\"])' <<<\"$BOOTSTRAP_JSON\")\"",
+        "export MUSICMASTER_WORKER_ID=\"$(python3 -c 'import json,sys; print(json.load(sys.stdin).get(\"worker_id\") or \"\")' <<<\"$BOOTSTRAP_JSON\")\"",
+        "INSTANCE_UUID=\"$(python3 -c 'import json,sys; print(json.load(sys.stdin).get(\"instance_uuid\") or \"\")' <<<\"$BOOTSTRAP_JSON\")\"",
+        'if [[ -n "$INSTANCE_UUID" ]]; then export MUSICMASTER_INSTANCE_UUID="$INSTANCE_UUID"; fi',
+        "unset BOOTSTRAP_JSON INSTANCE_UUID MUSICMASTER_BOOTSTRAP_TOKEN",
+        'exec env MUSICMASTER_SKIP_BUNDLE_BOOTSTRAP=1 bash "$BUNDLE_ROOT/scripts/run_autodl_cloud_worker.sh"',
+    ])
+
+
 class AutoDLProClient:
     API_BASE = "https://api.autodl.com"
 
