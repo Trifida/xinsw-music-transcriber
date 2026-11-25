@@ -23,9 +23,11 @@ def test_colab_launcher_imports_the_real_v1_runtime_dependencies():
     module = load_launcher()
 
     assert {
-        "numpy", "librosa", "soundfile", "torch", "torchaudio",
-        "audio_separator.separator", "tensorflow", "crepe", "hmmlearn", "music21",
+        "numpy", "librosa", "soundfile", "tensorflow", "crepe", "hmmlearn", "music21",
     }.issubset(set(module.REQUIRED_MODULES))
+    assert "torch" not in module.REQUIRED_MODULES
+    assert "torchaudio" not in module.REQUIRED_MODULES
+    assert "audio_separator.separator" not in module.REQUIRED_MODULES
 
 
 def test_colab_launcher_checks_project_entrypoints_and_sep_interpreter():
@@ -38,8 +40,10 @@ def test_colab_launcher_checks_project_entrypoints_and_sep_interpreter():
         assert module_name in SOURCE
 
     assert "from musicmaster.web.runners import _sep_python" in SOURCE
-    assert "Path(resolved_sep_python).resolve() != Path(sys.executable).resolve()" in SOURCE
-    assert 'os.environ["MUSICMASTER_SEP_PYTHON"] = sys.executable' in SOURCE
+    assert "audio_separator.separator" in SOURCE
+    assert "MUSICMASTER_SEP_PYTHON" in SOURCE
+    assert "分离环境检查失败" in SOURCE
+    assert "与当前 CUDA Python 不一致" not in SOURCE
 
 
 def test_colab_launcher_requires_api_root_and_existing_bs_roformer_weights():
@@ -54,7 +58,8 @@ def test_colab_launcher_does_not_install_dependencies_or_provision_gpu():
     assert "pip install" not in lowered
     assert "autodl" not in lowered
     assert "create_autodl_worker" not in SOURCE
-    assert "subprocess" not in lowered
+    assert "subprocess.run" in SOURCE
+    assert "subprocess.Popen" not in SOURCE
 
 
 def test_cpu_runtime_is_accepted_as_a_compute_fallback():
