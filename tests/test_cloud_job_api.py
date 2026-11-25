@@ -452,6 +452,22 @@ def test_worker_marks_temporary_api_network_errors_retryable(monkeypatch):
         )
 
 
+def test_worker_retries_same_artifact_confirmation_after_temporary_failure(monkeypatch):
+    calls = []
+
+    def flaky():
+        calls.append("call")
+        if len(calls) < 3:
+            raise worker.RetryableWorkerError("temporary response loss")
+        return {"ok": True}
+
+    monkeypatch.setattr(worker.time, "sleep", lambda seconds: None)
+    result = worker._retry_transient(flaky, attempts=3)
+
+    assert result == {"ok": True}
+    assert len(calls) == 3
+
+
 def test_worker_downloads_source_once_and_keeps_lease_through_completion(
     monkeypatch, tmp_path
 ):
