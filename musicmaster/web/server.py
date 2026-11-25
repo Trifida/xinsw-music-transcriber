@@ -237,9 +237,9 @@ def api_save_lyrics(job_id: str, payload: LyricEditsRequest) -> dict:
         else:
             result.pop("lyrics_render_warnings", None)
         result["report_md"] = (result.get("report_md") or "") + (
-            "\\n\\n## 逐音歌词人工校正\\n"
-            + f"- 已保存：{applied['assignedCount']}/{applied['lyricSlots']} 个位置有歌词。\\n"
-            + "- MusicXML 已更新；谱面预览与 PDF 已尽力重新生成。\\n"
+            "\n\n## 逐音歌词人工校正\n"
+            + f"- 已保存：{applied['assignedCount']}/{applied['lyricSlots']} 个位置有歌词。\n"
+            + "- MusicXML 已更新；谱面预览与 PDF 已尽力重新生成。\n"
         )
         job.updated_at = __import__("time").time()
         return {
