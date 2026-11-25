@@ -272,3 +272,12 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 4. Keep all production, Neon-main, Render deploy, and paid AutoDL operations behind explicit authorization.
 
 - Follow-up hardening: status recovery catches only the AutoDL provider API error type (not arbitrary programming exceptions), preserves the original status error if the list lookup also fails, and accepts a valid empty listing (`max_page: 0`, empty list) while rejecting inconsistent zero-page responses.
+
+
+## 2026-11-25 continued — bounded idle-worker sweep
+
+- Added `PostgresJobStore.list_stale_idle_workers()`, a read-only query for stale workers with status idle, no active job, and a linked AutoDL instance. Candidates are ordered oldest heartbeat first and bounded to 25.
+- Added dispatcher-authenticated `POST /api/internal/dispatcher/workers/reconcile-idle` with `dry_run: true` by default. Dry-run only lists candidates and does not instantiate AutoDL client or mutate provider/DB state.
+- Explicit `dry_run: false` runs the existing conservative reconciler sequentially for at most 25 candidates. Per-worker failures are isolated and only exception class is returned; provider messages and secrets are not exposed.
+- Added fake-DB and API tests for query filters/bounds, default dry-run, auth, and explicit execution with per-worker error isolation.
+- No cron job or queue-triggered automation is configured. No GPU/provider API was called. The batch endpoint can power off/release resources only when explicitly invoked with authenticated `dry_run: false`.
