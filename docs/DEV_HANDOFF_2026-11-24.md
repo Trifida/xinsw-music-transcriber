@@ -492,3 +492,11 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - 当前只实现本地 JobManager 的编辑和保存。云端 PostgreSQL/对象存储任务的逐音修改 API 与产物覆盖尚未实现。
 - 长曲 UI 首版采用滚动逐行输入，后续根据实际体验优化分页/分段编辑，但不要先做复杂 UI。
 - 下一步优先：恢复测试执行；修正测试/渲染问题；用已有真实歌曲产物做一次从编辑到 MusicXML、简谱 PDF、五线谱 SVG 的人工验收。之后再接云端编辑接口，最后才进入自动 GPU 调度器。
+
+### 逐音编辑首版代码提交与 CI 观察（2026-11-25）
+
+- 本轮功能代码最终 HEAD：`2da5af6a97e18855e9f1fbb06071ba38b521167f`。
+- 代码提交后触发的三个 workflow（CI runner diagnostic、legacy jianpu、cloud jobs）全部快速失败；Jobs API 对应 job 均为 `steps: null`、`logs_url: null`。不能确认 pytest 或 node --check 已执行。
+- 逐音编辑首版涉及：`musicmaster/transcribe/lyrics.py`、`musicmaster/web/runners.py`、`musicmaster/web/server.py`、`musicmaster/web/static/js/transcribe.js`、`tests/test_lyrics.py`。
+- `lyrics_alignment.json` 现在持久化逐音 assignments，便于云端结果页后续复用；云端编辑 API 本身尚未开发。
+- 当前验收状态：代码已提交、测试已编写、CI 未验证；未做真实音频 / 真实渲染验收。
