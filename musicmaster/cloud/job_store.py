@@ -454,6 +454,7 @@ class PostgresJobStore:
                 SELECT count(*) AS total
                 FROM music_workers
                 WHERE status IN ('starting', 'idle', 'busy', 'stopping')
+                   OR (status = 'error' AND instance_uuid IS NOT NULL)
                 """
             )
             row = cur.fetchone()
@@ -483,7 +484,7 @@ class PostgresJobStore:
     def list_stale_idle_workers(
         self, *, idle_seconds: int = 300, limit: int = 10
     ) -> list[dict]:
-        """List shutdown candidates without changing worker state (safe for dry-run)."""
+        """List stale idle/error workers with linked instances; read-only for dry-run."""
         seconds = max(60, min(int(idle_seconds), 86400))
         cap = max(1, min(int(limit), 25))
         with self._connect() as conn, conn.cursor() as cur:
@@ -491,7 +492,7 @@ class PostgresJobStore:
                 """
                 SELECT worker_id, instance_uuid, status, active_job_id, last_seen_at
                 FROM music_workers
-                WHERE status = 'idle'
+                WHERE status IN ('idle', 'error')
                   AND active_job_id IS NULL
                   AND instance_uuid IS NOT NULL
                   AND last_seen_at < now() - (%s * interval '1 second')
@@ -505,7 +506,7 @@ class PostgresJobStore:
     def mark_stale_idle_worker_stopping(
         self, worker_id: str, *, idle_seconds: int
     ) -> bool:
-        """Atomically reserve shutdown only for a stale, truly idle worker."""
+        """Atomically reserve shutdown only for a stale idle/error worker with no active job."""
         seconds = max(60, min(int(idle_seconds), 86400))
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
@@ -513,7 +514,7 @@ class PostgresJobStore:
                 UPDATE music_workers
                 SET status = 'stopping', updated_at = now()
                 WHERE worker_id = %s
-                  AND status = 'idle'
+                  AND status IN ('idle', 'error')
                   AND active_job_id IS NULL
                   AND last_seen_at < now() - (%s * interval '1 second')
                   AND instance_uuid IS NOT NULL
