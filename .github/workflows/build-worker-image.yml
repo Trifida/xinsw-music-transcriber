@@ -14,7 +14,7 @@ on:
       - ".github/workflows/build-worker-image.yml"
   pull_request:
     branches:
-      - feat/manual-start-existing-gpu
+      - main
     paths:
       - "Dockerfile.worker"
       - ".dockerignore"
