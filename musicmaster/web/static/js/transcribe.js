@@ -280,7 +280,10 @@
       if (result.staff_svg) {
         sheet.innerHTML = result.staff_svg;
         MM.fitSheetSvg(sheet);
+        return;
       }
+
+      sheet.innerHTML = '<div class="help" style="padding:18px">歌词已保存，但本次未能生成新的谱面预览。请查看解读页的渲染提示，并下载最新 MusicXML 文件。</div>';
     }
 
     // 带走 pane:下载网格
