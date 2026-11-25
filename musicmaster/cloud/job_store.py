@@ -431,13 +431,18 @@ class PostgresJobStore:
             return int(row["total"] if row else 0)
 
     def run_with_dispatch_capacity(
-        self, max_workers: int, operation: Callable[[], _T]
+        self,
+        max_workers: int,
+        operation: Callable[[], _T],
+        *,
+        replay_if: Callable[[], _T | None] | None = None,
     ) -> _T:
-        """Serialize provisioning and enforce the active-worker cap in Postgres.
+        """Serialize provisioning, replay idempotent requests, and enforce capacity.
 
-        A transaction-scoped advisory lock makes this safe across multiple API
-        processes/instances. The lock is held while the provider operation runs,
-        so a second request fails fast rather than creating another GPU.
+        The optional replay callback runs only after acquiring the transaction-
+        scoped advisory lock and before counting capacity. This closes the race
+        where two identical requests both perform an early lookup before the
+        first worker row is inserted.
         """
         cap = int(max_workers)
         if not 1 <= cap <= 10:
@@ -449,6 +454,10 @@ class PostgresJobStore:
             lock = cur.fetchone()
             if not lock or not lock["acquired"]:
                 raise DispatchCapacityError("Another worker provisioning request is active.")
+            if replay_if is not None:
+                replay = replay_if()
+                if replay is not None:
+                    return replay
             cur.execute(
                 """
                 SELECT count(*) AS total
