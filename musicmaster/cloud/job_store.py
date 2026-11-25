@@ -110,6 +110,15 @@ class PostgresJobStore:
             raise ValueError("worker_id must contain 1–128 characters.")
         lease = max(30, min(int(lease_seconds), 900))
         with self._connect() as conn, conn.cursor() as cur:
+            # Serialize claim against idle-shutdown reservation. A worker already
+            # marked stopping must never acquire another queued job.
+            cur.execute(
+                "SELECT status FROM music_workers WHERE worker_id = %s FOR UPDATE",
+                (worker,),
+            )
+            worker_row = cur.fetchone()
+            if worker_row and worker_row["status"] not in {"starting", "idle", "busy"}:
+                return None
             # Exhausted leases become terminal failures; retryable expired leases
             # are reclaimed by the same atomic SKIP LOCKED statement below.
             cur.execute(
@@ -234,6 +243,7 @@ class PostgresJobStore:
                 ON CONFLICT (worker_id) DO UPDATE
                 SET instance_uuid = COALESCE(EXCLUDED.instance_uuid, music_workers.instance_uuid),
                     status = 'idle', last_seen_at = now(), updated_at = now()
+                WHERE music_workers.status IN ('starting', 'idle', 'busy')
                 RETURNING *
                 """,
                 (worker, instance_uuid),
