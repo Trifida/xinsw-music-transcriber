@@ -149,3 +149,16 @@ documented by AutoDL at https://autodl.com/docs/instance_pro_api/.
 An empty but valid provider listing (`max_page: 0` and an empty `list`) is
 also accepted as a complete scan; zero pages with any returned records is
 rejected as inconsistent.
+
+
+## Bounded idle-worker sweep (manual only)
+
+The dispatcher now exposes
+`POST /api/internal/dispatcher/workers/reconcile-idle`. Its request defaults
+to `dry_run: true` and a maximum batch size of 10 (hard cap 25). Dry-run only
+queries stale, truly idle workers and returns candidate IDs/timestamps; it does
+not construct an AutoDL client or change provider/DB state. Set
+`dry_run: false` explicitly to reconcile that bounded batch sequentially.
+Each worker result is reported independently, and provider error messages are
+not returned. This endpoint is still dispatcher-authenticated and manual-only;
+no cron job, queue event, or automatic scheduler invokes it.
