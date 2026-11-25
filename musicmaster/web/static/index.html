@@ -531,8 +531,8 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
                   <textarea id="full-song-lyrics" rows="3" placeholder="可以先不填，之后也可以补充歌词。V1 不自动识别歌词。" style="width:100%;min-height:72px;resize:vertical;padding:12px;border:1px solid var(--border-2);border-radius:var(--r-sm);background:var(--surface);color:var(--t1);font:13px/1.7 var(--sans)"></textarea>
                 </div>
                 <button type="button" class="cast full-song-submit" id="full-song-submit"><span class="shine"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V3m0 0L7 8m5-5 5 5M4 16v4h16v-4" stroke-linecap="round" stroke-linejoin="round"/></svg>提交完整歌曲任务</button>
-                <button type="button" id="full-song-start" class="cast full-song-submit" hidden disabled style="margin-top:12px"><span class="shine"></span>开始记谱</button>
                 <div id="full-song-status" class="help" role="status" aria-live="polite" style="margin-top:12px;white-space:pre-wrap"></div>
+                <button type="button" id="full-song-start" class="cast full-song-submit" hidden disabled style="margin-top:12px"><span class="shine"></span>开始记谱</button>
                 <div id="full-song-artifacts" class="help" aria-live="polite" style="margin-top:8px"></div>
                 <button type="button" id="full-song-refresh" class="mm-clear" hidden>查询任务状态</button>
                 <div class="help" style="margin-top:10px">完整乐曲上传后需手动点击「开始记谱」。系统只使用已经运行的 GPU；没有可用 GPU 时会保留任务并提示等待，不会自动启动或创建 GPU。</div>
