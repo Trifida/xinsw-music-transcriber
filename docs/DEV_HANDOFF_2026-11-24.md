@@ -247,3 +247,7 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - Shutdown race protections: worker heartbeat now accepts only `idle`/`busy`; the SQL update refuses to revive `stopping`/`stopped`/error workers and requires active-job consistency. Job claiming locks the worker row and refuses new claims once stopping. Re-registration cannot resurrect a stopping worker.
 - Removed the worker-side idle auto-exit path; idle shutdown is now owned by the server-side lifecycle controller rather than a GPU process attempting to mark itself stopping.
 - This is manual-only and has not been called. No GPU was created, powered on, powered off, or released. Provider/Postgres cannot be atomic; a process crash after successful provider release but before DB finalization still requires operator reconciliation. No automated scheduler or lifecycle sweeper is wired yet.
+
+
+- Follow-up hardening: `claim_next` now locks the worker row and permits a claim only for `starting`/`idle` workers with no active job; an already-busy worker cannot claim a second job. Re-registration cannot change a busy worker back to idle. Added regression coverage.
+- The worker no longer has its own idle auto-exit branch. It continues heartbeating while idle; only the server-side, dispatcher-authenticated lifecycle reconciler may reserve shutdown.
