@@ -368,19 +368,8 @@ class PostgresJobStore:
                     self._uuid(job_id), str(worker_id).strip(),
                 ),
             )
-            updated = cur.fetchone() is not None
-            if not updated:
-                # The completion response may have been lost after the transaction
-                # committed. Treat the same worker's already-completed job as success.
-                cur.execute(
-                    """
-                    SELECT id FROM music_jobs
-                    WHERE id = %s AND worker_id = %s AND status = 'completed'
-                    """,
-                    (self._uuid(job_id), str(worker_id).strip()),
-                )
-                updated = cur.fetchone() is not None
-            if updated:
+            transitioned = cur.fetchone() is not None
+            if transitioned:
                 cur.execute(
                     """
                     UPDATE music_workers
@@ -390,7 +379,19 @@ class PostgresJobStore:
                     """,
                     (str(worker_id).strip(),),
                 )
-            return updated
+                return True
+
+            # The completion response may have been lost after the transaction
+            # committed. Treat the same worker's already-completed job as success,
+            # without resetting its worker row (it may already own another job).
+            cur.execute(
+                """
+                SELECT id FROM music_jobs
+                WHERE id = %s AND worker_id = %s AND status = 'completed'
+                """,
+                (self._uuid(job_id), str(worker_id).strip()),
+            )
+            return cur.fetchone() is not None
 
     def fail_job(
         self,
