@@ -38,6 +38,13 @@ class FakeStore:
     def get_job(self, job_id):
         return self.jobs.get(str(job_id))
 
+    def has_live_worker(self, heartbeat_seconds=120):
+        return getattr(self, "live_worker", False)
+
+    def request_job_start(self, job_id):
+        self.jobs[str(job_id)]["options"] = {"manual_start_requested": True}
+        return True
+
     def count_queued_jobs(self):
         return sum(1 for row in self.jobs.values() if row.get("status") == "queued")
 
@@ -180,6 +187,34 @@ def test_cloud_upload_creates_private_object_and_queues_job(api, monkeypatch):
     assert store.jobs[result["job_id"]]["status"] == "queued"
     assert store.jobs[result["job_id"]]["source_size_bytes"] == len(b"audio-bytes")
     assert store.jobs[result["job_id"]]["options"]["lyrics"] == "春风又绿江南岸"
+
+
+def test_manual_start_requires_existing_live_gpu_and_never_provisions(api, monkeypatch):
+    client, store, _ = api
+    monkeypatch.delenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", raising=False)
+    created = client.post(
+        "/api/cloud/jobs",
+        files={"audio": ("原曲.mp3", b"audio-bytes", "audio/mpeg")},
+    ).json()
+    job_id = created["job_id"]
+
+    waiting = client.post(f"/api/cloud/jobs/{job_id}/start")
+    assert waiting.status_code == 409
+    assert "不会创建新的 GPU" in waiting.json()["detail"]
+    assert store.jobs[job_id]["status"] == "queued"
+    assert "options" not in store.jobs[job_id]
+
+    store.live_worker = True
+    started = client.post(f"/api/cloud/jobs/{job_id}/start")
+    assert started.status_code == 200
+    assert started.json()["worker_available"] is True
+    assert store.jobs[job_id]["options"]["manual_start_requested"] is True
+
+
+def test_manual_start_rejects_unknown_job(api):
+    client, _, _ = api
+    response = client.post(f"/api/cloud/jobs/{uuid4()}/start")
+    assert response.status_code == 404
 
 
 def test_cloud_upload_schedules_opt_in_dispatch_with_stable_job_key(api, monkeypatch):
