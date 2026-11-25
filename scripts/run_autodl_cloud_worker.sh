@@ -20,6 +20,18 @@ fi
 
 "$SYSTEM_PYTHON" -c 'import sys; raise SystemExit("Python 3.10+ is required") if sys.version_info < (3, 10) else None'
 
+# This launcher fetches the exact private-repository commit before running application code.
+if [[ "${MUSICMASTER_SKIP_BUNDLE_BOOTSTRAP:-0}" != "1" ]]; then
+  BOOTSTRAP_JSON="$("$SYSTEM_PYTHON" "$ROOT/scripts/bootstrap_worker_bundle.py")"
+  BUNDLE_ROOT="$("$SYSTEM_PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["bundle_root"])' <<<"$BOOTSTRAP_JSON")"
+  export MUSICMASTER_WORKER_TOKEN="$("$SYSTEM_PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["worker_token"])' <<<"$BOOTSTRAP_JSON")"
+  export MUSICMASTER_WORKER_ID="$("$SYSTEM_PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("worker_id") or "")' <<<"$BOOTSTRAP_JSON")"
+  INSTANCE_UUID="$("$SYSTEM_PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("instance_uuid") or "")' <<<"$BOOTSTRAP_JSON")"
+  if [[ -n "$INSTANCE_UUID" ]]; then export MUSICMASTER_INSTANCE_UUID="$INSTANCE_UUID"; fi
+  unset BOOTSTRAP_JSON MUSICMASTER_BOOTSTRAP_TOKEN
+  exec env MUSICMASTER_SKIP_BUNDLE_BOOTSTRAP=1 bash "$BUNDLE_ROOT/scripts/run_autodl_cloud_worker.sh"
+fi
+
 # Exchange the one-time bootstrap token before lengthy environment/model setup.
 if [[ -z "${MUSICMASTER_WORKER_TOKEN:-}" ]]; then
   BOOTSTRAP_JSON="$("$SYSTEM_PYTHON" - "${MUSICMASTER_API_URL}" "${MUSICMASTER_BOOTSTRAP_TOKEN}" <<'PY'
