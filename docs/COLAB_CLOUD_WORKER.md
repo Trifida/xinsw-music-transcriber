@@ -8,7 +8,7 @@
 2. Google Drive 已挂载。
 3. 已有 Worker API 凭据通过 Colab Secrets 注入环境变量 `MUSICMASTER_WORKER_TOKEN`；不要把 token 写进 Notebook 源码、输出或 Git。
 4. `MUSICMASTER_API_URL` 指向已部署服务的 HTTPS 根地址，不要附加 `/api`。
-5. 当前 Colab Python 环境必须能真实导入完整工作流依赖：NumPy、librosa、soundfile、PyTorch CUDA、audio-separator、TensorFlow、CREPE、hmmlearn、music21。
+5. 当前 Colab Python 环境必须能真实导入完整工作流依赖：NumPy、librosa、soundfile、PyTorch CUDA、torchaudio、audio-separator 的实际 Separator 模块、TensorFlow、CREPE、hmmlearn、music21。
 6. Drive 中必须存在 BS-RoFormer checkpoint 和 YAML。
 7. 私有仓库工作副本必须已在 Colab 中取得授权并检出本分支代码。
 
@@ -31,7 +31,7 @@ Launcher 会把 `MUSICMASTER_SEP_PYTHON` 设为当前 Colab 的 `sys.executable`
 python scripts/run_colab_cloud_worker.py
 ```
 
-启动前会实际导入完整乐曲处理依赖和项目入口模块，检查 CUDA、Drive、BS-RoFormer 文件、API URL、Worker 凭据，并确认分离子进程使用当前 CUDA Python。检查失败时不会注册 Worker。
+启动前会实际导入完整乐曲处理依赖（包括 torchaudio 和 audio_separator.separator.Separator）及项目入口模块，检查 CUDA、Drive、BS-RoFormer 文件、API URL、Worker 凭据，并确认分离子进程使用当前 CUDA Python。检查失败时不会注册 Worker。
 
 ## 页面操作顺序
 
