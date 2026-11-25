@@ -216,6 +216,7 @@ def _process_job(
                 key=str(options.get("key") or ""),
                 stages=str(options.get("stages") or "1,2,3"),
                 denoise=str(options.get("denoise") or "dereverb"),
+                lyrics_text=str(options.get("lyrics") or ""),
                 progress_callback=progress,
             )
 
