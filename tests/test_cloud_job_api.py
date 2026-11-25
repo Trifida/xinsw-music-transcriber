@@ -282,6 +282,37 @@ def test_cloud_upload_rejects_unsupported_extension(api):
     assert objects.uploaded is None
 
 
+def test_claim_requeues_job_when_source_url_signing_fails(api):
+    client, store, objects = api
+    job_id = uuid4()
+    store.claim_next = lambda worker_id, lease_seconds=180: {
+        "id": job_id,
+        "source_object_key": f"jobs/{job_id}/source/song.mp3",
+        "source_filename": "song.mp3",
+        "source_content_type": "audio/mpeg",
+        "options": {"engine": "crepe"},
+        "attempt_count": 1,
+    }
+    from musicmaster.cloud.object_store import ObjectStoreError
+    objects.presigned_download = lambda *args, **kwargs: (_ for _ in ()).throw(
+        ObjectStoreError("temporary signing failure")
+    )
+    failed = []
+    store.fail_job = lambda job, worker, error, retryable=False: (
+        failed.append((job, worker, retryable)) or "queued"
+    )
+
+    response = client.post(
+        "/api/internal/jobs/claim",
+        json={"worker_id": "gpu-1"},
+        headers={"Authorization": "Bearer test-worker-secret"},
+    )
+
+    assert response.status_code == 503
+    assert "重新排队" in response.json()["detail"]
+    assert failed == [(job_id, "gpu-1", True)]
+
+
 def test_claim_returns_short_lived_source_url(api, monkeypatch):
     client, store, objects = api
     job_id = uuid4()
