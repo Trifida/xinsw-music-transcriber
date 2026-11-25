@@ -22,7 +22,7 @@ from fastapi.encoders import jsonable_encoder
 from musicmaster.cloud.job_store import DispatchCapacityError, JobStoreError, PostgresJobStore
 from musicmaster.cloud.object_store import ObjectStoreError, S3ObjectStore
 from musicmaster.cloud.autodl_pro import AutoDLProClient
-from musicmaster.cloud.dispatcher import create_autodl_worker
+from musicmaster.cloud.dispatcher import create_autodl_worker, worker_instance_name
 from musicmaster.cloud.lifecycle import reconcile_idle_worker
 
 
@@ -177,6 +177,76 @@ def provision_cloud_worker() -> dict:
             detail=f"Worker provisioning failed: {type(exc).__name__}",
         ) from None
     return result
+
+
+@router.post(
+    "/api/internal/dispatcher/workers/{worker_id}/recover-instance",
+    dependencies=[Depends(_dispatcher_auth)],
+)
+def recover_ambiguous_worker_instance(worker_id: str) -> dict:
+    """Find and link a uniquely tagged instance after an ambiguous create timeout.
+
+    The endpoint is intentionally read-only with respect to AutoDL. A missing
+    listing match is not permission to retry creation because provider listing
+    may lag; multiple matches are never auto-selected.
+    """
+    try:
+        store, _ = _components()
+        worker = store.get_worker(worker_id)
+        if worker is None:
+            raise HTTPException(status_code=404, detail="Worker not found.")
+        if (worker.get("status") != "error" or worker.get("instance_uuid")
+                or worker.get("active_job_id") is not None):
+            raise HTTPException(
+                status_code=409,
+                detail="Worker is not an unresolved provisioning error.",
+            )
+
+        client = AutoDLProClient()
+        name = worker_instance_name(worker_id)
+        matches = client.find_instances_by_name(name)
+        if not matches:
+            return {
+                "worker_id": worker_id,
+                "status": "not_found",
+                "instance_name": name,
+                "retry_safe": False,
+                "message": "No exact match in the complete current listing; wait and check again before retrying creation.",
+            }
+        if len(matches) != 1:
+            return {
+                "worker_id": worker_id,
+                "status": "ambiguous",
+                "match_count": len(matches),
+                "instance_name": name,
+                "linked": False,
+            }
+
+        match = matches[0]
+        instance_uuid = match["uuid"]
+        if not store.recover_worker_instance(worker_id, instance_uuid):
+            raise HTTPException(
+                status_code=409,
+                detail="Worker changed during recovery; reload its current state.",
+            )
+        return {
+            "worker_id": worker_id,
+            "instance_uuid": instance_uuid,
+            "provider_status": match.get("status"),
+            "status": "linked",
+            "linked": True,
+            "provider_mutated": False,
+            "next_step": "Review the instance in AutoDL before any manual power-on or cleanup.",
+        }
+    except HTTPException:
+        raise
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid worker ID or recovery configuration.") from None
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503,
+            detail=f"Ambiguous worker recovery failed: {type(exc).__name__}",
+        ) from None
 
 
 @router.post(
