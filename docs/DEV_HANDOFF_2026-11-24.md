@@ -368,3 +368,11 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 3. Run the focused dispatcher/lifecycle/bootstrap pytest suites in a functioning Linux/Python environment before relying on the change.
 4. Design an operator recovery path for ambiguous `error` rows with no instance ID. Do not automatically retry or free capacity based only on a missing ID; AutoDL create may have succeeded remotely.
 5. Keep all paid provider mutations, production deployment, main merge, and Neon production changes behind explicit user authorization.
+
+## Post-fix verification snapshot — 2026-11-25
+
+- The safety fix and its documentation advanced PR #12 to HEAD `33d105d7edbf31c26f6e230ff97eb1768f9f44c9`; PR remains Open / Draft / unmerged, base `main`, head `deploy/v1-production`.
+- New Cloud jobs, runner diagnostic, and legacy jianpu checks were triggered for the updated branch. All three completed as failure within about 1–2 seconds. The job API again returned `steps: null` and `logs_url: null`. No test execution is confirmed.
+- The current PR head has no successful CI result. Do not interpret the failure as proof that the capacity fix is wrong, and do not interpret the missing logs as proof that tests passed.
+- The latest capacity query now reserves a slot for every `error` worker row, including rows without an AutoDL instance ID. This closes the duplicate-create retry gap conservatively but can leave capacity blocked until an operator investigates an ambiguous create result.
+- No paid GPU/provider mutation, production deployment, main merge, or Neon production-main modification was performed.
