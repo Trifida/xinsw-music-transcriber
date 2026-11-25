@@ -362,7 +362,7 @@ def test_dispatcher_endpoint_requires_separate_strong_credential(api, monkeypatc
     monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
     unauthorized = client.post(
         "/api/internal/dispatcher/workers",
-        headers={"Authorization": "Bearer wrong"},
+        headers={"Authorization": "Bearer wrong", "Idempotency-Key": "request-key-000001"},
     )
     assert unauthorized.status_code == 401
 
@@ -391,11 +391,13 @@ def test_dispatcher_endpoint_uses_server_side_autodl_configuration(api, monkeypa
     monkeypatch.setattr(cloud_api, "create_autodl_worker", fake_provision)
     response = client.post(
         "/api/internal/dispatcher/workers",
-        headers={"Authorization": "Bearer " + "d" * 40},
+        headers={"Authorization": "Bearer " + "d" * 40, "Idempotency-Key": "request-key-000001"},
     )
 
     assert response.status_code == 200
     assert response.json()["instance_uuid"] == "pro-test123"
+    assert seen["worker_id"].startswith("dispatch-")
+    assert len(seen["worker_id"]) == 73
     assert seen["client_created"] is True
     assert seen["store"] is store
     assert seen["api_url"] == "https://api.example.test"
@@ -419,11 +421,13 @@ def test_dispatcher_endpoint_enforces_configured_capacity(api, monkeypatch):
     )
 
     headers = {"Authorization": "Bearer " + "d" * 40}
+    headers["Idempotency-Key"] = "request-key-capacity-01"
     success = client.post("/api/internal/dispatcher/workers", headers=headers)
     assert success.status_code == 200
     assert store.dispatch_max_workers == 2
 
     store.capacity_full = True
+    headers["Idempotency-Key"] = "request-key-capacity-02"
     full = client.post("/api/internal/dispatcher/workers", headers=headers)
     assert full.status_code == 409
     assert full.json()["detail"] == "Worker capacity is full."
@@ -444,6 +448,47 @@ def test_dispatcher_endpoint_rejects_invalid_capacity_setting(api, monkeypatch):
     assert response.status_code == 503
 
 
+
+
+def test_dispatcher_endpoint_requires_idempotency_key(api, monkeypatch):
+    client, _, _ = api
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    response = client.post(
+        "/api/internal/dispatcher/workers",
+        headers={"Authorization": "Bearer " + "d" * 40},
+    )
+    assert response.status_code == 400
+    assert "Idempotency-Key" in response.json()["detail"]
+
+
+def test_dispatcher_endpoint_replay_returns_existing_worker_without_autodl(api, monkeypatch):
+    client, store, _ = api
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    store.worker_record = {
+        "worker_id": "dispatch-" + "a" * 64,
+        "instance_uuid": None,
+        "status": "error",
+        "active_job_id": None,
+    }
+    monkeypatch.setattr(
+        cloud_api, "AutoDLProClient",
+        lambda: (_ for _ in ()).throw(AssertionError("replay must not contact AutoDL")),
+    )
+    monkeypatch.setattr(
+        cloud_api, "create_autodl_worker",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("replay must not provision")),
+    )
+    key = "request-key-replay-0001"
+    # Make the fake record use the deterministic ID for this exact key.
+    store.worker_record["worker_id"] = cloud_api._idempotent_worker_id(key)
+    response = client.post(
+        "/api/internal/dispatcher/workers",
+        headers={"Authorization": "Bearer " + "d" * 40, "Idempotency-Key": key},
+    )
+    assert response.status_code == 200
+    assert response.json()["idempotent_replay"] is True
+    assert response.json()["status"] == "error"
+    assert response.json()["retry_safe"] is False
 
 def test_worker_heartbeat_cannot_mark_stopping_or_stopped(api):
     client, store, _ = api
