@@ -199,6 +199,8 @@ def provision_cloud_worker(
                 worker_id=worker_id,
             ),
         )
+    except HTTPException:
+        raise
     except DispatchCapacityError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
     except (TypeError, ValueError):
