@@ -32,11 +32,11 @@ def reconcile_idle_worker(
         raise RuntimeError("Worker has no linked AutoDL instance.")
 
     status = worker.get("status")
-    if status == "idle":
+    if status in {"idle", "error"}:
         if not store.mark_stale_idle_worker_stopping(
             worker_id, idle_seconds=idle_seconds
         ):
-            return {"worker_id": worker_id, "status": "not_stale_or_not_idle"}
+            return {"worker_id": worker_id, "status": "not_stale_or_not_reconcilable"}
         worker = store.get_worker(worker_id)
         status = worker.get("status") if worker else None
 
