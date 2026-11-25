@@ -46,7 +46,7 @@ def build_worker_start_command(api_url: str, bootstrap_token: str) -> str:
     except OSError as exc:
         raise AutoDLProError("The worker bootstrap helper is missing on the API host.") from exc
     encoded = base64.b64encode(zlib.compress(helper, level=9)).decode("ascii")
-    return "\\n".join([
+    return "\n".join([
         "set -euo pipefail",
         f"export MUSICMASTER_API_URL={shlex.quote(api)}",
         f"export MUSICMASTER_BOOTSTRAP_TOKEN={shlex.quote(token)}",
