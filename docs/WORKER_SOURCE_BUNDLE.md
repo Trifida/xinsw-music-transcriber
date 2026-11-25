@@ -215,3 +215,12 @@ ambiguous error rows that were created with the former generic instance name
 cannot be automatically matched by this mechanism and require manual
 investigation in the AutoDL console. The endpoint is not called automatically
 and performs no provider mutation.
+
+### Manual provisioning idempotency
+
+- `POST /api/internal/dispatcher/workers` requires an `Idempotency-Key` header (16–128 printable ASCII characters).
+- The API hashes the key into a deterministic `dispatch-<sha256>` worker ID. The raw key is not stored or returned.
+- A repeated request with the same key returns the existing worker record and never constructs an AutoDL client or calls create/power-on again.
+- An existing unresolved `error` worker is returned as-is with `retry_safe: false`; operators must use the manual instance-recovery flow. A new key is not a safe way to retry an ambiguous create.
+- Use a new idempotency key only when intentionally requesting a distinct worker after reviewing the prior worker and capacity state.
+- The database schema is unchanged; the existing unique worker ID is the durable idempotency record.
