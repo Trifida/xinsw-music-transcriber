@@ -134,7 +134,7 @@ def bootstrap() -> dict:
         raise RuntimeError("Worker bundle manifest object key does not match its digest.")
     bundle_url = _https_url(str(manifest.get("url") or ""), "Bundle URL")
 
-    root = Path(os.environ.get("MUSICMASTER_WORKER_BUNDLE_HOME", "/opt/xinsw-worker-bundles")).resolve()
+    root = Path(os.environ.get("MUSICMASTER_WORKER_BUNDLE_HOME", str(Path.home() / ".cache" / "xinsw-worker-bundles"))).resolve()
     root.mkdir(parents=True, exist_ok=True)
     final_dir = root / commit
     marker = final_dir / ".xinsw-bundle-sha256"
