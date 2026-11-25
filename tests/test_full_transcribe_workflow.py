@@ -50,8 +50,8 @@ def test_full_workflow_separates_then_transcribes_and_writes_manifest(tmp_path, 
             ],
         }
 
-    def fake_transcribe(job, audio_path, engine, key):
-        calls.append(("transcribe", audio_path, engine, key))
+    def fake_transcribe(job, audio_path, engine, key, lyrics_text=""):
+        calls.append(("transcribe", audio_path, engine, key, lyrics_text))
         d = Path(job.job_dir)
         for name in ("notes.json", "out.mid", "out.musicxml"):
             (d / name).write_bytes(b"artifact")
@@ -71,14 +71,17 @@ def test_full_workflow_separates_then_transcribes_and_writes_manifest(tmp_path, 
     monkeypatch.setattr(full_transcribe.importlib, "import_module", fake_import)
     progress = []
     result = full_transcribe.run_full_transcription(
-        source, output, progress_callback=lambda p, label: progress.append((p, label))
+        source, output, lyrics_text="春风又绿江南岸",
+        progress_callback=lambda p, label: progress.append((p, label))
     )
 
     assert [call[0] for call in calls] == ["separate", "transcribe"]
     assert calls[0][2:] == ("1,2,3", "dereverb")
     assert calls[1][1] == str(output / "separation" / "最终_song.wav")
+    assert calls[1][4] == "春风又绿江南岸"
     assert result["separation"]["accompaniment"] == "separation/1_分离/accomp.wav"
     assert result["transcription"]["files"]["out.mid"] == "transcription/out.mid"
+    assert result["transcription"]["lyrics"]["source"] == "user-provided"
     assert json.loads((output / "job_result.json").read_text(encoding="utf-8")) == result
     assert progress[-1][0] == 1.0
     assert all(p <= 1.0 for p, _ in progress)
