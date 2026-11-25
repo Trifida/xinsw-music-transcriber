@@ -102,3 +102,18 @@ bundle automatically, configure Render secrets, monitor the instance through
 the full job lifecycle, shut instances down, or release them. The dispatcher
 must verify AutoDL has powered off before releasing a paid instance. No paid
 GPU should be started for CI or bootstrap unit tests.
+
+
+## Dispatcher concurrency and GPU capacity gate
+
+The manual provisioning endpoint runs through
+`PostgresJobStore.run_with_dispatch_capacity(max_workers, operation)`.
+It acquires a transaction-scoped PostgreSQL advisory lock using
+`pg_try_advisory_xact_lock`, counts workers in `starting`, `idle`, `busy`,
+or `stopping`, and rejects provisioning if another dispatcher is active or
+the configured capacity is full. The lock remains held until the AutoDL
+create/persist/power-on operation returns. Configure
+`MUSICMASTER_AUTODL_MAX_WORKERS` to an integer from 1 through 10; the default
+is 1. No new table or migration is required. Stale active worker rows
+intentionally consume capacity until lifecycle reconciliation is implemented,
+which favors avoiding duplicate paid instances over automatic recovery.
