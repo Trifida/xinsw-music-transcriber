@@ -484,3 +484,62 @@ def test_manual_lifecycle_endpoint_requires_dispatcher_auth_and_uses_reconciler(
     assert response.json()["status"] == "stopping"
     assert seen["worker_id"] == "worker-test"
     assert seen["idle_seconds"] == 600
+
+
+
+def test_idle_worker_batch_endpoint_defaults_to_read_only_dry_run(api, monkeypatch):
+    client, store, _ = api
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    rows = [
+        {"worker_id": "worker-old", "instance_uuid": "pro-old", "last_seen_at": "2026-11-25T00:00:00Z"}
+    ]
+    store.list_stale_idle_workers = lambda **kwargs: rows
+    monkeypatch.setattr(
+        cloud_api, "AutoDLProClient",
+        lambda: (_ for _ in ()).throw(AssertionError("dry-run must not create provider client")),
+    )
+
+    denied = client.post("/api/internal/dispatcher/workers/reconcile-idle")
+    assert denied.status_code == 401
+    response = client.post(
+        "/api/internal/dispatcher/workers/reconcile-idle",
+        headers={"Authorization": "Bearer " + "d" * 40},
+    )
+    assert response.status_code == 200
+    assert response.json()["dry_run"] is True
+    assert response.json()["candidate_count"] == 1
+    assert response.json()["workers"][0]["worker_id"] == "worker-old"
+
+
+def test_idle_worker_batch_endpoint_executes_only_when_dry_run_false(api, monkeypatch):
+    client, store, _ = api
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    monkeypatch.setenv("MUSICMASTER_AUTODL_IDLE_SECONDS", "600")
+    rows = [
+        {"worker_id": "worker-a", "instance_uuid": "pro-a"},
+        {"worker_id": "worker-b", "instance_uuid": "pro-b"},
+    ]
+    store.list_stale_idle_workers = lambda **kwargs: rows
+    monkeypatch.setattr(cloud_api, "AutoDLProClient", lambda: object())
+    seen = []
+
+    def fake_reconcile(**kwargs):
+        seen.append(kwargs["worker_id"])
+        if kwargs["worker_id"] == "worker-b":
+            raise RuntimeError("provider detail must not leak")
+        return {"worker_id": kwargs["worker_id"], "status": "stopping"}
+
+    monkeypatch.setattr(cloud_api, "reconcile_idle_worker", fake_reconcile)
+    response = client.post(
+        "/api/internal/dispatcher/workers/reconcile-idle",
+        json={"dry_run": False, "limit": 2},
+        headers={"Authorization": "Bearer " + "d" * 40},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["dry_run"] is False
+    assert seen == ["worker-a", "worker-b"]
+    assert body["results"][0]["status"] == "stopping"
+    assert body["results"][1] == {
+        "worker_id": "worker-b", "status": "error", "error": "RuntimeError"
+    }
