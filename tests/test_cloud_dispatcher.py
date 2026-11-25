@@ -115,3 +115,97 @@ def test_create_worker_validates_worker_id_before_touching_store():
             worker_id_factory=lambda: "",
         )
     assert events == []
+
+
+
+class FakeCursor:
+    def __init__(self, rows):
+        self.rows = list(rows)
+        self.queries = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, query, params=None):
+        self.queries.append((query, params))
+
+    def fetchone(self):
+        return self.rows.pop(0)
+
+
+class FakeConnection:
+    def __init__(self, rows):
+        self.fake_cursor = FakeCursor(rows)
+        self.closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.closed = True
+        return False
+
+    def cursor(self):
+        return self.fake_cursor
+
+
+def test_postgres_capacity_gate_holds_advisory_lock_during_operation(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"acquired": True}, {"total": 0}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+    observed = []
+
+    result = store.run_with_dispatch_capacity(
+        2,
+        lambda: observed.append(conn.closed) or "created",
+    )
+
+    assert result == "created"
+    assert observed == [False]
+    assert conn.closed is True
+    assert "pg_try_advisory_xact_lock" in conn.fake_cursor.queries[0][0]
+    assert "status IN ('starting', 'idle', 'busy', 'stopping')" in conn.fake_cursor.queries[1][0]
+
+
+def test_postgres_capacity_gate_fails_fast_when_another_dispatcher_holds_lock(monkeypatch):
+    from musicmaster.cloud.job_store import DispatchCapacityError, PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"acquired": False}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+    called = []
+
+    with pytest.raises(DispatchCapacityError, match="Another worker"):
+        store.run_with_dispatch_capacity(1, lambda: called.append(True))
+
+    assert called == []
+    assert conn.closed is True
+
+
+def test_postgres_capacity_gate_rejects_full_capacity(monkeypatch):
+    from musicmaster.cloud.job_store import DispatchCapacityError, PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"acquired": True}, {"total": 1}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+    called = []
+
+    with pytest.raises(DispatchCapacityError, match="1/1"):
+        store.run_with_dispatch_capacity(1, lambda: called.append(True))
+
+    assert called == []
+    assert conn.closed is True
+
+
+@pytest.mark.parametrize("capacity", [0, -1, 11])
+def test_postgres_capacity_gate_rejects_out_of_range_limits(capacity):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    with pytest.raises(ValueError, match="between 1 and 10"):
+        store.run_with_dispatch_capacity(capacity, lambda: None)
