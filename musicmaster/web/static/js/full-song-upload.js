@@ -214,18 +214,6 @@
     refresh.addEventListener('click', function () {
       queryJob(true);
     });
-        })
-        .then(function (data) {
-          if (!data.job) throw new Error('服务器没有返回任务详情。');
-          explainJob(data.job, data.artifacts || []);
-        })
-        .catch(function (error) {
-          status.textContent = '查询失败：' + (error && error.message ? error.message : String(error));
-        })
-        .finally(function () {
-          refresh.disabled = false;
-        });
-    });
   }
 
   if (document.readyState === 'loading') {
