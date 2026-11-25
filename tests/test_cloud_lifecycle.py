@@ -120,3 +120,63 @@ def test_worker_without_instance_link_is_not_reconciled():
             store=store, autodl_client=provider, worker_id="worker-test"
         )
     assert provider.events == []
+
+
+class MissingStatusAutoDL(FakeAutoDL):
+    def __init__(self, listed_instance):
+        super().__init__("unused")
+        self.listed_instance = listed_instance
+
+    def get_status(self, instance_uuid):
+        self.events.append(("status_error", instance_uuid))
+        raise RuntimeError("provider status lookup unavailable")
+
+    def find_instance(self, instance_uuid):
+        self.events.append(("find_instance", instance_uuid))
+        return self.listed_instance
+
+
+def test_recovery_finalizes_stopped_when_complete_provider_list_confirms_absence():
+    store = FakeStore(status="stopping")
+    provider = MissingStatusAutoDL(None)
+    result = reconcile_idle_worker(
+        store=store, autodl_client=provider, worker_id="worker-test"
+    )
+    assert result["status"] == "stopped"
+    assert result["provider_status"] == "absent_from_complete_instance_list"
+    assert provider.events == [
+        ("status_error", "pro-test"),
+        ("find_instance", "pro-test"),
+    ]
+    assert store.marked_stopped is True
+
+
+def test_recovery_keeps_worker_stopping_when_provider_list_still_contains_instance():
+    store = FakeStore(status="stopping")
+    provider = MissingStatusAutoDL({"uuid": "pro-test", "status": "shutdown"})
+    result = reconcile_idle_worker(
+        store=store, autodl_client=provider, worker_id="worker-test"
+    )
+    assert result["status"] == "stopping"
+    assert result["provider_status"] == "status_unavailable_instance_still_listed"
+    assert store.marked_stopped is False
+    assert provider.events == [
+        ("status_error", "pro-test"),
+        ("find_instance", "pro-test"),
+    ]
+
+
+def test_recovery_does_not_finalize_when_provider_list_lookup_fails():
+    import pytest
+
+    class BrokenListAutoDL(MissingStatusAutoDL):
+        def find_instance(self, instance_uuid):
+            raise RuntimeError("list endpoint unavailable")
+
+    store = FakeStore(status="stopping")
+    provider = BrokenListAutoDL(None)
+    with pytest.raises(RuntimeError, match="status lookup unavailable"):
+        reconcile_idle_worker(
+            store=store, autodl_client=provider, worker_id="worker-test"
+        )
+    assert store.marked_stopped is False
