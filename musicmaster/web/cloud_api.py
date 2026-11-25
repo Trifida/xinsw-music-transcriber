@@ -186,7 +186,6 @@ def provision_cloud_worker(
         if not api_url.startswith("https://") or not image_uuid or not cuda_value:
             raise HTTPException(status_code=503, detail="Dispatcher provisioning settings are incomplete.")
         cuda_v_from = int(cuda_value)
-        client = AutoDLProClient()
         max_workers = int(os.environ.get("MUSICMASTER_AUTODL_MAX_WORKERS", "1"))
         def replay_existing_worker() -> dict | None:
             # Recheck after acquiring the advisory lock. Two requests can both
@@ -211,7 +210,7 @@ def provision_cloud_worker(
             max_workers,
             lambda: create_autodl_worker(
                 store=store,
-                autodl_client=client,
+                autodl_client=AutoDLProClient(),
                 api_url=api_url,
                 image_uuid=image_uuid,
                 cuda_v_from=cuda_v_from,
