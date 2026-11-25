@@ -172,6 +172,17 @@ def test_cloud_upload_creates_private_object_and_queues_job(api):
     assert store.jobs[result["job_id"]]["options"]["lyrics"] == "春风又绿江南岸"
 
 
+def test_cloud_upload_rejects_oversized_lyrics(api):
+    client, _, objects = api
+    response = client.post(
+        "/api/cloud/jobs",
+        files={"audio": ("song.mp3", b"audio", "audio/mpeg")},
+        data={"lyrics": "字" * 100_001},
+    )
+    assert response.status_code == 413
+    assert objects.uploaded is None
+
+
 def test_cloud_upload_rejects_unsupported_extension(api):
     client, _, objects = api
     response = client.post(
