@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.metadata
 import importlib.util
 import json
+from datetime import datetime, timezone
 import os
 import platform
 import shutil
@@ -216,9 +217,7 @@ def build_report() -> dict[str, Any]:
     report: dict[str, Any] = {
         "report_type": "xinsw_colab_v1_preflight",
         "read_only": True,
-        "timestamp_utc": __import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        ).isoformat(),
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "runtime": {
             "python": sys.version,
             "python_executable": sys.executable,
@@ -259,13 +258,9 @@ def build_report() -> dict[str, Any]:
 
     python_version = tuple(sys.version_info[:2])
     tf_version = packages.get("tensorflow")
-    if python_version >= (3, 12) and tf_version == "2.15.0":
+    if python_version >= (3, 12):
         report["compatibility_warnings"] = [
-            "Python 3.12+ with TensorFlow 2.15.0 is an incompatible/unsupported combination; do not install the pinned V1 stack into this interpreter without resolving the environment plan."
-        ]
-    elif python_version >= (3, 12) and tf_version is None:
-        report["compatibility_warnings"] = [
-            "Current Python is 3.12+ and TensorFlow is not installed. The repository's legacy transcription extra pins TensorFlow 2.15.0; validate Python/TensorFlow compatibility before installing."
+            "This runtime uses Python 3.12+. The repository's legacy transcription dependency set pins TensorFlow 2.15.0, which is not a compatible target for Python 3.12+. Do not install that pinned set into this interpreter; first select a tested environment strategy."
         ]
     else:
         report["compatibility_warnings"] = []
