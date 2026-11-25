@@ -382,8 +382,9 @@ def create_cloud_job(
     key: str = Form(""),
     stages: str = Form("1,2,3"),
     denoise: str = Form("dereverb"),
+    lyrics: str = Form(""),
 ) -> dict:
-    """Upload one full mix into private storage and enqueue a durable job."""
+    """Upload one full mix and optional user-provided V1 lyrics into a durable job."""
     if engine != "crepe":
         raise HTTPException(status_code=422, detail="V1 云端整曲流程目前仅开放 CREPE 主旋律引擎。")
     stage_list = [part.strip() for part in stages.split(",") if part.strip()]
@@ -394,6 +395,8 @@ def create_cloud_job(
         raise HTTPException(status_code=422, detail="处理段必须按顺序从 1 开始，例如 1,2,3。")
     if denoise not in {"dereverb", "deecho"}:
         raise HTTPException(status_code=422, detail="denoise 仅支持 dereverb / deecho。")
+    if len(lyrics) > 100_000:
+        raise HTTPException(status_code=413, detail="歌词文本暂时不能超过 100,000 个字符。")
     filename = _safe_filename(audio.filename or "audio-upload")
     if Path(filename).suffix.lower() not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=415, detail="请上传 MP3、WAV、FLAC、M4A 或 OGG 音频。")
@@ -421,6 +424,7 @@ def create_cloud_job(
                 "key": key.strip(),
                 "stages": ",".join(stage_list),
                 "denoise": denoise,
+                "lyrics": lyrics,
             },
             max_attempts=2,
         )
