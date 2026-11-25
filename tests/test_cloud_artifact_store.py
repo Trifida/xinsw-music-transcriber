@@ -84,6 +84,7 @@ def test_list_artifacts_only_returns_current_attempt(monkeypatch):
     sql = connection.cur.statements[0][0]
     assert "JOIN music_jobs AS j ON j.id = a.job_id" in sql
     assert "a.attempt_count = j.attempt_count" in sql
+    assert "j.status IN ('running', 'completed')" in sql
 
 
 def test_complete_job_accepts_retry_after_same_worker_already_completed(monkeypatch):
