@@ -203,19 +203,24 @@
 
     function queryJob(showLoading) {
       if (!activeJobId || queryInFlight) return;
+      var queriedJobId = activeJobId;
       queryInFlight = true;
       refresh.disabled = true;
       if (showLoading) status.textContent = '正在查询云端任务…';
-      fetch('/api/cloud/jobs/' + encodeURIComponent(activeJobId))
+      fetch('/api/cloud/jobs/' + encodeURIComponent(queriedJobId))
         .then(function (response) {
           return response.json().catch(function () { return {}; }).then(function (data) {
             if (!response.ok) {
-              throw new Error(data.detail || data.message || ('HTTP ' + response.status));
+              var error = new Error(data.detail || data.message || ('HTTP ' + response.status));
+              error.status = response.status;
+              throw error;
             }
             return data;
           });
         })
         .then(function (data) {
+          // A newer upload may have replaced this task while the request was in flight.
+          if (queriedJobId !== activeJobId) return;
           if (!data.job) throw new Error('服务器没有返回任务详情。');
           explainJob(data.job, data.artifacts || []);
           var state = String(data.job.status || '').toLowerCase();
@@ -228,6 +233,18 @@
           }
         })
         .catch(function (error) {
+          if (queriedJobId !== activeJobId) return;
+          if (error && error.status === 404) {
+            activeJobId = '';
+            saveJobId('');
+            autoPoll = false;
+            if (pollTimer) clearTimeout(pollTimer);
+            pollTimer = null;
+            refresh.hidden = true;
+            start.hidden = true;
+            status.textContent = '这条任务记录已不存在或已过期。请重新上传歌曲。';
+            return;
+          }
           status.textContent = '查询失败：' + (error && error.message ? error.message : String(error));
           if (autoPoll) {
             if (pollTimer) clearTimeout(pollTimer);
