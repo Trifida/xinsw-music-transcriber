@@ -33,7 +33,6 @@ def create_autodl_worker(
     gpu_spec_uuid: str = "4090D",
     req_gpu_amount: int = 1,
     expand_system_disk_by_gb: int = 0,
-    instance_name: str = "XinsW Music Transcriber",
     expires_seconds: int = 900,
     worker_id_factory: Callable[[], str] | None = None,
 ) -> dict[str, str]:
