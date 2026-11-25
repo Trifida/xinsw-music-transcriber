@@ -80,7 +80,6 @@ def join_lyric_slots(assignments: Iterable[str]) -> str:
     for raw in assignments:
         token = str(raw or "").strip()
         if not token:
-            previous = ""
             continue
         if output and previous and _is_latin_or_number(previous[-1]) and _is_latin_or_number(token[0]):
             output += " "
