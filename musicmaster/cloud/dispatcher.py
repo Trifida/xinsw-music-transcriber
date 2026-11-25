@@ -14,6 +14,15 @@ from typing import Any, Callable
 from musicmaster.cloud.autodl_pro import build_worker_start_command
 
 
+def worker_instance_name(worker_id: str) -> str:
+    """Build a compact, deterministic provider label that maps back to one worker."""
+    value = str(worker_id).strip()
+    if not value or len(value) > 128:
+        raise ValueError("worker_id must contain 1–128 characters.")
+    suffix = hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
+    return f"XW-{suffix}"
+
+
 def create_autodl_worker(
     *,
     store: Any,
@@ -62,7 +71,7 @@ def create_autodl_worker(
             gpu_spec_uuid=gpu_spec_uuid,
             req_gpu_amount=req_gpu_amount,
             expand_system_disk_by_gb=expand_system_disk_by_gb,
-            instance_name=instance_name,
+            instance_name=worker_instance_name(worker_id),
         )
         if not store.set_bootstrap_instance(token_hash, instance_uuid):
             raise RuntimeError("Bootstrap token expired or could not be linked to the instance.")
