@@ -357,7 +357,7 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
 
         mx = d / "out.musicxml"
         lyric_text = lyrics_text.strip() if lyrics_text and lyrics_text.strip() else ""
-        lyrics_slots = []
+        lyrics_slots = None
         lyrics_info = {
             "source": "user-provided" if lyric_text else "none",
             "status": "pending" if lyric_text else "not-provided",
