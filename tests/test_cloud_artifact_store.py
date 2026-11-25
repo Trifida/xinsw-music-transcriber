@@ -57,6 +57,8 @@ def test_add_artifact_uses_object_key_conflict_as_idempotency_key(monkeypatch):
     assert result == artifact
     assert "ON CONFLICT (object_key) DO UPDATE" in sql
     assert "music_job_artifacts.job_id = EXCLUDED.job_id" in sql
+    assert "j.attempt_count" in sql
+    assert "attempt_count = EXCLUDED.attempt_count" in sql
 
 
 def test_add_artifact_rejects_conflict_owned_by_another_job(monkeypatch):
@@ -70,6 +72,18 @@ def test_add_artifact_rejects_conflict_owned_by_another_job(monkeypatch):
             object_key="jobs/other/artifacts/a/notes.json",
             file_name="notes.json",
         )
+
+
+def test_list_artifacts_only_returns_current_attempt(monkeypatch):
+    store = PostgresJobStore(dsn="postgresql://unused")
+    connection = _Connection([[]])
+    monkeypatch.setattr(store, "_connect", lambda: connection)
+
+    assert store.list_artifacts(uuid4()) == []
+
+    sql = connection.cur.statements[0][0]
+    assert "JOIN music_jobs AS j ON j.id = a.job_id" in sql
+    assert "a.attempt_count = j.attempt_count" in sql
 
 
 def test_complete_job_accepts_retry_after_same_worker_already_completed(monkeypatch):
