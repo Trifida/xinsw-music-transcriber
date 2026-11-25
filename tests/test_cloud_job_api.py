@@ -157,7 +157,10 @@ def test_cloud_upload_creates_private_object_and_queues_job(api):
     response = client.post(
         "/api/cloud/jobs",
         files={"audio": ("原曲.mp3", b"audio-bytes", "audio/mpeg")},
-        data={"engine": "crepe", "stages": "1,2,3", "denoise": "dereverb"},
+        data={
+            "engine": "crepe", "stages": "1,2,3", "denoise": "dereverb",
+            "lyrics": "春风又绿江南岸",
+        },
     )
     assert response.status_code == 200
     result = response.json()
@@ -166,6 +169,7 @@ def test_cloud_upload_creates_private_object_and_queues_job(api):
     assert objects.uploaded[1].startswith(f"jobs/{result['job_id']}/source/")
     assert store.jobs[result["job_id"]]["status"] == "queued"
     assert store.jobs[result["job_id"]]["source_size_bytes"] == len(b"audio-bytes")
+    assert store.jobs[result["job_id"]]["options"]["lyrics"] == "春风又绿江南岸"
 
 
 def test_cloud_upload_rejects_unsupported_extension(api):
