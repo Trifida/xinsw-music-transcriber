@@ -1,0 +1,27 @@
+name: CI runner diagnostic
+
+on:
+  push:
+    branches:
+      - deploy/v1-production
+  pull_request:
+    branches:
+      - main
+      - deploy/v1-production
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runner-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Prove a hosted runner can execute a shell step
+        run: |
+          echo "XinsW CI runner diagnostic started"
+          echo "Runner OS: $(uname -s)"
+          echo "Runner architecture: $(uname -m)"
+          python3 --version
+          echo "XinsW CI runner diagnostic completed"
