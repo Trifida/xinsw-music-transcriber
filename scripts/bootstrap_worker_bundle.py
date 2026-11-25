@@ -155,7 +155,7 @@ def bootstrap() -> dict:
         if final_dir.exists():
             raise RuntimeError("A different or incomplete bundle already exists for this commit.")
         os.replace(staged, final_dir)
-    return {"bundle_root": str(final_dir), "commit": commit}
+    return {"bundle_root": str(final_dir), "commit": commit, "worker_token": token, "worker_id": os.environ.get("MUSICMASTER_WORKER_ID", ""), "instance_uuid": os.environ.get("MUSICMASTER_INSTANCE_UUID", "")}
 
 
 if __name__ == "__main__":
