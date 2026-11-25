@@ -243,6 +243,27 @@ class PostgresJobStore:
             raise JobStoreError("The worker record was not created.")
         return row
 
+    def heartbeat_worker(self, worker_id: str, status: str) -> bool:
+        """Accept worker liveness only while it is not being stopped/released."""
+        if status not in {"idle", "busy"}:
+            raise ValueError("Worker heartbeat status must be idle or busy.")
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE music_workers
+                SET status = %s, last_seen_at = now(), updated_at = now()
+                WHERE worker_id = %s
+                  AND status IN ('starting', 'idle', 'busy')
+                  AND (
+                      (%s = 'idle' AND active_job_id IS NULL)
+                      OR (%s = 'busy' AND active_job_id IS NOT NULL)
+                  )
+                RETURNING worker_id
+                """,
+                (status, str(worker_id).strip(), status, status),
+            )
+            return cur.fetchone() is not None
+
     def set_worker_status(self, worker_id: str, status: str) -> bool:
         allowed = {"starting", "idle", "busy", "stopping", "stopped", "error"}
         if status not in allowed:
