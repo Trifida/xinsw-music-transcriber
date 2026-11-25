@@ -1,0 +1,33 @@
+name: AutoDL idle worker release
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile-idle-workers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Keep automatic release disabled unless explicitly enabled
+        if: ${{ vars.MUSICMASTER_AUTODL_AUTO_RELEASE != 'true' }}
+        run: echo "AutoDL idle release is disabled. No provider action was taken."
+
+      - name: Reconcile stale idle AutoDL workers
+        if: ${{ vars.MUSICMASTER_AUTODL_AUTO_RELEASE == 'true' }}
+        env:
+          MUSICMASTER_API_URL: ${{ vars.MUSICMASTER_API_URL }}
+          MUSICMASTER_DISPATCHER_TOKEN: ${{ secrets.MUSICMASTER_DISPATCHER_TOKEN }}
+        run: |
+          set -euo pipefail
+          : "${MUSICMASTER_API_URL:?Set the MUSICMASTER_API_URL repository variable}"
+          : "${MUSICMASTER_DISPATCHER_TOKEN:?Set the MUSICMASTER_DISPATCHER_TOKEN repository secret}"
+          curl --fail-with-body --silent --show-error \
+            -X POST "${MUSICMASTER_API_URL%/}/api/internal/dispatcher/workers/reconcile-idle" \
+            -H "Authorization: Bearer ${MUSICMASTER_DISPATCHER_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"dry_run":false,"limit":10}'
