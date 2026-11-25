@@ -523,7 +523,7 @@ def create_cloud_job(
                 "stages": ",".join(stage_list),
                 "denoise": denoise,
                 "lyrics": lyrics,
-                "auto_dispatch_requested": _auto_dispatch_enabled(),
+                "auto_dispatch_requested": False,
             },
             max_attempts=2,
         )
@@ -537,10 +537,9 @@ def create_cloud_job(
         if isinstance(exc, HTTPException):
             raise
         raise HTTPException(status_code=503, detail=f"任务提交失败：{type(exc).__name__}") from None
-    dispatch = "scheduled" if _auto_dispatch_enabled() else "disabled"
-    if dispatch == "scheduled":
-        background_tasks.add_task(_dispatch_cloud_job, str(job_id))
-    return {"job_id": str(job_id), "status": "queued", "dispatch": dispatch}
+    # Full-song uploads are always manual-start: this route never provisions
+    # or powers on a GPU, even if a legacy auto-dispatch flag is present.
+    return {"job_id": str(job_id), "status": "queued", "dispatch": "manual"}
 
 
 @router.post("/api/cloud/jobs/{job_id}/start")
