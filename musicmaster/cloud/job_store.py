@@ -348,7 +348,9 @@ class PostgresJobStore:
                        a.content_type, a.size_bytes, a.created_at
                 FROM music_job_artifacts AS a
                 JOIN music_jobs AS j ON j.id = a.job_id
-                WHERE a.job_id = %s AND a.attempt_count = j.attempt_count
+                WHERE a.job_id = %s
+                  AND a.attempt_count = j.attempt_count
+                  AND j.status IN ('running', 'completed')
                 ORDER BY a.id
                 """,
                 (self._uuid(job_id),),
