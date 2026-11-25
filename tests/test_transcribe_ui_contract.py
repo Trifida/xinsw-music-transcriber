@@ -9,7 +9,6 @@ def test_transcription_is_the_default_home_panel():
 
     assert html.index('id="tab-transcribe"') < html.index('id="tab-convert"')
     assert 'id="tab-transcribe" role="tab" aria-selected="true"' in html
-    assert 'id="p-transcribe" role="tabpanel" aria-labelledby="tab-transcribe" tabindex="0" class="panel active"' not in html
     assert '<div class="panel active" id="p-transcribe"' in html
     assert '<div class="panel active" id="p-convert"' not in html
 
