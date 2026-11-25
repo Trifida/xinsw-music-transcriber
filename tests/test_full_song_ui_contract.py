@@ -24,3 +24,10 @@ def test_queued_full_song_keeps_manual_start_available_for_retry():
     assert "start.hidden = state !== 'queued';" in script
     assert "start.disabled = state !== 'queued' || startRequestInFlight;" in script
     assert "startRequestInFlight" in script
+
+def test_full_song_task_is_restored_after_page_reload():
+    script = SCRIPT.read_text(encoding="utf-8")
+    assert "xinsw.fullSong.activeJobId" in script
+    assert "window.sessionStorage.getItem" in script
+    assert "window.sessionStorage.setItem" in script
+    assert "queryJob(false);" in script
