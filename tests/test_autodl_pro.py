@@ -132,6 +132,16 @@ def test_build_worker_start_command_embeds_bootstrap_helper_without_repo_checkou
     assert "set -euo pipefail" in command
     assert "github" not in command.lower()
 
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if bash:
+        checked = subprocess.run(
+            [bash, "-n"], input=command, text=True, capture_output=True, check=False
+        )
+        assert checked.returncode == 0, checked.stderr
+
 
 @pytest.mark.parametrize("api_url", [
     "http://api.example.test",
