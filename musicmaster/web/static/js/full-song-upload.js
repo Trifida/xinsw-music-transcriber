@@ -63,6 +63,39 @@
       submit.setAttribute('aria-busy', busy ? 'true' : 'false');
     }
 
+    function uploadFullSong(body) {
+      return new Promise(function (resolve, reject) {
+        var request = new XMLHttpRequest();
+        request.open('POST', '/api/cloud/jobs');
+        request.timeout = 15 * 60 * 1000;
+        request.upload.addEventListener('progress', function (event) {
+          if (!event.lengthComputable) return;
+          var percent = Math.min(100, Math.round(event.loaded / event.total * 100));
+          status.textContent = '正在上传完整歌曲：' + percent + '%';
+        });
+        request.addEventListener('load', function () {
+          var data = {};
+          try { data = JSON.parse(request.responseText || '{}'); }
+          catch (_) { data = {}; }
+          if (request.status < 200 || request.status >= 300) {
+            reject(new Error(data.detail || data.message || ('HTTP ' + request.status)));
+            return;
+          }
+          resolve(data);
+        });
+        request.addEventListener('error', function () {
+          reject(new Error('网络连接中断，请检查网络后重试。'));
+        });
+        request.addEventListener('timeout', function () {
+          reject(new Error('上传等待时间过长，请检查网络后重试。'));
+        });
+        request.addEventListener('abort', function () {
+          reject(new Error('上传已取消。'));
+        });
+        request.send(body);
+      });
+    }
+
     function renderArtifactLinks(artifacts) {
       if (!artifactsContainer) return;
       artifactsContainer.textContent = '';
@@ -166,15 +199,7 @@
       start.hidden = true;
       if (artifactsContainer) artifactsContainer.textContent = '';
       status.textContent = '正在把完整歌曲上传到云端任务队列…';
-      fetch('/api/cloud/jobs', { method: 'POST', body: body })
-        .then(function (response) {
-          return response.json().catch(function () { return {}; }).then(function (data) {
-            if (!response.ok) {
-              throw new Error(data.detail || data.message || ('HTTP ' + response.status));
-            }
-            return data;
-          });
-        })
+      uploadFullSong(body)
         .then(function (data) {
           if (!data.job_id) throw new Error('服务器没有返回任务编号。');
           activeJobId = data.job_id;
