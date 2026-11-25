@@ -23,14 +23,16 @@ DEFAULT_MODEL_DIR = DRIVE_ROOT / "XinsW_Models" / "BS-RoFormer"
 CHECKPOINT = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
 CONFIG = "model_bs_roformer_ep_317_sdr_12.9755.yaml"
 
-# These are imported by the actual full-song path. Importing them here catches
-# broken wheels / ABI or TensorFlow-Keras incompatibilities before registration.
+# Import the concrete modules used by the actual full-song processing path.
+# Importing only the audio_separator package root is insufficient: the
+# Separator class and torchaudio can still fail later when the first job starts.
 REQUIRED_MODULES = (
     "numpy",
     "librosa",
     "soundfile",
     "torch",
-    "audio_separator",
+    "torchaudio",
+    "audio_separator.separator",
     "tensorflow",
     "crepe",
     "hmmlearn",
@@ -85,8 +87,12 @@ def validate_runtime() -> tuple[str, str] | int:
 
     modules, import_errors = _import_runtime_modules()
     if import_errors:
-        return _fail("完整乐曲流程依赖导入失败：" + "；".join(import_errors)
-                     + "。请按已核验的 Colab 环境方案修复；本脚本不会自动安装或升级依赖。")
+        return _fail(
+            "完整乐曲流程依赖导入失败：" + "；".join(import_errors)
+            + "。请按已核验的 Colab 环境方案修复；本脚本不会自动安装或升级依赖。"
+        )
+    if not hasattr(modules["audio_separator.separator"], "Separator"):
+        return _fail("audio_separator.separator 已导入，但找不到 Separator 类。")
 
     if not DRIVE_ROOT.is_dir():
         return _fail("Google Drive 尚未挂载，找不到 /content/drive/MyDrive。")
@@ -158,7 +164,9 @@ def validate_runtime() -> tuple[str, str] | int:
 
     print("[Colab Worker] 完整乐曲工作流依赖导入通过。", flush=True)
     print(f"[Colab Worker] Python：{sys.executable}", flush=True)
-    print(f"[Colab Worker] PyTorch：{modules['torch'].__version__}；TensorFlow：{modules['tensorflow'].__version__}", flush=True)
+    print(f"[Colab Worker] PyTorch：{modules['torch'].__version__}；"
+          f"torchaudio：{modules['torchaudio'].__version__}；"
+          f"TensorFlow：{modules['tensorflow'].__version__}", flush=True)
     print(f"[Colab Worker] 模型目录：{model_dir.resolve()}", flush=True)
     if missing_optional:
         print(
