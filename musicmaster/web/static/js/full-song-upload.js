@@ -64,36 +64,38 @@
     }
 
     function uploadFullSong(body) {
-      return new Promise(function (resolve, reject) {
-        var request = new XMLHttpRequest();
-        request.open('POST', '/api/cloud/jobs');
-        request.timeout = 15 * 60 * 1000;
-        request.upload.addEventListener('progress', function (event) {
-          if (!event.lengthComputable) return;
-          var percent = Math.min(100, Math.round(event.loaded / event.total * 100));
-          status.textContent = '正在上传完整歌曲：' + percent + '%';
-        });
-        request.addEventListener('load', function () {
-          var data = {};
-          try { data = JSON.parse(request.responseText || '{}'); }
-          catch (_) { data = {}; }
-          if (request.status < 200 || request.status >= 300) {
-            reject(new Error(data.detail || data.message || ('HTTP ' + request.status)));
-            return;
+      // Keep the transport consistent with the already-working audio modules:
+      // they submit multipart FormData with fetch(), not XMLHttpRequest.
+      // XHR upload-progress listeners are unnecessary here and can leave the
+      // request appearing stalled in some browser/proxy combinations.
+      status.textContent = '正在上传完整歌曲，请稍候…';
+      var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      var timeoutId = controller
+        ? window.setTimeout(function () { controller.abort(); }, 15 * 60 * 1000)
+        : null;
+      var options = { method: 'POST', body: body };
+      if (controller) options.signal = controller.signal;
+      return fetch('/api/cloud/jobs', options)
+        .then(function (response) {
+          return response.json().catch(function () { return {}; }).then(function (data) {
+            if (!response.ok) {
+              throw new Error(data.detail || data.message || ('HTTP ' + response.status));
+            }
+            return data;
+          });
+        })
+        .catch(function (error) {
+          if (error && error.name === 'AbortError') {
+            throw new Error('上传等待超过 15 分钟，连接已中止，请重试。');
           }
-          resolve(data);
+          if (error instanceof TypeError) {
+            throw new Error('网络连接中断，请检查网络后重试。');
+          }
+          throw error;
+        })
+        .finally(function () {
+          if (timeoutId !== null) window.clearTimeout(timeoutId);
         });
-        request.addEventListener('error', function () {
-          reject(new Error('网络连接中断，请检查网络后重试。'));
-        });
-        request.addEventListener('timeout', function () {
-          reject(new Error('上传等待时间过长，请检查网络后重试。'));
-        });
-        request.addEventListener('abort', function () {
-          reject(new Error('上传已取消。'));
-        });
-        request.send(body);
-      });
     }
 
     function renderArtifactLinks(artifacts) {
