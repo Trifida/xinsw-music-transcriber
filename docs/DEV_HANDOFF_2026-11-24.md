@@ -396,3 +396,12 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 2. Obtain a working Python/Linux test environment; CI currently cannot expose executed steps or logs.
 3. Consider a safe operator workflow for legacy generic-name error rows. Do not infer a match from timestamps or GPU type alone.
 4. Keep recovery manual and database-only. Do not automatically power on a recovered instance or retry a create request after a zero-match listing.
+
+## Final check snapshot for this development turn — 2026-11-25
+
+- Latest reviewed implementation commit before this note: `8018a7f6ccb77910f8c772962500a01e0f6c7612`; handoff/docs commit at the time of this check: `b7da0465979b57426bf260d3a37a87619274daf7`.
+- PR #12 remained Open / Draft / unmerged, base `main`, head `deploy/v1-production`, 137 commits, 31 changed files.
+- On HEAD `b7da0465979b57426bf260d3a37a87619274daf7`, runner diagnostic, cloud-jobs, and legacy-jianpu checks all completed as failure. Job responses again contained `steps: null` and `logs_url: null`. No test execution is confirmed.
+- Reviewed the latest recovery diff: provider name is deterministic and worker-derived; matching scans all pages and detects duplicates; DB linking is conditional on unresolved error state; the endpoint is dispatcher-authenticated and makes no provider mutations.
+- Remaining confidence gap: the Python test suite has not executed in a visible functioning runner. Do not merge or deploy based on static review alone.
+- No AutoDL provider mutation, GPU start/stop/release, production deploy, main merge, or Neon production-main modification occurred.
