@@ -407,18 +407,18 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
     </div>
   </section>
 
-  <section class="console" id="console" data-accent="convert">
+  <section class="console" id="console" data-accent="transcribe">
     <div class="tabs" role="tablist" aria-label="四种手艺">
-      <button class="tab" data-c="convert"    id="tab-convert"    role="tab" aria-selected="true"  aria-controls="p-convert"><svg class="e" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-convert"></use></svg>互译</button>
-      <button class="tab" data-c="transcribe" id="tab-transcribe" role="tab" aria-selected="false" aria-controls="p-transcribe"><svg class="e" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-transcribe"></use></svg>记谱</button>
-      <button class="tab" data-c="separate"   id="tab-separate"   role="tab" aria-selected="false" aria-controls="p-separate"><svg class="e" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-separate"></use></svg>拆声</button>
+      <button class="tab" data-c="transcribe" id="tab-transcribe" role="tab" aria-selected="true" aria-controls="p-transcribe"><svg class="e" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-transcribe"></use></svg>记谱</button>
+      <button class="tab" data-c="convert"    id="tab-convert"    role="tab" aria-selected="false" aria-controls="p-convert"><svg class="e" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-convert"></use></svg>互译</button>
+      <button class="tab" data-c="separate"   id="tab-separate"   role="tab" aria-selected="false" aria-controls="p-separate"><svg class="e" viewBox="0 0 24 24" aria-selected="false" aria-hidden="true"><use href="#ic-separate"></use></svg>拆声</button>
       <button class="tab" data-c="vocal"      id="tab-vocal"      role="tab" aria-selected="false" aria-controls="p-vocal"><svg class="e" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-vocal"></use></svg>重塑</button>
     </div>
 
     <div class="panels">
 
       <!-- ───────── 互译 ───────── -->
-      <div class="panel active" id="p-convert" role="tabpanel" aria-labelledby="tab-convert" tabindex="0">
+      <div class="panel" id="p-convert" role="tabpanel" aria-labelledby="tab-convert" tabindex="0">
         <div class="panel-head"><span class="kick">TRANSLATE</span><h2>简谱 ⇄ 五线谱</h2>
           <p>两种谱式互相翻译,以 music21 为枢轴,往返无损。也支持把已有的谱直接导入。</p></div>
         <div class="work">
@@ -483,7 +483,7 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
       </div>
 
       <!-- ───────── 记谱 ───────── -->
-      <div class="panel" id="p-transcribe" role="tabpanel" aria-labelledby="tab-transcribe" tabindex="0">
+      <div class="panel active" id="p-transcribe" role="tabpanel" aria-labelledby="tab-transcribe" tabindex="0">
         <div class="panel-head"><span class="kick">LISTEN</span><h2>把唱过的,记成谱</h2>
           <p>放一段清唱或哼唱,誊成五线谱与简谱;并逐音标出它没太听准、想请你复核的地方。</p></div>
         <div class="work">
