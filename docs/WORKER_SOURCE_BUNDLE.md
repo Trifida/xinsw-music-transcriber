@@ -162,3 +162,16 @@ not construct an AutoDL client or change provider/DB state. Set
 Each worker result is reported independently, and provider error messages are
 not returned. This endpoint is still dispatcher-authenticated and manual-only;
 no cron job, queue event, or automatic scheduler invokes it.
+
+
+## Failed-worker resource accounting and recovery
+
+A worker marked `error` can still have a linked AutoDL instance (for example,
+instance creation succeeded but power-on or bootstrap registration failed).
+Such rows now continue to consume dispatcher capacity while
+`instance_uuid IS NOT NULL`. The read-only stale-worker candidate query includes
+both `idle` and `error` states, but only with no active job and a linked
+instance. The same atomic transition moves an old `error` worker to
+`stopping` only after the configured idle threshold. Fresh errors are left
+untouched. Provider shutdown and release remain governed by the existing
+status-confirmation rules.
