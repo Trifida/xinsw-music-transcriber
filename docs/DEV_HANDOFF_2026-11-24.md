@@ -234,3 +234,16 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - Added tests for lock-held operation ordering, lock contention, full capacity, invalid limits, endpoint capacity injection and conflict response. No schema migration is required.
 - This lock is held across the provider create/power-on operation. This is deliberate for cross-process exclusion; keep the AutoDL API timeout bounded. It is not a queue autoscaler and does not provide crash recovery for provider-side partial creation. Active stale worker records are conservative capacity reservations until the lifecycle reconciler is built.
 - No paid GPU instance was created or powered on. Tests have been authored but still require a functioning GitHub Actions run.
+
+
+## 2026-11-25 continued — idle worker shutdown and confirmed release
+
+- Added `musicmaster/cloud/lifecycle.py` with a conservative, manual reconciliation function.
+- Added Postgres methods to read a worker, atomically mark only stale `idle` workers as `stopping` (requires `active_job_id IS NULL`, linked instance ID, and old heartbeat), and mark `stopped` only after provider release succeeds.
+- Added authenticated endpoint `POST /api/internal/dispatcher/workers/{worker_id}/reconcile`. `MUSICMASTER_AUTODL_IDLE_SECONDS` defaults to 300 seconds and is bounded to 60–86400.
+- Lifecycle sequence: stale idle → DB `stopping` → query provider status → if `running`, request power-off and wait; if provider explicitly reports `shutdown` or `stopped`, call release; only after successful release write DB `stopped`. Unknown/transitional provider states are non-destructive and remain `stopping`.
+- AutoDL official API docs confirm the Pro status, power-off, and release endpoints and state that release should follow shutdown. Status values other than the documented `running` example are treated conservatively; only `shutdown`/`stopped` permit release.
+- Added lifecycle unit tests for power-off-before-release, confirmed shutdown, unknown status, busy worker, non-stale worker, and missing instance ID. Added API tests for dispatcher auth and heartbeat restrictions.
+- Shutdown race protections: worker heartbeat now accepts only `idle`/`busy`; the SQL update refuses to revive `stopping`/`stopped`/error workers and requires active-job consistency. Job claiming locks the worker row and refuses new claims once stopping. Re-registration cannot resurrect a stopping worker.
+- Removed the worker-side idle auto-exit path; idle shutdown is now owned by the server-side lifecycle controller rather than a GPU process attempting to mark itself stopping.
+- This is manual-only and has not been called. No GPU was created, powered on, powered off, or released. Provider/Postgres cannot be atomic; a process crash after successful provider release but before DB finalization still requires operator reconciliation. No automated scheduler or lifecycle sweeper is wired yet.
