@@ -844,3 +844,6 @@ def test_transcription_home_and_fourth_source_type_contract():
     assert 'id="full-song-fields" hidden' in html
     assert 'id="full-song-file"' in html
     assert 'id="full-song-lyrics"' in html
+    assert 'id="full-song-artifacts"' in html
+    assert '/artifacts/' in upload_js
+    assert "noopener noreferrer" in upload_js
