@@ -71,6 +71,7 @@ def test_create_worker_persists_instance_before_power_on(monkeypatch):
     assert names.index("link_token_instance") < names.index("power_on")
     assert names.index("link_worker_instance") < names.index("power_on")
     create_args = next(event[1] for event in events if event[0] == "create_instance")
+    assert create_args["instance_name"] == dispatcher.worker_instance_name("worker-test")
     assert "start_command" not in create_args
     power_on = next(event for event in events if event[0] == "power_on")
     assert power_on[1] == "pro-test123"
@@ -169,7 +170,6 @@ def test_postgres_capacity_gate_holds_advisory_lock_during_operation(monkeypatch
     assert observed == [False]
     assert conn.closed is True
     assert "pg_try_advisory_xact_lock" in conn.fake_cursor.queries[0][0]
-    assert "status IN ('starting', 'idle', 'busy', 'stopping')" in conn.fake_cursor.queries[1][0]
     assert "status IN ('starting', 'idle', 'busy', 'stopping', 'error')" in conn.fake_cursor.queries[1][0]
 
 
@@ -324,3 +324,42 @@ def test_stale_error_worker_is_included_in_read_only_reconciliation_candidates(m
     query = conn.fake_cursor.queries[0][0]
     assert "status IN ('idle', 'error')" in query
     assert "active_job_id IS NULL" in query
+
+
+
+def test_worker_instance_name_is_deterministic_compact_and_distinct():
+    first = dispatcher.worker_instance_name("worker-alpha")
+    assert first == dispatcher.worker_instance_name("worker-alpha")
+    assert first.startswith("XW-")
+    assert len(first) == 27
+    assert first != dispatcher.worker_instance_name("worker-beta")
+
+
+def test_recover_worker_instance_links_only_unresolved_error_row(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"worker_id": "worker-test"}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    assert store.recover_worker_instance("worker-test", "pro-recovered") is True
+    assert len(conn.fake_cursor.queries) == 2
+    worker_query, worker_params = conn.fake_cursor.queries[0]
+    token_query, token_params = conn.fake_cursor.queries[1]
+    assert "status = 'error'" in worker_query
+    assert "instance_uuid IS NULL" in worker_query
+    assert "active_job_id IS NULL" in worker_query
+    assert worker_params == ("pro-recovered", "worker-test")
+    assert "UPDATE music_worker_bootstrap_tokens" in token_query
+    assert token_params == ("pro-recovered", "worker-test")
+
+
+def test_recover_worker_instance_does_not_link_when_worker_changed(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([None])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    assert store.recover_worker_instance("worker-test", "pro-recovered") is False
+    assert len(conn.fake_cursor.queries) == 1
