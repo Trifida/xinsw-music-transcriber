@@ -331,3 +331,13 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
   - If this minimal job also fails before exposing a step, investigate repository Actions availability, hosted-runner allocation, account/org policy, or GitHub service/runner infrastructure.
   - If it succeeds, the runner is functional and the failure is specific to the existing workflow/action/job configuration; compare the first failing step and logs.
 - No production deployment, main merge, Neon production-main modification, or AutoDL API mutation was performed.
+
+
+## 2026-11-25 continued — orphaned error-worker safety
+
+- Code review found a capacity-accounting gap: a worker could be marked error after AutoDL creation had succeeded, leaving a linked (and potentially billable) instance while the capacity query excluded error rows.
+- Capacity now counts error workers only when an AutoDL instance UUID is linked. Errors before instance creation do not consume GPU capacity.
+- Read-only stale reconciliation candidates now include both idle and error workers, still requiring no active job, a linked instance, and an expired heartbeat threshold.
+- The atomic idle-to-stopping transition now also accepts stale error rows. Fresh error rows are not touched; the lifecycle still confirms provider state before any power-off/release.
+- Added tests for error-worker capacity accounting, candidate discovery, stale-error shutdown, and fresh-error protection.
+- No schema change was needed because the existing status check constraint already includes error. No provider API mutation was performed.
