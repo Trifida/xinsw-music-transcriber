@@ -107,3 +107,44 @@ def test_rejects_release_with_malformed_id_before_network(monkeypatch):
     with pytest.raises(ValueError):
         client.release_instance("../not-an-instance")
     assert called is False
+
+
+
+def test_build_worker_start_command_embeds_bootstrap_helper_without_repo_checkout():
+    import base64
+    import re
+    import zlib
+    from pathlib import Path
+    from musicmaster.cloud.autodl_pro import build_worker_start_command
+
+    token = "b" * 40
+    command = build_worker_start_command("https://api.example.test", token)
+    match = re.search(r"payload = '([A-Za-z0-9+/=]+)'", command)
+    assert match
+    embedded = zlib.decompress(base64.b64decode(match.group(1)))
+    expected = Path(__file__).resolve().parents[1] / "scripts" / "bootstrap_worker_bundle.py"
+    assert embedded == expected.read_bytes()
+    assert "MUSICMASTER_BOOTSTRAP_TOKEN=" in command
+    assert "MUSICMASTER_WORKER_TOKEN=" in command
+    assert token in command
+    assert "MUSICMASTER_SKIP_BUNDLE_BOOTSTRAP=1" in command
+    assert "github" not in command.lower()
+
+
+@pytest.mark.parametrize("api_url", [
+    "http://api.example.test",
+    "https://user:pass@api.example.test",
+    "https://api.example.test/path?secret=1",
+])
+def test_build_worker_start_command_rejects_unsafe_api_url(api_url):
+    from musicmaster.cloud.autodl_pro import build_worker_start_command
+
+    with pytest.raises(ValueError, match="HTTPS"):
+        build_worker_start_command(api_url, "b" * 40)
+
+
+def test_build_worker_start_command_rejects_short_bootstrap_token():
+    from musicmaster.cloud.autodl_pro import build_worker_start_command
+
+    with pytest.raises(ValueError, match="32"):
+        build_worker_start_command("https://api.example.test", "short")
