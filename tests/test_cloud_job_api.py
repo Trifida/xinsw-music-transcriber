@@ -193,6 +193,10 @@ def test_cloud_upload_creates_private_object_and_queues_job(api, monkeypatch):
 def test_manual_start_requires_existing_live_gpu_and_never_provisions(api, monkeypatch):
     client, store, _ = api
     monkeypatch.delenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", raising=False)
+    monkeypatch.setattr(
+        cloud_api, "provision_cloud_worker",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("must not provision a GPU")),
+    )
     created = client.post(
         "/api/cloud/jobs",
         files={"audio": ("原曲.mp3", b"audio-bytes", "audio/mpeg")},
