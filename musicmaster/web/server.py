@@ -236,8 +236,12 @@ def api_save_lyrics(job_id: str, payload: LyricEditsRequest) -> dict:
             result["lyrics_render_warnings"] = render_warnings
         else:
             result.pop("lyrics_render_warnings", None)
-        result["report_md"] = (result.get("report_md") or "") + (
-            "\n\n## 逐音歌词人工校正\n"
+        report = result.get("report_md") or ""
+        section_marker = "\n\n## 逐音歌词人工校正\n"
+        if section_marker in report:
+            report = report.split(section_marker, 1)[0]
+        result["report_md"] = report + (
+            section_marker
             + f"- 已保存：{applied['assignedCount']}/{applied['lyricSlots']} 个位置有歌词。\n"
             + "- MusicXML 已更新；谱面预览与 PDF 已尽力重新生成。\n"
         )
