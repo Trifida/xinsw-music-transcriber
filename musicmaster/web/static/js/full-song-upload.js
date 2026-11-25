@@ -15,12 +15,17 @@
     var refresh = document.getElementById('full-song-refresh');
     if (!fileInput || !submit || !status || !refresh) return;
 
-    var sourceOptions = document.querySelectorAll('input[name="transcribe-source"]');
+    var sourceButtons = document.querySelectorAll('[data-source-mode]');
     var vocalFields = document.getElementById('vocal-mode-fields');
     var fullSongFields = document.getElementById('full-song-fields');
-    Array.prototype.forEach.call(sourceOptions, function (option) {
-      option.addEventListener('change', function () {
-        var fullSongMode = option.checked && option.value === 'full-song';
+    Array.prototype.forEach.call(sourceButtons, function (button) {
+      button.addEventListener('click', function () {
+        var fullSongMode = button.getAttribute('data-source-mode') === 'full-song';
+        Array.prototype.forEach.call(sourceButtons, function (item) {
+          var selected = item === button;
+          item.classList.toggle('on', selected);
+          item.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        });
         if (vocalFields) vocalFields.hidden = fullSongMode;
         if (fullSongFields) fullSongFields.hidden = !fullSongMode;
       });
