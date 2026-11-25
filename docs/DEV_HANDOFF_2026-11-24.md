@@ -376,3 +376,23 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - The current PR head has no successful CI result. Do not interpret the failure as proof that the capacity fix is wrong, and do not interpret the missing logs as proof that tests passed.
 - The latest capacity query now reserves a slot for every `error` worker row, including rows without an AutoDL instance ID. This closes the duplicate-create retry gap conservatively but can leave capacity blocked until an operator investigates an ambiguous create result.
 - No paid GPU/provider mutation, production deployment, main merge, or Neon production-main modification was performed.
+
+## 2026-11-25 continued — deterministic AutoDL instance recovery
+
+- Rechecked PR #12 before this work: Open / Draft / unmerged, branch `deploy/v1-production`; prior HEAD `820bb3b3e7da75a9797c3277264329cfaeeebc1d`.
+- Verified the official AutoDL Pro create/list API contract: create accepts optional `instance_name`; the paginated list returns `uuid`, `name`, `status`, and `created_at`. Sources: https://www.autodl.com/docs/instance_pro_api/ and https://www.autodl.com/docs/instance_pro_api/ (create and list sections).
+- New workers now use a deterministic compact provider name `XW-<24 hex chars>` derived from the worker ID. This allows a later exact-name lookup without adding a DB migration or storing a second correlation field.
+- Added `AutoDLProClient.find_instances_by_name()`: it validates and scans every advertised page, checks pagination consistency, returns all exact-name matches, and fails closed on malformed/incomplete listings. It deliberately does not stop at the first match, so duplicates are detected.
+- Added dispatcher-authenticated manual endpoint `POST /api/internal/dispatcher/workers/{worker_id}/recover-instance`. It accepts only an `error` worker with no instance UUID and no active job. Exactly one exact-name match is linked to the worker and unused bootstrap-token rows. No match returns `retry_safe: false`; multiple matches remain unlinked; incomplete listing fails closed.
+- Added `PostgresJobStore.recover_worker_instance()`, which conditionally links only an unresolved error row and updates matching bootstrap-token rows in the same DB transaction. The method performs no AutoDL provider mutation.
+- The recovery endpoint never powers on, powers off, or releases the provider instance. After a successful DB link, an operator must inspect the instance in AutoDL before deciding on a separate manual action.
+- Important limitation: legacy ambiguous errors created before deterministic names used the generic instance label, so this exact-name recovery cannot identify them. They require manual investigation in the AutoDL console. A zero-match listing is not proof that a create request is safe to retry because provider listing may lag.
+- Added tests for deterministic labels, complete paginated exact-name search, duplicate detection, malformed pagination, conditional DB linking, and endpoint outcomes (one match / no match / multiple matches / non-error worker). Also corrected an obsolete capacity-SQL assertion in `tests/test_cloud_dispatcher.py` that still expected the pre-error status predicate.
+- CI on the implementation HEAD `0dbcb4511ae7ccdb53f88fa315ab2e0a2841f022`: Cloud jobs, legacy jianpu, and minimal runner diagnostic again failed in about 1–2 seconds. Every job response still had `steps: null` and `logs_url: null`; no test execution can be confirmed. A later code-only cleanup commit was added after that check snapshot, so the newest HEAD still needs a fresh check observation.
+- No AutoDL API was called. No GPU was created, powered on/off, or released. No production deploy, main merge, or Neon production-main change occurred.
+
+### Next
+1. Fetch the newest branch HEAD and inspect the complete diff, especially the new recovery route and its database transaction.
+2. Obtain a working Python/Linux test environment; CI currently cannot expose executed steps or logs.
+3. Consider a safe operator workflow for legacy generic-name error rows. Do not infer a match from timestamps or GPU type alone.
+4. Keep recovery manual and database-only. Do not automatically power on a recovered instance or retry a create request after a zero-match listing.
