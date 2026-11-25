@@ -196,3 +196,5 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - This builder is not yet wired into a complete dispatcher/token-issuance workflow. The caller must create a short-expiry single-use bootstrap token and pass the generated command into `AutoDLProClient.create_instance(start_command=...)` or `power_on(start_command=...)`. No GPU instance was created or powered on.
 - GitHub Actions still reports failed jobs with `steps: null` and `logs_url: null`; no usable logs or artifacts are available. Tests are authored but not yet verified by a functioning CI execution.
 - Next: inspect the actual generated command with `bash -n` in a Linux test environment; run the focused pytest suites; wire token issuance and generated start command into the dispatcher only after lifecycle safety checks; then revisit Actions runner/log availability.
+
+- Follow-up: the AutoDL command test now also runs `bash -n` when Bash is available, so CI can catch malformed multiline startup commands without launching an instance. This is authored test coverage only; Actions still does not expose execution steps/logs.
