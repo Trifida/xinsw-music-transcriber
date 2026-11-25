@@ -117,3 +117,18 @@ create/persist/power-on operation returns. Configure
 is 1. No new table or migration is required. Stale active worker rows
 intentionally consume capacity until lifecycle reconciliation is implemented,
 which favors avoiding duplicate paid instances over automatic recovery.
+
+
+## Worker idle shutdown and AutoDL release
+
+The API exposes a manual, dispatcher-authenticated reconciliation endpoint:
+`POST /api/internal/dispatcher/workers/{worker_id}/reconcile`.
+
+- Configure `MUSICMASTER_AUTODL_IDLE_SECONDS` (60–86400; default 300).
+- Only a worker whose DB state is `idle`, whose `active_job_id` is NULL, and whose last heartbeat is older than the threshold can atomically transition to `stopping`.
+- The worker's heartbeat API now accepts only `idle` or `busy`; it cannot revive a worker already stopping/stopped. Job claiming and re-registration are also blocked once shutdown starts.
+- The reconciler queries AutoDL status. If `running`, it requests power-off and leaves the DB state at `stopping`. A later reconciliation must query again.
+- It calls release only when the provider status is explicitly `shutdown` or `stopped`; unknown/transitional states are non-destructive and remain `stopping`.
+- The DB changes to `stopped` only after the release API returns success.
+- This endpoint is manual-only; no background scheduler calls it yet. Do not expose the dispatcher token to the browser. Calls can power off/release paid instances.
+- Provider release and Postgres cannot participate in one atomic transaction. If the provider release succeeds but the API process dies before recording `stopped`, operator reconciliation may be required; automatic "not found means released" inference is intentionally not implemented.
