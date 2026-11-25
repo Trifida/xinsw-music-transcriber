@@ -125,3 +125,53 @@ def test_jianpu_ly_import_keeps_musicxml_lyrics(tmp_path: Path):
     lilypond_source = musicxml_to_lilypond(source)
     assert "春" in lilypond_source
     assert "风" in lilypond_source
+
+def test_save_lyrics_api_updates_musicxml_and_result_manifest(tmp_path, monkeypatch):
+    import importlib
+    from musicmaster.web import server
+    from musicmaster.web.jobs import Job
+
+    source = tmp_path / "out.musicxml"
+    source.write_text("""<score-partwise>
+      <part><measure>
+        <note><pitch><step>C</step><octave>4</octave></pitch></note>
+        <note><pitch><step>D</step><octave>4</octave></pitch></note>
+      </measure></part>
+    </score-partwise>""", encoding="utf-8")
+    job = Job(
+        id="lyric-edit-test",
+        kind="transcribe",
+        job_dir=str(tmp_path),
+        status="done",
+        result={"ok": True, "lyrics_slots": [
+            {"index": 0, "pitch": "C4", "lyric": "旧"},
+            {"index": 1, "pitch": "D4", "lyric": "词"},
+        ], "downloads": [], "report_md": ""},
+    )
+
+    class Manager:
+        def get(self, job_id):
+            return job if job_id == job.id else None
+
+        def file_path(self, job_id, name):
+            target = tmp_path / name
+            return target if job_id == job.id and target.is_file() else None
+
+    monkeypatch.setattr(server, "JM", Manager())
+    render_module = importlib.import_module("musicmaster.core.render")
+    monkeypatch.setattr(render_module, "render", lambda *args, **kwargs: {})
+
+    # One lyric slot per pitched note in the MusicXML.
+    job.result["lyrics_slots"] = [
+        {"index": 0, "pitch": "C4", "lyric": "旧"},
+        {"index": 1, "pitch": "D4", "lyric": "词"},
+    ]
+    response = server.api_save_lyrics(
+        job.id, server.LyricEditsRequest(assignments=["春", "—"])
+    )
+    assert response["ok"] is True
+    assert [slot["lyric"] for slot in response["lyrics_slots"]] == ["春", "—"]
+    assert job.result["lyrics_info"]["alignmentStatus"] == "manually-edited"
+    assert "out.musicxml" in [item["name"] for item in job.result["downloads"]]
+    assert (tmp_path / "lyrics_alignment.json").is_file()
+    assert "逐音歌词人工校正" in job.result["report_md"]
