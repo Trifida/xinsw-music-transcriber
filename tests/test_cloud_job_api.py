@@ -49,6 +49,10 @@ class FakeStore:
     def set_worker_status(self, worker_id, status):
         return True
 
+    def heartbeat_worker(self, worker_id, status):
+        self.last_worker_heartbeat = (worker_id, status)
+        return getattr(self, "heartbeat_allowed", True)
+
     def heartbeat_job(self, *args, **kwargs):
         return True
 
@@ -431,3 +435,52 @@ def test_dispatcher_endpoint_rejects_invalid_capacity_setting(api, monkeypatch):
         headers={"Authorization": "Bearer " + "d" * 40},
     )
     assert response.status_code == 503
+
+
+
+def test_worker_heartbeat_cannot_mark_stopping_or_stopped(api):
+    client, store, _ = api
+    headers = {"Authorization": "Bearer test-worker-secret"}
+    invalid = client.post(
+        "/api/internal/workers/heartbeat",
+        json={"worker_id": "gpu-1", "status": "stopping"},
+        headers=headers,
+    )
+    assert invalid.status_code == 422
+
+    store.heartbeat_allowed = False
+    stopping = client.post(
+        "/api/internal/workers/heartbeat",
+        json={"worker_id": "gpu-1", "status": "idle"},
+        headers=headers,
+    )
+    assert stopping.status_code == 409
+    assert store.last_worker_heartbeat == ("gpu-1", "idle")
+
+
+def test_manual_lifecycle_endpoint_requires_dispatcher_auth_and_uses_reconciler(api, monkeypatch):
+    client, _, _ = api
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    monkeypatch.setenv("MUSICMASTER_AUTODL_IDLE_SECONDS", "600")
+    seen = {}
+
+    class FakeAutoDLClient:
+        pass
+
+    def fake_reconcile(**kwargs):
+        seen.update(kwargs)
+        return {"worker_id": kwargs["worker_id"], "status": "stopping"}
+
+    monkeypatch.setattr(cloud_api, "AutoDLProClient", FakeAutoDLClient)
+    monkeypatch.setattr(cloud_api, "reconcile_idle_worker", fake_reconcile)
+    denied = client.post("/api/internal/dispatcher/workers/worker-test/reconcile")
+    assert denied.status_code == 401
+
+    response = client.post(
+        "/api/internal/dispatcher/workers/worker-test/reconcile",
+        headers={"Authorization": "Bearer " + "d" * 40},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "stopping"
+    assert seen["worker_id"] == "worker-test"
+    assert seen["idle_seconds"] == 600
