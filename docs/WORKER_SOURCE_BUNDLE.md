@@ -175,3 +175,7 @@ instance. The same atomic transition moves an old `error` worker to
 `stopping` only after the configured idle threshold. Fresh errors are left
 untouched. Provider shutdown and release remain governed by the existing
 status-confirmation rules.
+
+### Unresolved provisioning errors reserve capacity
+
+The capacity query counts **all** worker rows in `starting`, `idle`, `busy`, `stopping`, or `error`, including error rows with no linked AutoDL instance ID. This is intentionally conservative: the AutoDL create request may have succeeded remotely while its response was lost or timed out before the instance ID could be persisted. Such a row is an unresolved provisioning intent and must not silently free a slot for another paid create request. Resolve it through operator investigation before retrying provisioning.
