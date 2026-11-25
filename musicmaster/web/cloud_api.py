@@ -523,6 +523,7 @@ def create_cloud_job(
                 "stages": ",".join(stage_list),
                 "denoise": denoise,
                 "lyrics": lyrics,
+                "auto_dispatch_requested": _auto_dispatch_enabled(),
             },
             max_attempts=2,
         )
@@ -540,6 +541,44 @@ def create_cloud_job(
     if dispatch == "scheduled":
         background_tasks.add_task(_dispatch_cloud_job, str(job_id))
     return {"job_id": str(job_id), "status": "queued", "dispatch": dispatch}
+
+
+@router.post("/api/cloud/jobs/{job_id}/start")
+def start_cloud_job(job_id: str) -> dict:
+    """Allow a queued job to be claimed by an already-running, recently-heartbeating worker.
+
+    This endpoint never provisions, powers on, or otherwise changes GPU resources.
+    """
+    store, _ = _components()
+    try:
+        job = store.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="未找到这个云端任务。")
+        state = str(job.get("status") or "").lower()
+        if state in {"running", "completed"}:
+            return {"job_id": str(job_id), "status": state, "already_started": True}
+        if state != "queued":
+            raise HTTPException(status_code=409, detail=f"当前任务状态为 {state or 'unknown'}，暂时不能开始记谱。")
+        if not store.has_live_worker(heartbeat_seconds=120):
+            raise HTTPException(
+                status_code=409,
+                detail="当前没有运行中的 GPU Worker，请等待 GPU 启动后再点击「开始记谱」。任务已保留，不会创建新的 GPU。",
+            )
+        store.request_job_start(job_id)
+        latest = store.get_job(job_id) or job
+        latest_state = str(latest.get("status") or "queued").lower()
+        return {
+            "job_id": str(job_id),
+            "status": latest_state,
+            "worker_available": True,
+            "message": "已通知现有 GPU Worker 领取任务；没有创建新的 GPU。",
+        }
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=404, detail="无效的任务编号。") from None
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=f"任务启动检查失败：{type(exc).__name__}") from None
 
 
 @router.get("/api/cloud/jobs/{job_id}")
