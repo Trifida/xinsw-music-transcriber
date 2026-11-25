@@ -219,6 +219,13 @@ def test_queued_job_dispatch_sweep_is_opt_in_and_uses_stable_minute_key(api, mon
     assert disabled.json()["status"] == "disabled"
 
     monkeypatch.setenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", "true")
+
+    class FixedDateTime:
+        @staticmethod
+        def now(tz):
+            return datetime(2026, 11, 25, 12, 30, tzinfo=tz)
+
+    monkeypatch.setattr(cloud_api, "datetime", FixedDateTime)
     store.jobs["queued-job"] = {"id": "queued-job", "status": "queued"}
     calls = []
     monkeypatch.setattr(
