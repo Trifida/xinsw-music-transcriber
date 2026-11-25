@@ -57,8 +57,8 @@ def main():
     print("[4/5] 安装分离依赖与 audio-separator")
     run("install", "-r", str(ROOT / "requirements" / "requirements-sep.txt"))
     run("install", f"audio-separator[{extra}]")
-    print("[5/5] 安装本包(供 -m musicmaster.separate.pipeline)")
-    run("install", "-e", str(ROOT), "--no-deps")
+    print("[5/5] 跳过安装整个 musicmaster 项目")
+    print("分离环境只运行分离依赖；项目源码由运行时 PYTHONPATH 提供。")
 
     print("\n[OK] 完成。把这个加进你的环境变量(GUI/CLI 用它找分离 venv):")
     print(f"    MUSICMASTER_SEP_PYTHON={py}")
