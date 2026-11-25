@@ -128,6 +128,8 @@ def test_build_worker_start_command_embeds_bootstrap_helper_without_repo_checkou
     assert "MUSICMASTER_WORKER_TOKEN=" in command
     assert token in command
     assert "MUSICMASTER_SKIP_BUNDLE_BOOTSTRAP=1" in command
+    assert "\\n" not in command
+    assert "set -euo pipefail" in command
     assert "github" not in command.lower()
 
 
