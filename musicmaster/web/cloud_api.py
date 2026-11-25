@@ -441,9 +441,10 @@ def create_cloud_job(
 
     request_started = time.monotonic()
     request_id = uuid.uuid4().hex[:12]
+    content_type = audio.content_type or "application/octet-stream"
     logger.info(
         "cloud_upload accepted request_id=%s filename=%s size_bytes=%s content_type=%s",
-        request_id, filename, size_bytes, content_type if (content_type := (audio.content_type or "application/octet-stream")) else "application/octet-stream",
+        request_id, filename, size_bytes, content_type,
     )
     store, objects = _components()
     job_id = uuid.uuid4()
