@@ -31,3 +31,11 @@ def test_full_song_task_is_restored_after_page_reload():
     assert "window.sessionStorage.getItem" in script
     assert "window.sessionStorage.setItem" in script
     assert "queryJob(false);" in script
+def test_failed_replacement_upload_preserves_previous_task():
+    script = SCRIPT.read_text(encoding="utf-8")
+    submit_start = script.index("submit.addEventListener('click'")
+    upload_catch = script.index("上传未成功：")
+    assert "var previousJobId = activeJobId;" in script[submit_start:upload_catch]
+    assert "if (previousJobId)" in script[upload_catch:]
+    assert "saveJobId(previousJobId);" in script[upload_catch:]
+    assert "queryJob(false);" in script[upload_catch:]
