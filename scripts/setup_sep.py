@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""建分离环境(.venv-sep,GPU):audio-separator + CUDA torch。
+"""建独立分离环境：audio-separator + CPU 或 CUDA torch。
 
-    python scripts/setup_sep.py [--venv vendor/.venv-sep] [--cuda cu124]
+    python scripts/setup_sep.py --device cpu [--venv /content/xinsw-sep-venv]
+    python scripts/setup_sep.py --device cuda [--cuda cu124]
 
-模型权重(BS-RoFormer / Karaoke RoFormer / UVR)在首次运行时由 audio-separator 自动下载
-(默认 C:\\tmp\\audio-separator-models;可用环境变量 MUSICMASTER_SEP_MODELS 改)。
+模型权重由 audio-separator 自动下载，可用 MUSICMASTER_SEP_MODELS 指定缓存目录。
 """
 from __future__ import annotations
 import argparse, os, subprocess, sys, venv
@@ -55,7 +55,7 @@ def main():
         extra = "gpu"
 
     print("[4/5] 安装分离依赖与 audio-separator")
-    run("install", "-r", str(ROOT / "requirements-sep.txt"))
+    run("install", "-r", str(ROOT / "requirements" / "requirements-sep.txt"))
     run("install", f"audio-separator[{extra}]")
     print("[5/5] 安装本包(供 -m musicmaster.separate.pipeline)")
     run("install", "-e", str(ROOT), "--no-deps")
