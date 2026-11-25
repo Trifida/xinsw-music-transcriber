@@ -24,6 +24,8 @@ basic-pitch>=0.3        # 通用复音乐器转录(Apache,含 ICASSP-2022 权重
 fastapi>=0.110
 uvicorn[standard]>=0.27
 python-multipart>=0.0.9   # 文件上传(multipart 表单)解析
+psycopg[binary]>=3.2,<4   # Neon Postgres 持久化任务队列
+boto3>=1.35,<2            # Neon S3 兼容对象存储
 
 # 开发/校验
 jsonschema>=4

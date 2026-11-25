@@ -357,6 +357,7 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
 
         mx = d / "out.musicxml"
         lyric_text = lyrics_text.strip() if lyrics_text and lyrics_text.strip() else ""
+        lyrics_slots = None
         lyrics_info = {
             "source": "user-provided" if lyric_text else "none",
             "status": "pending" if lyric_text else "not-provided",
@@ -404,6 +405,23 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                 "message": "当前多音符 / 钢琴引擎暂不支持单旋律逐字歌词对齐；V1 不会自动识别歌词。",
             }
 
+        if rc == 0 and engine == "crepe" and mx.is_file():
+            try:
+                from musicmaster.transcribe.lyrics import extract_lyric_slots
+                lyrics_slots = extract_lyric_slots(mx)
+                import json
+                alignment_path = d / "lyrics_alignment.json"
+                alignment_path.write_text(
+                    json.dumps(
+                        {**lyrics_info, "assignments": lyrics_slots},
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+            except Exception as slot_error:  # noqa: BLE001
+                print(f"[Lyrics] editable slot extraction skipped: {type(slot_error).__name__}: {slot_error}", flush=True)
+
         # Re-render from the lyric-enriched MusicXML so both numbered and staff scores carry lyrics.
         jianpu_svg = None
         if rc == 0 and engine == "crepe" and mx.is_file():
@@ -444,6 +462,7 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                 "jianpu_svg": jianpu_svg,
                 "jianpu_page_count": 1 if jianpu_svg else None,
                 "lyrics_text": lyric_text, "lyrics_info": lyrics_info,
+                "lyrics_slots": lyrics_slots,
                 "confidence_pct": confidence_pct, "spots": spots, "downloads": downloads}
     except Exception as e:  # noqa: BLE001
         hint = ""

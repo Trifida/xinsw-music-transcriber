@@ -1,0 +1,324 @@
+# -*- coding: utf-8 -*-
+"""AutoDL 容器实例 Pro 的最小生命周期 API 客户端。
+
+只负责创建/查询/启停/释放实例；不在这里传输用户音频、不保存密钥、不启动付费实例。
+真实任务调度和对象存储由上层 job dispatcher 负责。
+"""
+from __future__ import annotations
+
+import json
+import os
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+
+class AutoDLProError(RuntimeError):
+    """AutoDL Pro API 返回错误或请求失败。"""
+
+
+
+def build_worker_start_command(api_url: str, bootstrap_token: str) -> str:
+    """Build a self-contained AutoDL start command without a preinstalled repo checkout.
+
+    The small bootstrap helper is compressed into the start command itself. It
+    exchanges only the single-use bootstrap token, downloads the pinned source
+    bundle, verifies its digest, and execs the worker launcher from that bundle.
+    """
+    import base64
+    import shlex
+    import zlib
+    from pathlib import Path
+    from urllib.parse import urlsplit
+
+    api = str(api_url or "").strip().rstrip("/")
+    parsed = urlsplit(api)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+            or parsed.password or parsed.query or parsed.fragment):
+        raise ValueError("api_url must be a clean HTTPS base URL.")
+    token = str(bootstrap_token or "").strip()
+    if not 32 <= len(token) <= 256:
+        raise ValueError("bootstrap_token must contain 32–256 characters.")
+
+    helper_path = Path(__file__).resolve().parents[2] / "scripts" / "bootstrap_worker_bundle.py"
+    try:
+        helper = helper_path.read_bytes()
+    except OSError as exc:
+        raise AutoDLProError("The worker bootstrap helper is missing on the API host.") from exc
+    encoded = base64.b64encode(zlib.compress(helper, level=9)).decode("ascii")
+    return "\n".join([
+        "set -euo pipefail",
+        f"export MUSICMASTER_API_URL={shlex.quote(api)}",
+        f"export MUSICMASTER_BOOTSTRAP_TOKEN={shlex.quote(token)}",
+        "python3 - <<'PY'",
+        "import base64, zlib",
+        "from pathlib import Path",
+        f"payload = {encoded!r}",
+        "Path('/tmp/xinsw-bootstrap-worker-bundle.py').write_bytes(zlib.decompress(base64.b64decode(payload)))",
+        "PY",
+        "BOOTSTRAP_JSON=\"$(python3 /tmp/xinsw-bootstrap-worker-bundle.py)\"",
+        "BUNDLE_ROOT=\"$(python3 -c 'import json,sys; print(json.load(sys.stdin)[\"bundle_root\"])' <<<\"$BOOTSTRAP_JSON\")\"",
+        "export MUSICMASTER_WORKER_TOKEN=\"$(python3 -c 'import json,sys; print(json.load(sys.stdin)[\"worker_token\"])' <<<\"$BOOTSTRAP_JSON\")\"",
+        "export MUSICMASTER_WORKER_ID=\"$(python3 -c 'import json,sys; print(json.load(sys.stdin).get(\"worker_id\") or \"\")' <<<\"$BOOTSTRAP_JSON\")\"",
+        "INSTANCE_UUID=\"$(python3 -c 'import json,sys; print(json.load(sys.stdin).get(\"instance_uuid\") or \"\")' <<<\"$BOOTSTRAP_JSON\")\"",
+        'if [[ -n "$INSTANCE_UUID" ]]; then export MUSICMASTER_INSTANCE_UUID="$INSTANCE_UUID"; fi',
+        "unset BOOTSTRAP_JSON INSTANCE_UUID MUSICMASTER_BOOTSTRAP_TOKEN",
+        'exec env MUSICMASTER_SKIP_BUNDLE_BOOTSTRAP=1 bash "$BUNDLE_ROOT/scripts/run_autodl_cloud_worker.sh"',
+    ])
+
+
+class AutoDLProClient:
+    API_BASE = "https://api.autodl.com"
+
+    def __init__(
+        self,
+        token: str | None = None,
+        *,
+        base_url: str | None = None,
+        timeout: float = 30.0,
+    ) -> None:
+        self._token = (token or os.environ.get("AUTODL_PRO_TOKEN", "")).strip()
+        if not self._token:
+            raise ValueError("缺少 AutoDL Pro Token；请在服务端设置 AUTODL_PRO_TOKEN。")
+        self._base_url = (base_url or self.API_BASE).rstrip("/")
+        if not self._base_url.startswith("https://"):
+            raise ValueError("AutoDL Pro API 必须通过 HTTPS 访问。")
+        self._timeout = float(timeout)
+        if self._timeout <= 0:
+            raise ValueError("timeout 必须大于 0。")
+
+    def _redact(self, value: str) -> str:
+        return value.replace(self._token, "[REDACTED]")
+
+    def _request(self, method: str, path: str, payload: dict | None = None) -> Any:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+        request = Request(
+            self._base_url + path,
+            data=body,
+            headers={
+                "Authorization": self._token,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            method=method,
+        )
+        try:
+            with urlopen(request, timeout=self._timeout) as response:
+                raw = response.read()
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:1000]
+            raise AutoDLProError(
+                self._redact(f"AutoDL Pro HTTP {exc.code}: {detail}")
+            ) from None
+        except URLError as exc:
+            reason = self._redact(str(exc.reason))
+            raise AutoDLProError(f"AutoDL Pro 网络请求失败：{reason}") from None
+        except TimeoutError:
+            raise AutoDLProError("AutoDL Pro 请求超时。") from None
+
+        try:
+            result = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise AutoDLProError("AutoDL Pro 返回了无法解析的响应。") from None
+        if not isinstance(result, dict):
+            raise AutoDLProError("AutoDL Pro 返回格式异常：响应不是对象。")
+        if result.get("code") != "Success":
+            code = result.get("code", "Unknown")
+            message = self._redact(str(result.get("msg") or "未提供错误说明")[:500])
+            raise AutoDLProError(f"AutoDL Pro API 错误({code})：{message}")
+        return result.get("data")
+
+    def create_instance(
+        self,
+        *,
+        image_uuid: str,
+        cuda_v_from: int,
+        gpu_spec_uuid: str = "4090D",
+        req_gpu_amount: int = 1,
+        expand_system_disk_by_gb: int = 0,
+        instance_name: str = "XinsW Music Transcriber",
+        start_command: str | None = None,
+        data_center_list: list[str] | None = None,
+    ) -> str:
+        """按量创建 Pro 实例；4090D 为当前默认规格，镜像必须由部署配置提供。"""
+        if not image_uuid.strip():
+            raise ValueError("必须提供 AutoDL 镜像 UUID。")
+        if not 1 <= int(req_gpu_amount) <= 4:
+            raise ValueError("req_gpu_amount 必须在 1–4 之间。")
+        if not 0 <= int(expand_system_disk_by_gb) <= 500:
+            raise ValueError("expand_system_disk_by_gb 必须在 0–500 之间。")
+        if int(cuda_v_from) < 0:
+            raise ValueError("cuda_v_from 不能为负数。")
+
+        payload: dict[str, Any] = {
+            "req_gpu_amount": int(req_gpu_amount),
+            "expand_system_disk_by_gb": int(expand_system_disk_by_gb),
+            "gpu_spec_uuid": gpu_spec_uuid,
+            "image_uuid": image_uuid.strip(),
+            "cuda_v_from": int(cuda_v_from),
+            "instance_name": instance_name,
+        }
+        if start_command:
+            payload["start_command"] = start_command
+        if data_center_list:
+            payload["data_center_list"] = list(data_center_list)
+
+        instance_uuid = self._request("POST", "/api/v1/dev/instance/pro/create", payload)
+        if not isinstance(instance_uuid, str) or not instance_uuid.startswith("pro-"):
+            raise AutoDLProError("AutoDL Pro 创建实例未返回有效实例 ID。")
+        return instance_uuid
+
+    def get_status(self, instance_uuid: str) -> str:
+        data = self._request(
+            "GET", "/api/v1/dev/instance/pro/status",
+            {"instance_uuid": self._validate_instance_id(instance_uuid)},
+        )
+        if not isinstance(data, str):
+            raise AutoDLProError("AutoDL Pro 状态响应格式异常。")
+        return data
+
+    def get_snapshot(self, instance_uuid: str) -> dict:
+        data = self._request(
+            "GET", "/api/v1/dev/instance/pro/snapshot",
+            {"instance_uuid": self._validate_instance_id(instance_uuid)},
+        )
+        if not isinstance(data, dict):
+            raise AutoDLProError("AutoDL Pro 实例详情响应格式异常。")
+        # 快照可能含 SSH 密码/Jupyter Token；调用方不得将完整结果写入普通日志。
+        return data
+
+    def list_instances(self, *, page_index: int = 1, page_size: int = 20) -> dict:
+        if page_index < 1 or not 1 <= page_size <= 100:
+            raise ValueError("page_index 必须 >=1，page_size 必须在 1–100 之间。")
+        data = self._request(
+            "POST", "/api/v1/dev/instance/pro/list",
+            {"page_index": page_index, "page_size": page_size},
+        )
+        if not isinstance(data, dict):
+            raise AutoDLProError("AutoDL Pro 实例列表响应格式异常。")
+        return data
+
+    def find_instance(
+        self, instance_uuid: str, *, page_size: int = 100, max_pages: int = 100
+    ) -> dict | None:
+        """Find an instance across the complete paginated Pro instance listing.
+
+        Returns None only after every page advertised by AutoDL has been read.
+        An incomplete or malformed listing is an error, never proof of absence.
+        """
+        target = self._validate_instance_id(instance_uuid)
+        if not 1 <= int(page_size) <= 100:
+            raise ValueError("page_size must be between 1 and 100.")
+        if not 1 <= int(max_pages) <= 1000:
+            raise ValueError("max_pages must be between 1 and 1000.")
+
+        first = self.list_instances(page_index=1, page_size=int(page_size))
+        items = first.get("list")
+        total_pages = first.get("max_page")
+        if not isinstance(items, list) or not isinstance(total_pages, int):
+            raise AutoDLProError("AutoDL Pro instance list is missing list/max_page fields.")
+        if total_pages < 0 or total_pages > int(max_pages):
+            raise AutoDLProError("AutoDL Pro instance list pagination is outside the safe limit.")
+        if total_pages == 0:
+            if items:
+                raise AutoDLProError("AutoDL Pro reported zero pages but returned instance records.")
+            return None
+
+        for page_index in range(1, total_pages + 1):
+            page = first if page_index == 1 else self.list_instances(
+                page_index=page_index, page_size=int(page_size)
+            )
+            page_items = page.get("list")
+            page_max = page.get("max_page")
+            if not isinstance(page_items, list) or page_max != total_pages:
+                raise AutoDLProError("AutoDL Pro instance list changed or became incomplete during pagination.")
+            for item in page_items:
+                if not isinstance(item, dict):
+                    raise AutoDLProError("AutoDL Pro instance list contains a malformed item.")
+                if item.get("uuid") == target:
+                    return item
+        return None
+
+    def find_instances_by_name(
+        self, instance_name: str, *, page_size: int = 100, max_pages: int = 100
+    ) -> list[dict]:
+        """Return exact-name matches only after scanning the complete paginated listing.
+
+        A complete scan is required so duplicate names are detected rather than
+        silently choosing the first match. An empty result is not proof that a
+        timed-out create request is safe to retry; provider listing may lag.
+        """
+        name = str(instance_name).strip()
+        if not name or len(name) > 128:
+            raise ValueError("instance_name must contain 1–128 characters.")
+        if not 1 <= int(page_size) <= 100:
+            raise ValueError("page_size must be between 1 and 100.")
+        if not 1 <= int(max_pages) <= 1000:
+            raise ValueError("max_pages must be between 1 and 1000.")
+
+        first = self.list_instances(page_index=1, page_size=int(page_size))
+        items = first.get("list")
+        total_pages = first.get("max_page")
+        if not isinstance(items, list) or not isinstance(total_pages, int):
+            raise AutoDLProError("AutoDL Pro instance list is missing list/max_page fields.")
+        if total_pages < 0 or total_pages > int(max_pages):
+            raise AutoDLProError("AutoDL Pro instance list pagination is outside the safe limit.")
+        if total_pages == 0:
+            if items:
+                raise AutoDLProError("AutoDL Pro reported zero pages but returned instance records.")
+            return []
+
+        matches: list[dict] = []
+        for page_index in range(1, total_pages + 1):
+            page = first if page_index == 1 else self.list_instances(
+                page_index=page_index, page_size=int(page_size)
+            )
+            page_items = page.get("list")
+            page_max = page.get("max_page")
+            returned_index = page.get("page_index", page_index)
+            if (not isinstance(page_items, list) or page_max != total_pages
+                    or returned_index != page_index):
+                raise AutoDLProError("AutoDL Pro instance list changed or became incomplete during pagination.")
+            for item in page_items:
+                if not isinstance(item, dict):
+                    raise AutoDLProError("AutoDL Pro instance list contains a malformed item.")
+                if item.get("name") == name:
+                    instance_uuid = item.get("uuid")
+                    if not isinstance(instance_uuid, str) or not instance_uuid.startswith("pro-"):
+                        raise AutoDLProError("AutoDL Pro exact-name match has an invalid instance ID.")
+                    matches.append({
+                        "uuid": instance_uuid,
+                        "name": name,
+                        "status": item.get("status"),
+                        "created_at": item.get("created_at"),
+                    })
+        return matches
+
+    def power_on(self, instance_uuid: str, *, start_command: str | None = None) -> None:
+        payload: dict[str, Any] = {
+            "instance_uuid": self._validate_instance_id(instance_uuid),
+            "payload": "gpu",
+        }
+        if start_command:
+            payload["start_command"] = start_command
+        self._request("POST", "/api/v1/dev/instance/pro/power_on", payload)
+
+    def power_off(self, instance_uuid: str) -> None:
+        self._request(
+            "POST", "/api/v1/dev/instance/pro/power_off",
+            {"instance_uuid": self._validate_instance_id(instance_uuid)},
+        )
+
+    def release_instance(self, instance_uuid: str) -> None:
+        """释放前调用方必须先关机并确认关机完成。"""
+        self._request(
+            "POST", "/api/v1/dev/instance/pro/release",
+            {"instance_uuid": self._validate_instance_id(instance_uuid)},
+        )
+
+    @staticmethod
+    def _validate_instance_id(instance_uuid: str) -> str:
+        value = str(instance_uuid).strip()
+        if not value.startswith("pro-") or len(value) > 80:
+            raise ValueError("无效的 AutoDL Pro 实例 ID。")
+        return value

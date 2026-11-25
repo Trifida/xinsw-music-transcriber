@@ -1,0 +1,406 @@
+# -*- coding: utf-8 -*-
+import hashlib
+
+import pytest
+
+from musicmaster.cloud import dispatcher
+
+
+class FakeStore:
+    def __init__(self, events, *, link_token=True, link_worker=True):
+        self.events = events
+        self.link_token = link_token
+        self.link_worker = link_worker
+
+    def prepare_worker(self, worker_id):
+        self.events.append(("prepare_worker", worker_id))
+
+    def issue_bootstrap_token(self, token_hash, worker_id, *, expires_seconds):
+        self.events.append(("issue_token", token_hash, worker_id, expires_seconds))
+        self.token_hash = token_hash
+
+    def set_bootstrap_instance(self, token_hash, instance_uuid):
+        self.events.append(("link_token_instance", token_hash, instance_uuid))
+        return self.link_token
+
+    def set_worker_instance(self, worker_id, instance_uuid):
+        self.events.append(("link_worker_instance", worker_id, instance_uuid))
+        return self.link_worker
+
+    def set_worker_status(self, worker_id, status):
+        self.events.append(("worker_status", worker_id, status))
+        return True
+
+
+class FakeAutoDL:
+    def __init__(self, events):
+        self.events = events
+
+    def create_instance(self, **kwargs):
+        self.events.append(("create_instance", kwargs))
+        return "pro-test123"
+
+    def power_on(self, instance_uuid, *, start_command=None):
+        self.events.append(("power_on", instance_uuid, start_command))
+
+
+def test_create_worker_persists_instance_before_power_on(monkeypatch):
+    events = []
+    store = FakeStore(events)
+    autodl = FakeAutoDL(events)
+    monkeypatch.setattr(
+        dispatcher, "build_worker_start_command",
+        lambda api_url, token: f"START {api_url} {token}",
+    )
+
+    result = dispatcher.create_autodl_worker(
+        store=store,
+        autodl_client=autodl,
+        api_url="https://api.example.test",
+        image_uuid="image-uuid",
+        cuda_v_from=124,
+        worker_id_factory=lambda: "worker-test",
+    )
+
+    assert result == {
+        "worker_id": "worker-test",
+        "instance_uuid": "pro-test123",
+        "status": "starting",
+    }
+    names = [event[0] for event in events]
+    assert names.index("link_token_instance") < names.index("power_on")
+    assert names.index("link_worker_instance") < names.index("power_on")
+    create_args = next(event[1] for event in events if event[0] == "create_instance")
+    assert create_args["instance_name"] == dispatcher.worker_instance_name("worker-test")
+    assert "start_command" not in create_args
+    power_on = next(event for event in events if event[0] == "power_on")
+    assert power_on[1] == "pro-test123"
+    assert power_on[2].startswith("START https://api.example.test ")
+    assert store.token_hash == next(event[1] for event in events if event[0] == "issue_token")
+    assert len(store.token_hash) == 64
+    assert store.token_hash == hashlib.sha256(
+        power_on[2].split(" ", 2)[2].encode("utf-8")
+    ).hexdigest()
+    assert all("bootstrap_token" not in str(event).lower() for event in events)
+
+
+def test_create_worker_marks_error_and_does_not_power_on_if_instance_link_fails(monkeypatch):
+    events = []
+    store = FakeStore(events, link_token=False)
+    autodl = FakeAutoDL(events)
+    monkeypatch.setattr(dispatcher, "build_worker_start_command", lambda *_: "secret-command")
+
+    with pytest.raises(RuntimeError, match="could not be linked"):
+        dispatcher.create_autodl_worker(
+            store=store,
+            autodl_client=autodl,
+            api_url="https://api.example.test",
+            image_uuid="image-uuid",
+            cuda_v_from=124,
+            worker_id_factory=lambda: "worker-test",
+        )
+
+    assert not any(event[0] == "power_on" for event in events)
+    assert ("worker_status", "worker-test", "error") in events
+
+
+def test_create_worker_validates_worker_id_before_touching_store():
+    events = []
+    with pytest.raises(ValueError, match="worker_id"):
+        dispatcher.create_autodl_worker(
+            store=FakeStore(events),
+            autodl_client=FakeAutoDL(events),
+            api_url="https://api.example.test",
+            image_uuid="image-uuid",
+            cuda_v_from=124,
+            worker_id_factory=lambda: "",
+        )
+    assert events == []
+
+
+
+class FakeCursor:
+    def __init__(self, rows):
+        self.rows = list(rows)
+        self.queries = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, query, params=None):
+        self.queries.append((query, params))
+
+    def fetchone(self):
+        return self.rows.pop(0)
+
+
+class FakeConnection:
+    def __init__(self, rows):
+        self.fake_cursor = FakeCursor(rows)
+        self.closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.closed = True
+        return False
+
+    def cursor(self):
+        return self.fake_cursor
+
+
+def test_postgres_capacity_gate_holds_advisory_lock_during_operation(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"acquired": True}, {"total": 0}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+    observed = []
+
+    result = store.run_with_dispatch_capacity(
+        2,
+        lambda: observed.append(conn.closed) or "created",
+    )
+
+    assert result == "created"
+    assert observed == [False]
+    assert conn.closed is True
+    assert "pg_try_advisory_xact_lock" in conn.fake_cursor.queries[0][0]
+    assert "status IN ('starting', 'idle', 'busy', 'stopping', 'error')" in conn.fake_cursor.queries[1][0]
+
+
+def test_postgres_capacity_gate_fails_fast_when_another_dispatcher_holds_lock(monkeypatch):
+    from musicmaster.cloud.job_store import DispatchCapacityError, PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"acquired": False}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+    called = []
+
+    with pytest.raises(DispatchCapacityError, match="Another worker"):
+        store.run_with_dispatch_capacity(1, lambda: called.append(True))
+
+    assert called == []
+    assert conn.closed is True
+
+
+def test_postgres_capacity_gate_rejects_full_capacity(monkeypatch):
+    from musicmaster.cloud.job_store import DispatchCapacityError, PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"acquired": True}, {"total": 1}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+    called = []
+
+    with pytest.raises(DispatchCapacityError, match="1/1"):
+        store.run_with_dispatch_capacity(1, lambda: called.append(True))
+
+    assert called == []
+    assert conn.closed is True
+
+
+@pytest.mark.parametrize("capacity", [0, -1, 11])
+def test_postgres_capacity_gate_rejects_out_of_range_limits(capacity):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    with pytest.raises(ValueError, match="between 1 and 10"):
+        store.run_with_dispatch_capacity(capacity, lambda: None)
+
+
+
+def test_stopping_worker_cannot_claim_another_job(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"status": "stopping"}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    assert store.claim_next("worker-test") is None
+    assert len(conn.fake_cursor.queries) == 1
+    assert "FOR UPDATE" in conn.fake_cursor.queries[0][0]
+
+
+def test_worker_registration_upsert_cannot_revive_stopping_worker(monkeypatch):
+    from musicmaster.cloud.job_store import JobStoreError, PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([None])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    import pytest
+    with pytest.raises(JobStoreError, match="record was not created"):
+        store.register_worker("worker-test", "pro-test")
+
+    query = conn.fake_cursor.queries[0][0]
+    assert "WHERE music_workers.status IN ('starting', 'idle')" in query
+
+
+
+def test_worker_heartbeat_sql_rejects_shutdown_states_and_inconsistent_job_state(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"worker_id": "worker-test"}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    assert store.heartbeat_worker("worker-test", "idle") is True
+    query, params = conn.fake_cursor.queries[0]
+    assert "status IN ('starting', 'idle', 'busy')" in query
+    assert "active_job_id IS NULL" in query
+    assert "active_job_id IS NOT NULL" in query
+    assert params == ("idle", "worker-test", "idle", "idle")
+
+
+def test_worker_heartbeat_rejects_non_operational_status():
+    import pytest
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    with pytest.raises(ValueError, match="idle or busy"):
+        store.heartbeat_worker("worker-test", "stopping")
+
+
+
+def test_busy_worker_with_active_job_cannot_claim_second_job(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+    from uuid import uuid4
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"status": "busy", "active_job_id": uuid4()}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    assert store.claim_next("worker-test") is None
+    assert len(conn.fake_cursor.queries) == 1
+
+
+
+def test_list_stale_idle_workers_is_read_only_and_bounded(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    expected = [{"worker_id": "worker-old", "instance_uuid": "pro-old"}]
+    conn = FakeConnection([expected])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    assert store.list_stale_idle_workers(idle_seconds=600, limit=100) == expected
+    query, params = conn.fake_cursor.queries[0]
+    assert "status IN ('idle', 'error')" in query
+    assert "active_job_id IS NULL" in query
+    assert "instance_uuid IS NOT NULL" in query
+    assert "ORDER BY last_seen_at ASC" in query
+    assert "LIMIT %s" in query
+    assert params == (600, 25)
+
+
+
+def test_unresolved_error_worker_counts_against_dispatch_capacity_even_without_instance_id(monkeypatch):
+    from musicmaster.cloud.job_store import DispatchCapacityError, PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"acquired": True}, {"total": 1}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    with pytest.raises(DispatchCapacityError, match="1/1"):
+        store.run_with_dispatch_capacity(1, lambda: "must-not-create-another-gpu")
+
+    query = conn.fake_cursor.queries[1][0]
+    assert "status IN ('starting', 'idle', 'busy', 'stopping', 'error')" in query
+
+
+def test_stale_error_worker_is_included_in_read_only_reconciliation_candidates(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    expected = [{"worker_id": "worker-error", "instance_uuid": "pro-error", "status": "error"}]
+    conn = FakeConnection([expected])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    assert store.list_stale_idle_workers(idle_seconds=600, limit=10) == expected
+    query = conn.fake_cursor.queries[0][0]
+    assert "status IN ('idle', 'error')" in query
+    assert "active_job_id IS NULL" in query
+
+
+
+def test_create_worker_uses_supplied_stable_worker_id(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        dispatcher, "build_worker_start_command",
+        lambda api_url, token: "safe-start-command",
+    )
+
+    class Store:
+        def prepare_worker(self, worker_id):
+            calls.append(("prepare", worker_id))
+
+        def issue_bootstrap_token(self, token_hash, worker_id, expires_seconds=900):
+            calls.append(("token", worker_id))
+
+        def set_bootstrap_instance(self, token_hash, instance_uuid):
+            return True
+
+        def set_worker_instance(self, worker_id, instance_uuid):
+            return True
+
+    class AutoDL:
+        def create_instance(self, **kwargs):
+            calls.append(("create", kwargs["instance_name"]))
+            return "pro-stable"
+
+        def power_on(self, instance_uuid, start_command=None):
+            calls.append(("power_on", instance_uuid))
+
+    result = dispatcher.create_autodl_worker(
+        store=Store(),
+        autodl_client=AutoDL(),
+        api_url="https://api.example.test",
+        image_uuid="image",
+        cuda_v_from=124,
+        worker_id="dispatch-stable-request",
+    )
+    assert result["worker_id"] == "dispatch-stable-request"
+    assert calls[0] == ("prepare", "dispatch-stable-request")
+    assert calls[2] == ("create", dispatcher.worker_instance_name("dispatch-stable-request"))
+
+
+def test_worker_instance_name_is_deterministic_compact_and_distinct():
+    first = dispatcher.worker_instance_name("worker-alpha")
+    assert first == dispatcher.worker_instance_name("worker-alpha")
+    assert first.startswith("XW-")
+    assert len(first) == 27
+    assert first != dispatcher.worker_instance_name("worker-beta")
+
+
+def test_recover_worker_instance_links_only_unresolved_error_row(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"worker_id": "worker-test"}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    assert store.recover_worker_instance("worker-test", "pro-recovered") is True
+    assert len(conn.fake_cursor.queries) == 2
+    worker_query, worker_params = conn.fake_cursor.queries[0]
+    token_query, token_params = conn.fake_cursor.queries[1]
+    assert "status = 'error'" in worker_query
+    assert "instance_uuid IS NULL" in worker_query
+    assert "active_job_id IS NULL" in worker_query
+    assert worker_params == ("pro-recovered", "worker-test")
+    assert "UPDATE music_worker_bootstrap_tokens" in token_query
+    assert token_params == ("pro-recovered", "worker-test")
+
+
+def test_recover_worker_instance_does_not_link_when_worker_changed(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([None])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    assert store.recover_worker_instance("worker-test", "pro-recovered") is False
+    assert len(conn.fake_cursor.queries) == 1

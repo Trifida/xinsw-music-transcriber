@@ -27,9 +27,11 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from musicmaster.web.jobs import JobManager
 from musicmaster.web import runners
+from musicmaster.web.cloud_api import router as cloud_router
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
@@ -42,6 +44,12 @@ UPLOADS = OUTPUT / "_uploads"
 JM = JobManager(OUTPUT, max_workers=int(os.environ.get("MUSICMASTER_WORKERS", "2")))
 
 app = FastAPI(title="MusicMaster", docs_url="/api/docs", openapi_url="/api/openapi.json")
+app.include_router(cloud_router)
+
+class LyricEditsRequest(BaseModel):
+    assignments: list[str]
+
+
 
 
 def _save_upload(up: UploadFile | None) -> str | None:
@@ -139,6 +147,123 @@ def api_vocal(raw: UploadFile = File(...), ref: UploadFile = File(...),
     job = JM.submit("vocal", runners.run_vocal, p_raw, p_ref, p_self,
                     correct_steps, voice_steps, voice_cfg)
     return {"job_id": job.id}
+
+
+@app.post("/api/job/{job_id}/lyrics")
+def api_save_lyrics(job_id: str, payload: LyricEditsRequest) -> dict:
+    """Save per-note manual lyric corrections and regenerate all score previews."""
+    job = JM.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="未知 job_id")
+    if job.kind != "transcribe":
+        raise HTTPException(status_code=409, detail="只有记谱任务支持逐音歌词编辑。")
+    with job._lock:
+        if job.status != "done" or not isinstance(job.result, dict) or not job.result.get("ok"):
+            raise HTTPException(status_code=409, detail="记谱任务尚未成功完成，暂时不能编辑歌词。")
+        result = job.result
+        if result.get("lyrics_slots") is None:
+            raise HTTPException(status_code=409, detail="当前识别引擎不支持逐音歌词编辑，请使用主唱 CREPE 单旋律模式。")
+        if len(payload.assignments) > 1000:
+            raise HTTPException(status_code=413, detail="一次最多编辑 1000 个歌词位置。")
+        if any(len(value) > 80 for value in payload.assignments):
+            raise HTTPException(status_code=413, detail="单个歌词位置最多 80 个字符。")
+        musicxml = JM.file_path(job_id, "out.musicxml")
+        if musicxml is None:
+            raise HTTPException(status_code=404, detail="找不到本次任务的 MusicXML 文件。")
+        try:
+            from musicmaster.transcribe.lyrics import apply_lyric_assignments, join_lyric_slots
+            import json
+            applied = apply_lyric_assignments(musicxml, payload.assignments)
+            lyrics_text = join_lyric_slots(payload.assignments)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"歌词写入失败：{type(exc).__name__}") from exc
+
+        job_dir = Path(job.job_dir)
+        slots = applied["assignments"]
+        lyrics_info = {
+            "source": "user-edited",
+            "status": "completed",
+            "alignmentStatus": "manually-edited",
+            "tokenCount": len(slots),
+            "assignedCount": applied["assignedCount"],
+            "unassignedCount": applied["emptyCount"],
+            "message": "已保存逐音人工校正；空白位置保持无歌词，“—”作为拖腔标记保留。",
+        }
+        (job_dir / "lyrics.txt").write_text(lyrics_text, encoding="utf-8")
+        (job_dir / "lyrics_alignment.json").write_text(
+            json.dumps({**lyrics_info, "assignments": slots}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        render_warnings = []
+        staff_svg = None
+        jianpu_svg = None
+        # Remove previous renders first: a failed renderer must never leave stale
+        # previews/PDFs that appear to reflect the newly edited MusicXML.
+        for stale_name in ("staff.svg", "jianpu.svg", "jianpu.pdf"):
+            stale_path = job_dir / stale_name
+            if stale_path.is_file():
+                stale_path.unlink()
+        try:
+            from musicmaster.core.render import render as render_score
+            rendered = render_score(
+                str(musicxml), str(job_dir), formats=("staff", "jianpu"), jianpu_format="svg"
+            )
+            if rendered.get("staff"):
+                staff_svg = runners._read_svg(Path(rendered["staff"]))
+            else:
+                render_warnings.append("五线谱 SVG 未能重新生成。")
+            if rendered.get("jianpu"):
+                jianpu_svg = runners._read_svg(Path(rendered["jianpu"]))
+            else:
+                render_warnings.append("简谱 SVG 未能重新生成。")
+            try:
+                render_score(str(musicxml), str(job_dir), formats=("jianpu",), jianpu_format="pdf")
+            except Exception as exc:  # noqa: BLE001
+                render_warnings.append(f"简谱 PDF 未能重新生成：{type(exc).__name__}")
+        except Exception as exc:  # noqa: BLE001
+            render_warnings.append(f"谱面预览未能全部重新生成：{type(exc).__name__}")
+
+        wanted = [
+            "notes.json", "out.mid", "out.musicxml", "jianpu.pdf", "jianpu.ly",
+            "jianpu.svg", "lyrics.txt", "lyrics_alignment.json",
+            "confidence.json", "staff.svg",
+        ]
+        downloads = runners._downloads(job_dir, only=wanted)
+        result.update({
+            "lyrics_info": lyrics_info,
+            "lyrics_slots": slots,
+            "lyrics_text": lyrics_text,
+            "staff_svg": staff_svg,
+            "jianpu_svg": jianpu_svg,
+            "jianpu_page_count": 1 if jianpu_svg else None,
+            "downloads": downloads,
+        })
+        if render_warnings:
+            result["lyrics_render_warnings"] = render_warnings
+        else:
+            result.pop("lyrics_render_warnings", None)
+        report = result.get("report_md") or ""
+        section_marker = "\n\n## 逐音歌词人工校正\n"
+        if section_marker in report:
+            report = report.split(section_marker, 1)[0]
+        result["report_md"] = report + (
+            section_marker
+            + f"- 已保存：{applied['assignedCount']}/{applied['lyricSlots']} 个位置有歌词。\n"
+            + "- MusicXML 已更新；谱面预览与 PDF 已尽力重新生成。\n"
+        )
+        job.updated_at = __import__("time").time()
+        return {
+            "ok": True,
+            "lyrics_info": lyrics_info,
+            "lyrics_slots": slots,
+            "staff_svg": staff_svg,
+            "jianpu_svg": jianpu_svg,
+            "downloads": downloads,
+            "render_warnings": render_warnings,
+        }
 
 
 @app.get("/api/job/{job_id}")
