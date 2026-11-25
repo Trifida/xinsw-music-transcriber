@@ -26,6 +26,7 @@ class FakeStore:
         row = {
             "id": job_id, "status": "awaiting_upload",
             "source_filename": kwargs["source_filename"],
+            "options": kwargs.get("options", {}),
         }
         self.jobs[str(job_id)] = row
         return row
@@ -202,7 +203,8 @@ def test_manual_start_requires_existing_live_gpu_and_never_provisions(api, monke
     assert waiting.status_code == 409
     assert "不会创建新的 GPU" in waiting.json()["detail"]
     assert store.jobs[job_id]["status"] == "queued"
-    assert "options" not in store.jobs[job_id]
+    assert store.jobs[job_id]["options"]["manual_start_requested"] is not True
+    assert store.jobs[job_id]["options"]["auto_dispatch_requested"] is False
 
     store.live_worker = True
     started = client.post(f"/api/cloud/jobs/{job_id}/start")
