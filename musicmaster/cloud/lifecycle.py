@@ -41,7 +41,34 @@ def reconcile_idle_worker(
     if status != "stopping":
         return {"worker_id": worker_id, "status": str(status or "unknown")}
 
-    provider_status = str(autodl_client.get_status(instance_uuid)).strip().lower()
+    try:
+        provider_status = str(autodl_client.get_status(instance_uuid)).strip().lower()
+    except Exception:
+        # A release may have succeeded at AutoDL while the API process died
+        # before the Postgres row was finalized. A failed status lookup alone
+        # is not proof: require a complete, paginated instance-list scan.
+        find_instance = getattr(autodl_client, "find_instance", None)
+        if not callable(find_instance):
+            raise
+        try:
+            listed_instance = find_instance(instance_uuid)
+        except Exception:
+            # Keep the original status failure visible; neither failure permits
+            # destructive follow-up or a false stopped transition.
+            raise
+        if listed_instance is not None:
+            return {
+                "worker_id": worker_id,
+                "status": "stopping",
+                "provider_status": "status_unavailable_instance_still_listed",
+            }
+        if not store.mark_worker_stopped_after_release(worker_id):
+            raise RuntimeError("AutoDL no longer lists the instance, but worker state could not be finalized.")
+        return {
+            "worker_id": worker_id,
+            "status": "stopped",
+            "provider_status": "absent_from_complete_instance_list",
+        }
     if provider_status in RUNNING_PROVIDER_STATES:
         autodl_client.power_off(instance_uuid)
         return {
