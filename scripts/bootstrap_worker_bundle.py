@@ -139,7 +139,7 @@ def bootstrap() -> dict:
     final_dir = root / commit
     marker = final_dir / ".xinsw-bundle-sha256"
     if marker.is_file() and marker.read_text(encoding="ascii").strip() == digest_expected:
-        return {"bundle_root": str(final_dir), "commit": commit}
+        return {"bundle_root": str(final_dir), "commit": commit, "worker_token": token, "worker_id": os.environ.get("MUSICMASTER_WORKER_ID", ""), "instance_uuid": os.environ.get("MUSICMASTER_INSTANCE_UUID", "")}
 
     with tempfile.TemporaryDirectory(prefix=".xinsw-bootstrap-", dir=root) as temp:
         temp_root = Path(temp)
