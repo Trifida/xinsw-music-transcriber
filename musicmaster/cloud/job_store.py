@@ -480,6 +480,28 @@ class PostgresJobStore:
             )
             return cur.fetchone()
 
+    def list_stale_idle_workers(
+        self, *, idle_seconds: int = 300, limit: int = 10
+    ) -> list[dict]:
+        """List shutdown candidates without changing worker state (safe for dry-run)."""
+        seconds = max(60, min(int(idle_seconds), 86400))
+        cap = max(1, min(int(limit), 25))
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT worker_id, instance_uuid, status, active_job_id, last_seen_at
+                FROM music_workers
+                WHERE status = 'idle'
+                  AND active_job_id IS NULL
+                  AND instance_uuid IS NOT NULL
+                  AND last_seen_at < now() - (%s * interval '1 second')
+                ORDER BY last_seen_at ASC, worker_id ASC
+                LIMIT %s
+                """,
+                (seconds, cap),
+            )
+            return list(cur.fetchall())
+
     def mark_stale_idle_worker_stopping(
         self, worker_id: str, *, idle_seconds: int
     ) -> bool:
