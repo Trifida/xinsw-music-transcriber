@@ -157,11 +157,10 @@
       body.append('denoise', 'dereverb');
       body.append('lyrics', lyricsInput ? lyricsInput.value : '');
 
+      var previousJobId = activeJobId;
       if (pollTimer) clearTimeout(pollTimer);
       pollTimer = null;
       autoPoll = false;
-      activeJobId = '';
-      saveJobId('');
       setBusy(true);
       refresh.hidden = true;
       start.hidden = true;
@@ -189,6 +188,13 @@
         })
         .catch(function (error) {
           status.textContent = '上传未成功：' + (error && error.message ? error.message : String(error));
+          // Keep the previous task recoverable if this replacement upload fails.
+          if (previousJobId) {
+            activeJobId = previousJobId;
+            saveJobId(previousJobId);
+            refresh.hidden = false;
+            queryJob(false);
+          }
         })
         .finally(function () {
           setBusy(false);
