@@ -23,6 +23,7 @@ from musicmaster.cloud.job_store import DispatchCapacityError, JobStoreError, Po
 from musicmaster.cloud.object_store import ObjectStoreError, S3ObjectStore
 from musicmaster.cloud.autodl_pro import AutoDLProClient
 from musicmaster.cloud.dispatcher import create_autodl_worker
+from musicmaster.cloud.lifecycle import reconcile_idle_worker
 
 
 router = APIRouter()
@@ -171,6 +172,36 @@ def provision_cloud_worker() -> dict:
             detail=f"Worker provisioning failed: {type(exc).__name__}",
         ) from None
     return result
+
+
+@router.post(
+    "/api/internal/dispatcher/workers/{worker_id}/reconcile",
+    dependencies=[Depends(_dispatcher_auth)],
+)
+def reconcile_cloud_worker(worker_id: str) -> dict:
+    """Manually reconcile one stale idle worker; never release an unconfirmed instance."""
+    idle_value = os.environ.get("MUSICMASTER_AUTODL_IDLE_SECONDS", "300")
+    try:
+        idle_seconds = int(idle_value)
+        if not 60 <= idle_seconds <= 86400:
+            raise ValueError
+        store, _ = _components()
+        client = AutoDLProClient()
+        return reconcile_idle_worker(
+            store=store,
+            autodl_client=client,
+            worker_id=worker_id,
+            idle_seconds=idle_seconds,
+        )
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Worker not found.") from None
+    except ValueError:
+        raise HTTPException(status_code=503, detail="Worker lifecycle configuration or ID is invalid.") from None
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503,
+            detail=f"Worker lifecycle reconciliation failed: {type(exc).__name__}",
+        ) from None
 
 
 @router.post("/api/cloud/jobs")
