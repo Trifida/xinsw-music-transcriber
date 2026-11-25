@@ -209,3 +209,31 @@ def test_postgres_capacity_gate_rejects_out_of_range_limits(capacity):
     store = PostgresJobStore("postgresql://unused")
     with pytest.raises(ValueError, match="between 1 and 10"):
         store.run_with_dispatch_capacity(capacity, lambda: None)
+
+
+
+def test_stopping_worker_cannot_claim_another_job(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"status": "stopping"}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    assert store.claim_next("worker-test") is None
+    assert len(conn.fake_cursor.queries) == 1
+    assert "FOR UPDATE" in conn.fake_cursor.queries[0][0]
+
+
+def test_worker_registration_upsert_cannot_revive_stopping_worker(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([None])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    import pytest
+    with pytest.raises(Exception, match="record was not created"):
+        store.register_worker("worker-test", "pro-test")
+
+    query = conn.fake_cursor.queries[0][0]
+    assert "WHERE music_workers.status IN ('starting', 'idle', 'busy')" in query
