@@ -627,7 +627,14 @@ def claim_job(body: ClaimRequest) -> dict:
     try:
         source_url = objects.presigned_download(job["source_object_key"], expires_seconds=1800)
     except ObjectStoreError:
-        raise HTTPException(status_code=503, detail="暂时无法为 GPU 节点签发音频下载链接。") from None
+        # The job has already been claimed. Release it back to the queue so a
+        # temporary object-store signing outage cannot strand it until lease expiry.
+        store.fail_job(
+            job["id"], body.worker_id,
+            "暂时无法签发原始音频下载链接，请稍后重试。",
+            retryable=True,
+        )
+        raise HTTPException(status_code=503, detail="暂时无法为 GPU 节点签发音频下载链接，任务已重新排队。") from None
     return {
         "job": {
             "id": str(job["id"]),
