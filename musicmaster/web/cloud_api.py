@@ -45,7 +45,7 @@ def _components() -> tuple[PostgresJobStore, S3ObjectStore]:
 def _worker_auth(authorization: str | None = Header(default=None)) -> None:
     expected = os.environ.get("MUSICMASTER_WORKER_TOKEN", "").strip()
     if not expected:
-        raise HTTPException(status_code=503, detail="GPU worker API 尚未配置。")
+        raise HTTPException(status_code=503, detail="Worker API 尚未配置。")
     supplied = (authorization or "").strip()
     if not supplied.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Worker authentication required.")
@@ -493,7 +493,7 @@ def start_cloud_job(job_id: str) -> dict:
         if not store.has_live_worker(heartbeat_seconds=120):
             raise HTTPException(
                 status_code=409,
-                detail="当前没有运行中的 GPU Worker，请等待 GPU 启动后再点击「开始记谱」。任务已保留，不会创建新的 GPU。",
+                detail="当前没有在线计算 Worker，请等待 Colab Worker 连接并上线后再点击「开始记谱」。任务已保留，不会自动创建或启动 GPU。",
             )
         store.request_job_start(job_id)
         latest = store.get_job(job_id) or job
@@ -502,7 +502,7 @@ def start_cloud_job(job_id: str) -> dict:
             "job_id": str(job_id),
             "status": latest_state,
             "worker_available": True,
-            "message": "已通知现有 GPU Worker 领取任务；没有创建新的 GPU。",
+            "message": "已通知现有计算 Worker 领取任务；没有自动创建或启动 GPU。",
         }
     except HTTPException:
         raise
