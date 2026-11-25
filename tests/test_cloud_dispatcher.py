@@ -275,3 +275,22 @@ def test_busy_worker_with_active_job_cannot_claim_second_job(monkeypatch):
 
     assert store.claim_next("worker-test") is None
     assert len(conn.fake_cursor.queries) == 1
+
+
+
+def test_list_stale_idle_workers_is_read_only_and_bounded(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    expected = [{"worker_id": "worker-old", "instance_uuid": "pro-old"}]
+    conn = FakeConnection([expected])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    assert store.list_stale_idle_workers(idle_seconds=600, limit=100) == expected
+    query, params = conn.fake_cursor.queries[0]
+    assert "status = 'idle'" in query
+    assert "active_job_id IS NULL" in query
+    assert "instance_uuid IS NOT NULL" in query
+    assert "ORDER BY last_seen_at ASC" in query
+    assert "LIMIT %s" in query
+    assert params == (600, 25)
