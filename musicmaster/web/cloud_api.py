@@ -362,8 +362,13 @@ def register_worker(body: WorkerRegister) -> dict:
 @router.post("/api/internal/workers/heartbeat", dependencies=[Depends(_worker_auth)])
 def worker_heartbeat(body: WorkerHeartbeat) -> dict:
     store, _ = _components()
-    if not store.set_worker_status(body.worker_id, body.status):
-        raise HTTPException(status_code=404, detail="Unknown worker; register it first.")
+    if body.status not in {"idle", "busy"}:
+        raise HTTPException(status_code=422, detail="Worker heartbeat status must be idle or busy.")
+    if not store.heartbeat_worker(body.worker_id, body.status):
+        raise HTTPException(
+            status_code=409,
+            detail="Worker is stopping, stopped, or its active-job state does not match the heartbeat.",
+        )
     return {"ok": True}
 
 
