@@ -94,6 +94,57 @@ def test_api_error_is_redacted(monkeypatch):
     assert "test-secret" not in str(exc.value)
 
 
+def test_find_instance_scans_every_page_and_returns_matching_instance(monkeypatch):
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        payload = json.loads(request.data.decode("utf-8"))
+        calls.append(payload)
+        page = payload["page_index"]
+        items = ([{"uuid": "pro-other", "status": "running"}]
+                 if page == 1 else [{"uuid": "pro-target", "status": "shutdown"}])
+        return FakeResponse({"code": "Success", "data": {
+            "list": items, "page_index": page, "page_size": 1, "max_page": 2
+        }, "msg": ""})
+
+    monkeypatch.setattr("musicmaster.cloud.autodl_pro.urlopen", fake_urlopen)
+    client = AutoDLProClient("secret")
+    assert client.find_instance("pro-target", page_size=1) == {
+        "uuid": "pro-target", "status": "shutdown"
+    }
+    assert calls == [
+        {"page_index": 1, "page_size": 1},
+        {"page_index": 2, "page_size": 1},
+    ]
+
+
+def test_find_instance_returns_none_only_after_all_pages(monkeypatch):
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        payload = json.loads(request.data.decode("utf-8"))
+        calls.append(payload["page_index"])
+        return FakeResponse({"code": "Success", "data": {
+            "list": [{"uuid": "pro-other"}], "page_index": payload["page_index"],
+            "page_size": 1, "max_page": 3
+        }, "msg": ""})
+
+    monkeypatch.setattr("musicmaster.cloud.autodl_pro.urlopen", fake_urlopen)
+    client = AutoDLProClient("secret")
+    assert client.find_instance("pro-missing", page_size=1) is None
+    assert calls == [1, 2, 3]
+
+
+def test_find_instance_rejects_incomplete_pagination(monkeypatch):
+    def fake_urlopen(request, timeout):
+        return FakeResponse({"code": "Success", "data": {"list": []}, "msg": ""})
+
+    monkeypatch.setattr("musicmaster.cloud.autodl_pro.urlopen", fake_urlopen)
+    client = AutoDLProClient("secret")
+    with pytest.raises(AutoDLProError, match="list/max_page"):
+        client.find_instance("pro-target")
+
+
 def test_rejects_release_with_malformed_id_before_network(monkeypatch):
     called = False
 
