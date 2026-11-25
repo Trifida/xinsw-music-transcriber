@@ -320,3 +320,14 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 6. Do not merge, deploy, change Neon production main, or create/start/power-off/release paid AutoDL instances without explicit authorization.
 
 **Cross-computer resume prompt:** Continue from this handoff, first inspect PR #12 and the latest deploy/v1-production HEAD/checks, then validate the release-recovery and dry-run sweep changes. Do not modify main, deploy production, or call AutoDL provider mutation endpoints.
+
+
+## 2026-11-25 continued — isolate GitHub Actions runner failure
+
+- Rechecked PR #12 at HEAD 216c8d3928a37015670a4611aec9f91b03b44455: Open / Draft / unmerged; no production changes.
+- Retried the failed Cloud jobs and original jianpu workflow runs using GitHub's failed-job rerun operation. Both retries again completed as failure within seconds; job details still had null steps/log URLs and log downloads returned BlobNotFound.
+- Added a deliberately minimal workflow at .github/workflows/ci-runner-diagnostic.yml. It uses no checkout/setup actions or dependencies: it only runs a shell step, prints OS/architecture, and checks python3 --version. It is triggered by push/PR to deploy/v1-production and can also be manually dispatched.
+- Interpretation:
+  - If this minimal job also fails before exposing a step, investigate repository Actions availability, hosted-runner allocation, account/org policy, or GitHub service/runner infrastructure.
+  - If it succeeds, the runner is functional and the failure is specific to the existing workflow/action/job configuration; compare the first failing step and logs.
+- No production deployment, main merge, Neon production-main modification, or AutoDL API mutation was performed.
