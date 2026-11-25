@@ -145,3 +145,7 @@ If the instance is still listed, or listing is incomplete/unavailable, the DB
 row remains `stopping`; no second release is attempted based on uncertainty.
 This is a recovery check, not a scheduler. The instance-list API contract is
 documented by AutoDL at https://autodl.com/docs/instance_pro_api/.
+
+An empty but valid provider listing (`max_page: 0` and an empty `list`) is
+also accepted as a complete scan; zero pages with any returned records is
+rejected as inconsistent.
