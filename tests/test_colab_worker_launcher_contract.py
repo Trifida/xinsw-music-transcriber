@@ -1,5 +1,9 @@
 from pathlib import Path
 import importlib.util
+import sys
+from types import SimpleNamespace
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -7,15 +11,20 @@ LAUNCHER = ROOT / "scripts" / "run_colab_cloud_worker.py"
 SOURCE = LAUNCHER.read_text(encoding="utf-8")
 
 
-def test_colab_launcher_imports_the_real_v1_runtime_dependencies():
-    spec = importlib.util.spec_from_file_location("colab_worker_launcher", LAUNCHER)
+def load_launcher():
+    spec = importlib.util.spec_from_file_location("colab_worker_launcher_test", LAUNCHER)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
+    return module
+
+
+def test_colab_launcher_imports_the_real_v1_runtime_dependencies():
+    module = load_launcher()
 
     assert {
-        "numpy", "librosa", "soundfile", "torch", "audio_separator",
-        "tensorflow", "crepe", "hmmlearn", "music21",
+        "numpy", "librosa", "soundfile", "torch", "torchaudio",
+        "audio_separator.separator", "tensorflow", "crepe", "hmmlearn", "music21",
     }.issubset(set(module.REQUIRED_MODULES))
 
 
@@ -46,3 +55,21 @@ def test_colab_launcher_does_not_install_dependencies_or_provision_gpu():
     assert "autodl" not in lowered
     assert "create_autodl_worker" not in SOURCE
     assert "subprocess" not in lowered
+
+
+def test_cpu_runtime_is_rejected_before_any_worker_registration(monkeypatch):
+    module = load_launcher()
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(
+            is_available=lambda: False,
+            device_count=lambda: 0,
+        ),
+        version=SimpleNamespace(cuda=None),
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setattr(
+        module, "_import_runtime_modules",
+        lambda: pytest.fail("CPU runtime must be rejected before importing the rest of the stack"),
+    )
+
+    assert module.validate_runtime() == 2
