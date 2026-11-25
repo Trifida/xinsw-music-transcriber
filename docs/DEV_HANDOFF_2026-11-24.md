@@ -281,3 +281,42 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - Explicit `dry_run: false` runs the existing conservative reconciler sequentially for at most 25 candidates. Per-worker failures are isolated and only exception class is returned; provider messages and secrets are not exposed.
 - Added fake-DB and API tests for query filters/bounds, default dry-run, auth, and explicit execution with per-worker error isolation.
 - No cron job or queue-triggered automation is configured. No GPU/provider API was called. The batch endpoint can power off/release resources only when explicitly invoked with authenticated `dry_run: false`.
+
+
+## 2026-11-25 session close — release recovery and idle sweep
+
+**Branch / PR snapshot before this handoff update**
+- PR #12: Open / Draft / unmerged; base main; head branch deploy/v1-production.
+- Latest implementation commit before this documentation-only update: 75070c99ae763f3be07f7be56192bff4065c0d15.
+- PR had 112 commits at the time of verification.
+- No production deployment, main merge, Neon production-main change, or paid AutoDL operation occurred.
+
+### Code added in this session
+- AutoDL list-based recovery for interrupted release:
+  - AutoDLProClient.find_instance() validates and fully scans paginated data.list / data.max_page.
+  - A missing instance is accepted only after a complete valid scan; malformed/incomplete pagination is an error.
+  - Lifecycle catches only AutoDLProError from status lookup. If the instance remains listed, worker stays stopping; if absent after a complete scan, DB may finalize to stopped. If listing fails, the original status error is preserved and DB is not finalized.
+  - Handles valid empty listing (max_page: 0, empty list) and rejects inconsistent zero-page records.
+- Bounded manual idle-worker sweep:
+  - PostgresJobStore.list_stale_idle_workers() is read-only and selects only stale idle rows with no active job and a linked instance.
+  - POST /api/internal/dispatcher/workers/reconcile-idle is dispatcher-authenticated, defaults to dry_run: true, and caps batches at 25.
+  - Dry-run never creates an AutoDL client or mutates DB/provider state.
+  - dry_run: false explicitly invokes the conservative reconciler sequentially; failures are isolated and provider error details are not exposed.
+- Added tests for paginated listing, empty/malformed pages, release recovery, dry-run, auth, query constraints, batch bounds and per-worker error isolation.
+- Updated docs/WORKER_SOURCE_BUNDLE.md with the recovery and sweep contracts.
+
+### CI status — still unresolved
+- At HEAD 75070c99ae763f3be07f7be56192bff4065c0d15, the Cloud jobs and legacy jianpu checks both completed as failure within approximately 1–2 seconds.
+- GitHub job responses again returned steps: null and logs_url: null; fetching the log archive returned BlobNotFound.
+- This does not establish that pytest or compilation ran, and does not establish pass/fail of the new tests. No local test execution was available in this session.
+- Continue treating CI runner/check annotation diagnostics as P0. Do not claim the code tests passed until an actual test process has run and produced results.
+
+### Safety / next steps
+1. On next session, recheck PR HEAD and Actions before editing.
+2. Obtain a functioning Linux/Python test run for the focused cloud suites; investigate the check-run annotation/runner failure separately from application tests.
+3. Review the idle sweep endpoint and release recovery in an executable test environment.
+4. Only after test confidence, consider a scheduled sweep (Render Cron or equivalent), but keep it disabled/manual until explicitly authorized.
+5. Queue-triggered provisioning still needs durable idempotency/deduplication and must not automatically incur GPU charges without explicit approval.
+6. Do not merge, deploy, change Neon production main, or create/start/power-off/release paid AutoDL instances without explicit authorization.
+
+**Cross-computer resume prompt:** Continue from this handoff, first inspect PR #12 and the latest deploy/v1-production HEAD/checks, then validate the release-recovery and dry-run sweep changes. Do not modify main, deploy production, or call AutoDL provider mutation endpoints.
