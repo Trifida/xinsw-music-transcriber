@@ -125,7 +125,18 @@ def _note_pitch(note: ET.Element) -> str:
     step = next((child.text or "" for child in pitch if _local_name(child) == "step"), "")
     alter = next((child.text or "0" for child in pitch if _local_name(child) == "alter"), "0")
     octave = next((child.text or "" for child in pitch if _local_name(child) == "octave"), "")
-    accidental = {"1": "#", "-1": "b", "0": ""}.get(alter, f"({alter})")
+    try:
+        alter_value = float(alter)
+    except (TypeError, ValueError):
+        alter_value = 0.0
+    if alter_value == 1:
+        accidental = "#"
+    elif alter_value == -1:
+        accidental = "b"
+    elif alter_value == 0:
+        accidental = ""
+    else:
+        accidental = f"({alter_value:+g})"
     return f"{step}{accidental}{octave}"
 
 
