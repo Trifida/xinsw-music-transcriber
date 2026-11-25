@@ -45,10 +45,37 @@ The authenticated endpoint
 The endpoint refuses incomplete values, malformed hashes, and object keys that
 do not match the configured commit and checksum.
 
-## Current boundary
+## AutoDL bootstrap sequence
 
-This change implements the trusted-host publisher and authenticated URL
-issuance. It does not yet install the archive on AutoDL, provision instances,
-or shut instances down. Those lifecycle steps remain deliberately separate:
-the GPU bootstrap must verify the SHA-256 before extraction, and the dispatcher
-must verify AutoDL has powered off before releasing a paid instance.
+The AutoDL image or persistent startup volume must contain a small bootstrap
+checkout with `scripts/run_autodl_cloud_worker.sh` and
+`scripts/bootstrap_worker_bundle.py`. Configure the instance start command to
+run that launcher; do not pass a GitHub token or long-lived worker token in the
+command line.
+
+The launcher performs these steps before installing model dependencies:
+
+1. Exchange the single-use `MUSICMASTER_BOOTSTRAP_TOKEN` for a worker token.
+2. Request the pinned bundle manifest using that worker token.
+3. Download the archive over HTTPS into a temporary directory.
+4. Verify the complete archive SHA-256 against the API manifest.
+5. Reject absolute/traversal paths, symlinks, hard links, and special files.
+6. Extract into a version-specific directory under
+   `~/.cache/xinsw-worker-bundles/<commit-sha>`.
+7. Execute the worker launcher from that verified source directory.
+
+The short-lived bootstrap token is removed from the process environment after
+exchange. The worker token is held only in the running process environment and
+is not written to the bundle or a persistent credentials file. Set
+`MUSICMASTER_WORKER_BUNDLE_HOME` only when the default user cache is unsuitable.
+
+The bootstrap checkout is only a carrier for the launcher. All application
+code and worker dependencies are taken from the checksum-verified commit bundle.
+
+## Remaining deployment boundary
+
+This implements the worker-side source download and verification. It does not
+provision or power on AutoDL instances, create bootstrap tokens, publish the
+bundle automatically, configure Render secrets, or shut instances down. The
+dispatcher must verify AutoDL has powered off before releasing a paid instance.
+No paid GPU should be started for CI or bootstrap unit tests.
