@@ -500,3 +500,33 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - 逐音编辑首版涉及：`musicmaster/transcribe/lyrics.py`、`musicmaster/web/runners.py`、`musicmaster/web/server.py`、`musicmaster/web/static/js/transcribe.js`、`tests/test_lyrics.py`。
 - `lyrics_alignment.json` 现在持久化逐音 assignments，便于云端结果页后续复用；云端编辑 API 本身尚未开发。
 - 当前验收状态：代码已提交、测试已编写、CI 未验证；未做真实音频 / 真实渲染验收。
+
+## 2026-11-25 逐音歌词编辑可靠性补强续记
+
+本轮在首版编辑器上继续做了边界修复：
+
+1. `musicmaster/transcribe/lyrics.py`
+   - tie stop 检查同时识别 MusicXML 的 `tie` 与 `notations/tied`。
+   - 新歌词节点插入到 `play/listen` 前，遵守 MusicXML note 子元素顺序。
+   - 音高标签解析十进制 alter，常规半音显示为 C#4 / Db4，微分音显示为括号数值。
+   - 新增 `join_lyric_slots`，中文字符不插空格，连续英文单词之间保留空格。
+2. `musicmaster/web/server.py`
+   - 保存人工歌词时用统一 join 规则重建 lyrics.txt。
+   - 重新渲染前删除旧 staff.svg、jianpu.svg、jianpu.pdf，防止渲染失败后把旧图当成新图返回。
+   - 分别报告简谱 SVG、五线谱 SVG 的生成缺失。
+3. `musicmaster/web/static/js/transcribe.js`
+   - 如果新 MusicXML 已保存但谱面预览没有重新生成，清除旧预览并显示提示。
+4. `tests/test_lyrics.py`
+   - 增加 tie stop 变体、note 子元素顺序、alter 十进制、歌词空格、渲染失败清除旧文件的测试。
+
+### 验证状态
+- 代码已提交到 `deploy/v1-production`。
+- GitHub Actions 仍在 job step 开始前失败：Jobs API 返回空 steps；新增测试没有可见执行证据。
+- 当前不能宣称 pytest、JS 语法检查或真实 LilyPond / Verovio 渲染通过。
+- 没有调用 AutoDL；没有创建、开机、关机或释放 GPU；没有部署生产、合并 main 或修改 Neon production main。
+
+### 下一步
+- 先恢复可观测测试执行并跑完 `tests/test_lyrics.py`。
+- 在真实歌曲任务上确认修改后 MusicXML、简谱 PDF、简谱 SVG、五线谱 SVG 和下载文件完全一致。
+- 再接入云端任务的逐音修改与 artifact revision 保存；这一步完成后才宣布 V1 歌词编辑闭环完成。
+- 歌词编辑完成验收后，按路线图进入自动 GPU 调度。
