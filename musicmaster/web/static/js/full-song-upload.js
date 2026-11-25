@@ -34,7 +34,23 @@
     });
     showSelectedSource();
 
-    var activeJobId = '';
+    var JOB_STORAGE_KEY = 'xinsw.fullSong.activeJobId';
+
+    function readSavedJobId() {
+      try { return window.sessionStorage.getItem(JOB_STORAGE_KEY) || ''; }
+      catch (_) { return ''; }
+    }
+
+    function saveJobId(jobId) {
+      try {
+        if (jobId) window.sessionStorage.setItem(JOB_STORAGE_KEY, jobId);
+        else window.sessionStorage.removeItem(JOB_STORAGE_KEY);
+      } catch (_) {
+        // The workflow remains usable when browser storage is unavailable.
+      }
+    }
+
+    var activeJobId = readSavedJobId();
     var autoPoll = false;
     var pollTimer = null;
     var queryInFlight = false;
@@ -145,6 +161,7 @@
       pollTimer = null;
       autoPoll = false;
       activeJobId = '';
+      saveJobId('');
       setBusy(true);
       refresh.hidden = true;
       start.hidden = true;
@@ -162,6 +179,7 @@
         .then(function (data) {
           if (!data.job_id) throw new Error('服务器没有返回任务编号。');
           activeJobId = data.job_id;
+          saveJobId(activeJobId);
           refresh.hidden = false;
           status.textContent = '完整乐曲已上传并进入云端队列。\n任务编号：' + activeJobId
             + '\n当前状态：等待开始记谱。点击下方「开始记谱」后，系统只检查并使用已经运行的 GPU。';
@@ -246,6 +264,14 @@
     refresh.addEventListener('click', function () {
       queryJob(true);
     });
+
+    // Restore the most recent task after a page reload so the user can continue
+    // checking status, retry manual start, or download completed artifacts.
+    if (activeJobId) {
+      refresh.hidden = false;
+      status.textContent = '正在恢复上次的完整乐曲任务…';
+      queryJob(false);
+    }
   }
 
   if (document.readyState === 'loading') {
