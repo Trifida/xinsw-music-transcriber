@@ -98,3 +98,18 @@ def test_complete_job_accepts_retry_after_same_worker_already_completed(monkeypa
     assert "status = 'completed'" in statements[1]
     assert "worker_id = %s" in statements[1]
     assert len(statements) == 2
+
+
+
+def test_artifact_attempt_migration_backfills_only_unassigned_rows():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    migration = (root / "migrations/0003_track_artifact_attempts.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ADD COLUMN IF NOT EXISTS attempt_count INTEGER" in migration
+    assert "AND a.attempt_count IS NULL" in migration
+    assert "ALTER COLUMN attempt_count SET NOT NULL" in migration
+    assert "ON music_job_artifacts (job_id, attempt_count, id)" in migration
