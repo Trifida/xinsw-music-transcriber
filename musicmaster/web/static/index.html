@@ -490,12 +490,9 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
           <div>
             <div class="card warm">
               <div class="card-h"><span class="idx">i.</span>音频输入</div>
-              <div class="field">
-                <div class="label">选择音频类型</div>
-                <div class="opts" role="radiogroup" aria-label="选择音频类型">
-                  <label class="opt"><input type="radio" name="transcribe-source" value="vocal" checked><span class="box"><span class="tick"></span><span><span class="ot">单独人声</span><span class="od">清唱、哼唱或已分离的人声</span></span></span></label>
-                  <label class="opt"><input type="radio" name="transcribe-source" value="full-song"><span class="box"><span class="tick"></span><span><span class="ot">完整歌曲</span><span class="od">上传原曲，后续由云端流程分离人声</span></span></span></label>
-                </div>
+              <div class="out-tabs" role="group" aria-label="选择音频类型" style="margin:0 0 14px;max-width:320px">
+                <button type="button" class="out-tab on" data-source-mode="vocal" aria-pressed="true">单独人声</button>
+                <button type="button" class="out-tab" data-source-mode="full-song" aria-pressed="false">完整歌曲</button>
               </div>
               <div id="vocal-mode-fields">
                 <div class="field">
@@ -535,7 +532,7 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
                   <label class="label" for="full-song-lyrics">歌词 <span class="opt-mark">选填，手动输入</span></label>
                   <textarea id="full-song-lyrics" rows="3" placeholder="可以先不填，之后也可以补充歌词。V1 不自动识别歌词。" style="width:100%;min-height:72px;resize:vertical;padding:12px;border:1px solid var(--border-2);border-radius:var(--r-sm);background:var(--surface);color:var(--t1);font:13px/1.7 var(--sans)"></textarea>
                 </div>
-                <button type="button" class="cast full-song-submit" id="full-song-submit"><span class="shine"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V3m0 0L7 8m5-5 5-5M4 16v4h16v-4" stroke-linecap="round" stroke-linejoin="round"/></svg>上传完整歌曲</button>
+                <button type="button" class="cast full-song-submit" id="full-song-submit"><span class="shine"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V3m0 0L7 8m5-5 5 5M4 16v4h16v-4" stroke-linecap="round" stroke-linejoin="round"/></svg>上传完整歌曲</button>
                 <div id="full-song-status" class="help" role="status" aria-live="polite" style="margin-top:12px;white-space:pre-wrap"></div>
                 <button type="button" id="full-song-refresh" class="mm-clear" hidden>查询任务状态</button>
                 <div class="help" style="margin-top:10px">完整歌曲将上传到云端任务队列。GPU 自动调度尚未启用，当前可验证上传和入队，提交后不会自动开始扒谱。</div>
