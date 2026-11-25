@@ -237,3 +237,28 @@ def test_worker_registration_upsert_cannot_revive_stopping_worker(monkeypatch):
 
     query = conn.fake_cursor.queries[0][0]
     assert "WHERE music_workers.status IN ('starting', 'idle', 'busy')" in query
+
+
+
+def test_worker_heartbeat_sql_rejects_shutdown_states_and_inconsistent_job_state(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"worker_id": "worker-test"}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    assert store.heartbeat_worker("worker-test", "idle") is True
+    query, params = conn.fake_cursor.queries[0]
+    assert "status IN ('starting', 'idle', 'busy')" in query
+    assert "active_job_id IS NULL" in query
+    assert "active_job_id IS NOT NULL" in query
+    assert params == ("idle", "worker-test", "idle", "idle")
+
+
+def test_worker_heartbeat_rejects_non_operational_status():
+    import pytest
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    with pytest.raises(ValueError, match="idle or busy"):
+        store.heartbeat_worker("worker-test", "stopping")
