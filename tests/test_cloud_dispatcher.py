@@ -170,6 +170,7 @@ def test_postgres_capacity_gate_holds_advisory_lock_during_operation(monkeypatch
     assert conn.closed is True
     assert "pg_try_advisory_xact_lock" in conn.fake_cursor.queries[0][0]
     assert "status IN ('starting', 'idle', 'busy', 'stopping')" in conn.fake_cursor.queries[1][0]
+    assert "status = 'error' AND instance_uuid IS NOT NULL" in conn.fake_cursor.queries[1][0]
 
 
 def test_postgres_capacity_gate_fails_fast_when_another_dispatcher_holds_lock(monkeypatch):
@@ -288,9 +289,38 @@ def test_list_stale_idle_workers_is_read_only_and_bounded(monkeypatch):
 
     assert store.list_stale_idle_workers(idle_seconds=600, limit=100) == expected
     query, params = conn.fake_cursor.queries[0]
-    assert "status = 'idle'" in query
+    assert "status IN ('idle', 'error')" in query
     assert "active_job_id IS NULL" in query
     assert "instance_uuid IS NOT NULL" in query
     assert "ORDER BY last_seen_at ASC" in query
     assert "LIMIT %s" in query
     assert params == (600, 25)
+
+
+
+def test_error_worker_with_linked_instance_counts_against_dispatch_capacity(monkeypatch):
+    from musicmaster.cloud.job_store import DispatchCapacityError, PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    conn = FakeConnection([{"acquired": True}, {"total": 1}])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    with pytest.raises(DispatchCapacityError, match="1/1"):
+        store.run_with_dispatch_capacity(1, lambda: "must-not-create-another-gpu")
+
+    query = conn.fake_cursor.queries[1][0]
+    assert "status = 'error' AND instance_uuid IS NOT NULL" in query
+
+
+def test_stale_error_worker_is_included_in_read_only_reconciliation_candidates(monkeypatch):
+    from musicmaster.cloud.job_store import PostgresJobStore
+
+    store = PostgresJobStore("postgresql://unused")
+    expected = [{"worker_id": "worker-error", "instance_uuid": "pro-error", "status": "error"}]
+    conn = FakeConnection([expected])
+    monkeypatch.setattr(store, "_connect", lambda: conn)
+
+    assert store.list_stale_idle_workers(idle_seconds=600, limit=10) == expected
+    query = conn.fake_cursor.queries[0][0]
+    assert "status IN ('idle', 'error')" in query
+    assert "active_job_id IS NULL" in query
