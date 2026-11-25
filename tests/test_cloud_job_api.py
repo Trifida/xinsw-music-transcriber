@@ -64,6 +64,13 @@ class FakeStore:
     def fail_job(self, job_id, worker_id, error, retryable=False):
         return "failed"
 
+    def run_with_dispatch_capacity(self, max_workers, operation):
+        if getattr(self, "capacity_full", False):
+            from musicmaster.cloud.job_store import DispatchCapacityError
+            raise DispatchCapacityError("Worker capacity is full.")
+        self.dispatch_max_workers = max_workers
+        return operation()
+
 
 class FakeObjects:
     def __init__(self):
@@ -382,3 +389,43 @@ def test_dispatcher_endpoint_uses_server_side_autodl_configuration(api, monkeypa
     assert seen["image_uuid"] == "configured-image"
     assert seen["cuda_v_from"] == 124
     assert "bootstrap_token" not in str(response.json()).lower()
+
+
+
+def test_dispatcher_endpoint_enforces_configured_capacity(api, monkeypatch):
+    client, store, _ = api
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    monkeypatch.setenv("MUSICMASTER_API_URL", "https://api.example.test")
+    monkeypatch.setenv("MUSICMASTER_AUTODL_IMAGE_UUID", "configured-image")
+    monkeypatch.setenv("MUSICMASTER_AUTODL_CUDA_V_FROM", "124")
+    monkeypatch.setenv("MUSICMASTER_AUTODL_MAX_WORKERS", "2")
+    monkeypatch.setattr(cloud_api, "AutoDLProClient", lambda: object())
+    monkeypatch.setattr(
+        cloud_api, "create_autodl_worker",
+        lambda **kwargs: {"worker_id": "w", "instance_uuid": "pro-x", "status": "starting"},
+    )
+
+    headers = {"Authorization": "Bearer " + "d" * 40}
+    success = client.post("/api/internal/dispatcher/workers", headers=headers)
+    assert success.status_code == 200
+    assert store.dispatch_max_workers == 2
+
+    store.capacity_full = True
+    full = client.post("/api/internal/dispatcher/workers", headers=headers)
+    assert full.status_code == 409
+    assert full.json()["detail"] == "Worker capacity is full."
+
+
+def test_dispatcher_endpoint_rejects_invalid_capacity_setting(api, monkeypatch):
+    client, _, _ = api
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    monkeypatch.setenv("MUSICMASTER_API_URL", "https://api.example.test")
+    monkeypatch.setenv("MUSICMASTER_AUTODL_IMAGE_UUID", "configured-image")
+    monkeypatch.setenv("MUSICMASTER_AUTODL_CUDA_V_FROM", "124")
+    monkeypatch.setenv("MUSICMASTER_AUTODL_MAX_WORKERS", "0")
+    monkeypatch.setattr(cloud_api, "AutoDLProClient", lambda: object())
+    response = client.post(
+        "/api/internal/dispatcher/workers",
+        headers={"Authorization": "Bearer " + "d" * 40},
+    )
+    assert response.status_code == 503
