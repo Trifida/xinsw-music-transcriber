@@ -38,6 +38,7 @@
     var autoPoll = false;
     var pollTimer = null;
     var queryInFlight = false;
+    var startRequestInFlight = false;
 
     function setBusy(busy) {
       submit.disabled = busy;
@@ -102,8 +103,10 @@
       status.textContent = message;
       if (state === 'completed') renderArtifactLinks(artifacts);
       else if (artifactsContainer) artifactsContainer.textContent = '';
-      start.hidden = state !== 'queued' || autoPoll;
-      start.disabled = state !== 'queued' || autoPoll;
+      // Keep the manual action available while a queued job waits. If a worker
+      // disappears after the initial check, the user can retry without re-uploading.
+      start.hidden = state !== 'queued';
+      start.disabled = state !== 'queued' || startRequestInFlight;
     }
 
     fileInput.addEventListener('change', function () {
@@ -214,7 +217,8 @@
     }
 
     start.addEventListener('click', function () {
-      if (!activeJobId || start.disabled) return;
+      if (!activeJobId || start.disabled || startRequestInFlight) return;
+      startRequestInFlight = true;
       start.disabled = true;
       status.textContent = '正在检查是否有已经运行的 GPU Worker…';
       fetch('/api/cloud/jobs/' + encodeURIComponent(activeJobId) + '/start', { method: 'POST' })
@@ -228,9 +232,11 @@
           autoPoll = true;
           refresh.hidden = false;
           status.textContent = data.message || '已通知正在运行的 GPU Worker 领取任务。';
+          startRequestInFlight = false;
           queryJob(false);
         })
         .catch(function (error) {
+          startRequestInFlight = false;
           status.textContent = error && error.message ? error.message : String(error);
           start.disabled = false;
           start.hidden = false;
