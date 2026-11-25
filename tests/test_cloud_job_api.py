@@ -68,12 +68,17 @@ class FakeStore:
         return True
 
     def add_artifact(self, job_id, worker_id, **kwargs):
+        for row in self.artifacts:
+            if row.get("object_key") == kwargs.get("object_key"):
+                row.update(kwargs)
+                return row
         row = {"id": len(self.artifacts) + 1, **kwargs}
         self.artifacts.append(row)
         return row
 
     def complete_job(self, job_id, worker_id, result):
         self.completed = True
+        self.jobs[str(job_id)]["status"] = "completed"
         return True
 
     def fail_job(self, job_id, worker_id, error, retryable=False):
@@ -362,6 +367,52 @@ def test_worker_artifact_confirmation_and_completion(api):
     )
     assert completed.status_code == 200
     assert store.completed is True
+
+
+def test_worker_artifact_confirmation_is_idempotent(api):
+    client, store, _ = api
+    job_id = uuid4()
+    store.jobs[str(job_id)] = {"id": job_id, "status": "running", "worker_id": "gpu-1"}
+    payload = {
+        "worker_id": "gpu-1",
+        "object_key": f"jobs/{job_id}/artifacts/retry/notes.json",
+        "file_name": "notes.json",
+    }
+    headers = {"Authorization": "Bearer test-worker-secret"}
+
+    first = client.post(
+        f"/api/internal/jobs/{job_id}/artifact-complete", json=payload, headers=headers
+    )
+    second = client.post(
+        f"/api/internal/jobs/{job_id}/artifact-complete", json=payload, headers=headers
+    )
+
+    assert first.status_code == second.status_code == 200
+    assert first.json()["artifact_id"] == second.json()["artifact_id"]
+    assert len(store.artifacts) == 1
+
+
+def test_worker_completion_confirmation_is_idempotent(api):
+    client, store, _ = api
+    job_id = uuid4()
+    store.jobs[str(job_id)] = {"id": job_id, "status": "running", "worker_id": "gpu-1"}
+    store.artifacts.extend([
+        {"id": 1, "file_name": "notes.json"},
+        {"id": 2, "file_name": "out.mid"},
+        {"id": 3, "file_name": "out.musicxml"},
+    ])
+    headers = {"Authorization": "Bearer test-worker-secret"}
+    payload = {"worker_id": "gpu-1", "result": {"status": "completed"}}
+
+    first = client.post(
+        f"/api/internal/jobs/{job_id}/complete", json=payload, headers=headers
+    )
+    second = client.post(
+        f"/api/internal/jobs/{job_id}/complete", json=payload, headers=headers
+    )
+
+    assert first.status_code == second.status_code == 200
+    assert second.json()["status"] == "completed"
 
 
 def test_worker_cannot_confirm_artifact_for_another_job(api):
