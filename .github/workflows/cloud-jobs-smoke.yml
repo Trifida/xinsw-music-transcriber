@@ -1,5 +1,8 @@
 name: Cloud jobs smoke tests
 
+permissions:
+  contents: read
+
 on:
   push:
     branches:
