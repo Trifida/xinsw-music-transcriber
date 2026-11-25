@@ -111,9 +111,11 @@
           if (!data.job_id) throw new Error('服务器没有返回任务编号。');
           activeJobId = data.job_id;
           refresh.hidden = false;
-          status.textContent = '完整歌曲已上传并进入云端队列。\n任务编号：' + activeJobId
-            + '\n当前状态：' + (data.status || 'queued')
-            + '\n注意：GPU 自动调度尚未启用，本次上传只完成入队，不代表已经开始扒谱。';
+          var dispatchMessage = data.dispatch === 'scheduled'
+            ? '\n后台已安排 GPU Worker 调度检查；这不代表 GPU 已经启动，稍后可查询任务状态。'
+            : '\n当前自动 GPU 调度未启用，本次上传只完成入队，不代表已经开始扒谱。';
+          status.textContent = '完整乐曲已上传并进入云端队列。\n任务编号：' + activeJobId
+            + '\n当前状态：' + (data.status || 'queued') + dispatchMessage;
         })
         .catch(function (error) {
           status.textContent = '上传未成功：' + (error && error.message ? error.message : String(error));
