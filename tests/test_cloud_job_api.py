@@ -38,6 +38,9 @@ class FakeStore:
     def get_job(self, job_id):
         return self.jobs.get(str(job_id))
 
+    def count_queued_jobs(self):
+        return sum(1 for row in self.jobs.values() if row.get("status") == "queued")
+
     def list_artifacts(self, job_id):
         return list(self.artifacts)
 
@@ -202,6 +205,41 @@ def test_cloud_upload_schedules_opt_in_dispatch_with_stable_job_key(api, monkeyp
     assert result["dispatch"] == "scheduled"
     assert dispatched == [f"cloud-job-{result['job_id']}"]
     assert store.jobs[result["job_id"]]["status"] == "queued"
+
+
+def test_queued_job_dispatch_sweep_is_opt_in_and_uses_stable_minute_key(api, monkeypatch):
+    client, store, _ = api
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    headers = {"Authorization": "Bearer " + "d" * 40}
+
+    disabled = client.post(
+        "/api/internal/dispatcher/dispatch-queued", headers=headers
+    )
+    assert disabled.status_code == 200
+    assert disabled.json()["status"] == "disabled"
+
+    monkeypatch.setenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", "true")
+    store.jobs["queued-job"] = {"id": "queued-job", "status": "queued"}
+    calls = []
+    monkeypatch.setattr(
+        cloud_api, "provision_cloud_worker",
+        lambda *, idempotency_key: calls.append(idempotency_key) or {
+            "worker_id": "dispatch-test", "status": "starting",
+        },
+    )
+    first = client.post(
+        "/api/internal/dispatcher/dispatch-queued", headers=headers
+    )
+    second = client.post(
+        "/api/internal/dispatcher/dispatch-queued", headers=headers
+    )
+
+    assert first.status_code == 200
+    assert first.json()["status"] == "worker_dispatch_requested"
+    assert first.json()["queued_jobs"] == 1
+    assert second.status_code == 200
+    assert calls[0] == calls[1]
+    assert calls[0].startswith("queue-sweep-")
 
 
 def test_cloud_upload_rejects_oversized_lyrics(api):
