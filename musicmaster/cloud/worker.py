@@ -20,6 +20,10 @@ from pathlib import Path
 from typing import Any
 
 
+class RetryableWorkerError(RuntimeError):
+    """A temporary network or object-storage failure safe to retry once."""
+
+
 def _config() -> tuple[str, str, str, str | None]:
     base = os.environ.get("MUSICMASTER_API_URL", "").strip().rstrip("/")
     token = os.environ.get("MUSICMASTER_WORKER_TOKEN", "").strip()
@@ -85,9 +89,14 @@ def _api(
             raw = response.read()
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:500]
-        raise RuntimeError(f"Worker API HTTP {exc.code}: {detail}") from None
-    except (urllib.error.URLError, TimeoutError) as exc:
-        raise RuntimeError(f"Worker API connection failed: {type(exc).__name__}") from None
+        message = f"Worker API HTTP {exc.code}: {detail}"
+        if exc.code == 429 or exc.code >= 500:
+            raise RetryableWorkerError(message) from None
+        raise RuntimeError(message) from None
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise RetryableWorkerError(
+            f"Worker API connection failed: {type(exc).__name__}"
+        ) from None
     try:
         result = json.loads(raw.decode("utf-8")) if raw else {}
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -102,8 +111,14 @@ def _download(url: str, destination: Path) -> None:
     try:
         with urllib.request.urlopen(request, timeout=1800) as response, destination.open("wb") as out:
             shutil.copyfileobj(response, out, length=1024 * 1024)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 429 or exc.code >= 500:
+            raise RetryableWorkerError(f"Audio download HTTP {exc.code}.") from None
+        raise RuntimeError(f"Audio download HTTP {exc.code}.") from None
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise RuntimeError(f"Audio download failed: {type(exc).__name__}") from None
+        raise RetryableWorkerError(
+            f"Audio download failed: {type(exc).__name__}"
+        ) from None
 
 
 def _put_file(url: str, file_path: Path, content_type: str) -> None:
@@ -128,7 +143,14 @@ def _put_file(url: str, file_path: Path, content_type: str) -> None:
         response = connection.getresponse()
         detail = response.read(500).decode("utf-8", errors="replace")
         if response.status not in (200, 201, 204):
-            raise RuntimeError(f"Artifact upload failed (HTTP {response.status}): {detail}")
+            message = f"Artifact upload failed (HTTP {response.status}): {detail}"
+            if response.status == 429 or response.status >= 500:
+                raise RetryableWorkerError(message)
+            raise RuntimeError(message)
+    except (TimeoutError, OSError) as exc:
+        raise RetryableWorkerError(
+            f"Artifact upload connection failed: {type(exc).__name__}"
+        ) from None
     finally:
         connection.close()
 
@@ -315,7 +337,11 @@ def run() -> int:
                 try:
                     _api(
                         base, token, "POST", f"/api/internal/jobs/{job_id}/fail",
-                        {"worker_id": worker_id, "error": detail[:1000], "retryable": False},
+                        {
+                            "worker_id": worker_id,
+                            "error": detail[:1000],
+                            "retryable": isinstance(exc, RetryableWorkerError),
+                        },
                     )
                 except Exception as report_error:  # noqa: BLE001
                     print(f"[cloud-worker] could not report failure: {type(report_error).__name__}", flush=True)
