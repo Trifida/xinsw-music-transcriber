@@ -225,14 +225,14 @@ def test_stopping_worker_cannot_claim_another_job(monkeypatch):
 
 
 def test_worker_registration_upsert_cannot_revive_stopping_worker(monkeypatch):
-    from musicmaster.cloud.job_store import PostgresJobStore
+    from musicmaster.cloud.job_store import JobStoreError, PostgresJobStore
 
     store = PostgresJobStore("postgresql://unused")
     conn = FakeConnection([None])
     monkeypatch.setattr(store, "_connect", lambda: conn)
 
     import pytest
-    with pytest.raises(Exception, match="record was not created"):
+    with pytest.raises(JobStoreError, match="record was not created"):
         store.register_worker("worker-test", "pro-test")
 
     query = conn.fake_cursor.queries[0][0]
