@@ -168,6 +168,71 @@ def test_find_instance_rejects_incomplete_pagination(monkeypatch):
         client.find_instance("pro-target")
 
 
+def test_find_instances_by_name_scans_all_pages_and_returns_exact_matches(monkeypatch):
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        payload = json.loads(request.data.decode("utf-8"))
+        calls.append(payload["page_index"])
+        page = payload["page_index"]
+        items = (
+            [{"uuid": "pro-other", "name": "other", "status": "running"}]
+            if page == 1 else [
+                {"uuid": "pro-match", "name": "XW-worker", "status": "shutdown",
+                 "created_at": "2026-11-25T10:00:00+08:00"},
+                {"uuid": "pro-near", "name": "XW-worker-extra", "status": "running"},
+            ]
+        )
+        return FakeResponse({"code": "Success", "data": {
+            "list": items, "page_index": page, "page_size": 1, "max_page": 2
+        }, "msg": ""})
+
+    monkeypatch.setattr("musicmaster.cloud.autodl_pro.urlopen", fake_urlopen)
+    client = AutoDLProClient("secret")
+    assert client.find_instances_by_name("XW-worker", page_size=1) == [{
+        "uuid": "pro-match",
+        "name": "XW-worker",
+        "status": "shutdown",
+        "created_at": "2026-11-25T10:00:00+08:00",
+    }]
+    assert calls == [1, 2]
+
+
+def test_find_instances_by_name_returns_all_duplicate_matches(monkeypatch):
+    def fake_urlopen(request, timeout):
+        payload = json.loads(request.data.decode("utf-8"))
+        return FakeResponse({"code": "Success", "data": {
+            "list": [
+                {"uuid": "pro-one", "name": "XW-duplicate"},
+                {"uuid": "pro-two", "name": "XW-duplicate"},
+            ],
+            "page_index": payload["page_index"],
+            "page_size": 100,
+            "max_page": 1,
+        }, "msg": ""})
+
+    monkeypatch.setattr("musicmaster.cloud.autodl_pro.urlopen", fake_urlopen)
+    client = AutoDLProClient("secret")
+    matches = client.find_instances_by_name("XW-duplicate")
+    assert [item["uuid"] for item in matches] == ["pro-one", "pro-two"]
+
+
+def test_find_instances_by_name_rejects_incomplete_or_changed_pagination(monkeypatch):
+    def fake_urlopen(request, timeout):
+        payload = json.loads(request.data.decode("utf-8"))
+        return FakeResponse({"code": "Success", "data": {
+            "list": [],
+            "page_index": payload["page_index"] + 1,
+            "page_size": 100,
+            "max_page": 2,
+        }, "msg": ""})
+
+    monkeypatch.setattr("musicmaster.cloud.autodl_pro.urlopen", fake_urlopen)
+    client = AutoDLProClient("secret")
+    with pytest.raises(AutoDLProError, match="incomplete"):
+        client.find_instances_by_name("XW-worker")
+
+
 def test_rejects_release_with_malformed_id_before_network(monkeypatch):
     called = False
 
