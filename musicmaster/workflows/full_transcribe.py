@@ -74,6 +74,7 @@ def run_full_transcription(
     key: str = "",
     stages: str = "1,2,3",
     denoise: str = "dereverb",
+    lyrics_text: str = "",
     progress_callback: ProgressCallback = None,
 ) -> dict:
     """从整首混音开始，完成分离并对最终主唱轨执行主旋律扒谱。
@@ -136,6 +137,7 @@ def run_full_transcription(
         str(vocal),
         engine,
         key,
+        lyrics_text,
     )
     if not transcribed.get("ok"):
         raise RuntimeError(transcribed.get("message") or "主旋律扒谱失败。")
@@ -145,7 +147,10 @@ def run_full_transcription(
     if missing:
         raise RuntimeError("扒谱流程未生成必要产物：" + "、".join(missing))
 
-    optional = ("staff.svg", "jianpu.pdf", "jianpu.ly", "confidence.json", "报告.md")
+    optional = (
+        "staff.svg", "jianpu.pdf", "jianpu.ly", "confidence.json", "报告.md",
+        "lyrics.txt", "lyrics_alignment.json",
+    )
     transcription_files = {
         name: _relative(transcription_dir / name, root)
         for name in (*required, *optional)
@@ -172,6 +177,10 @@ def run_full_transcription(
             "key": key.strip() or None,
             "input_vocal": _relative(vocal, root),
             "files": transcription_files,
+            "lyrics": transcribed.get("lyrics_info") or {
+                "source": "user-provided" if lyrics_text.strip() else "none",
+                "status": "pending" if lyrics_text.strip() else "not-provided",
+            },
         },
     }
     manifest_path = root / "job_result.json"
