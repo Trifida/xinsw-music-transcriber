@@ -128,6 +128,125 @@
       pre.style.display = result.report_md != null ? '' : 'none';
     }
 
+    // 逐音歌词编辑：每个可唱音符对应一个独立输入框；空白=不填，“—”=拖腔标记。
+    function renderLyricsEditor(job, result) {
+      if (!paneRead) return;
+      var previous = paneRead.querySelector('[data-lyrics-editor]');
+      if (previous) previous.parentNode.removeChild(previous);
+      var slots = result.lyrics_slots;
+      if (!Array.isArray(slots) || !slots.length || !job || !job.id) return;
+
+      var section = document.createElement('section');
+      section.setAttribute('data-lyrics-editor', '');
+      section.style.marginTop = '22px';
+      section.style.padding = '16px';
+      section.style.border = '1px solid var(--border-2)';
+      section.style.borderRadius = '12px';
+      section.style.background = 'var(--surface)';
+      var heading = document.createElement('div');
+      heading.className = 'tt';
+      heading.textContent = '逐音歌词校正';
+      section.appendChild(heading);
+      var help = document.createElement('div');
+      help.className = 'help';
+      help.textContent = '每一行对应一个实际旋律音符。可逐字修改；留空表示该音不填歌词；输入“—”表示拖腔。修改后点击保存，系统会更新 MusicXML 并重新生成简谱、五线谱。';
+      section.appendChild(help);
+
+      var list = document.createElement('div');
+      list.style.maxHeight = '460px';
+      list.style.overflowY = 'auto';
+      list.style.marginTop = '12px';
+      list.style.borderTop = '1px solid var(--border-2)';
+      var fields = [];
+      slots.forEach(function (slot, index) {
+        var row = document.createElement('div');
+        row.style.display = 'grid';
+        row.style.gridTemplateColumns = '48px 58px minmax(0,1fr)';
+        row.style.alignItems = 'center';
+        row.style.gap = '8px';
+        row.style.padding = '7px 2px';
+        row.style.borderBottom = '1px solid var(--border)';
+        var number = document.createElement('span');
+        number.className = 'help';
+        number.textContent = String(index + 1);
+        var pitch = document.createElement('span');
+        pitch.className = 'help';
+        pitch.style.fontWeight = '600';
+        pitch.textContent = slot.pitch || '—';
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.maxLength = 80;
+        input.value = slot.lyric || '';
+        input.placeholder = '歌词 / — / 留空';
+        input.setAttribute('aria-label', '第 ' + (index + 1) + ' 个音符 ' + (slot.pitch || ''));
+        input.style.width = '100%';
+        input.style.minWidth = '0';
+        input.style.padding = '8px 10px';
+        input.style.border = '1px solid var(--border-2)';
+        input.style.borderRadius = '8px';
+        input.style.background = 'var(--surface-2)';
+        input.style.color = 'var(--t1)';
+        fields.push(input);
+        row.appendChild(number);
+        row.appendChild(pitch);
+        row.appendChild(input);
+        list.appendChild(row);
+      });
+      section.appendChild(list);
+
+      var actions = document.createElement('div');
+      actions.style.display = 'flex';
+      actions.style.alignItems = 'center';
+      actions.style.gap = '12px';
+      actions.style.marginTop = '14px';
+      var save = document.createElement('button');
+      save.type = 'button';
+      save.className = 'cast';
+      save.textContent = '保存歌词并重新生成谱面';
+      var status = document.createElement('span');
+      status.className = 'help';
+      actions.appendChild(save);
+      actions.appendChild(status);
+      section.appendChild(actions);
+      paneRead.appendChild(section);
+
+      save.addEventListener('click', function () {
+        save.disabled = true;
+        status.textContent = '正在保存并重新排版…';
+        var assignments = fields.map(function (input) { return input.value.trim(); });
+        fetch('/api/job/' + encodeURIComponent(job.id) + '/lyrics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ assignments: assignments })
+        }).then(function (response) {
+          return response.json().then(function (body) {
+            if (!response.ok) throw new Error(body.detail || ('HTTP ' + response.status));
+            return body;
+          });
+        }).then(function (saved) {
+          result.lyrics_slots = saved.lyrics_slots;
+          result.lyrics_info = saved.lyrics_info;
+          result.staff_svg = saved.staff_svg;
+          result.jianpu_svg = saved.jianpu_svg;
+          result.downloads = saved.downloads || result.downloads;
+          result.lyrics_render_warnings = saved.render_warnings || [];
+          renderRead(result);
+          renderLyricsEditor(job, result);
+          renderSheet(result);
+          renderTake(job, result);
+          var warning = saved.render_warnings && saved.render_warnings.length
+            ? ' 歌词已保存，但部分谱面预览未能更新：' + saved.render_warnings.join('；')
+            : '歌词已保存，MusicXML 和谱面文件已更新。';
+          MM.toast(warning, saved.render_warnings && saved.render_warnings.length ? 'error' : 'success');
+        }).catch(function (error) {
+          status.textContent = '保存失败：' + error.message;
+          MM.toast('歌词保存失败：' + error.message, 'error');
+        }).finally(function () {
+          save.disabled = false;
+        });
+      });
+    }
+
     // 谱面 pane:有 staff_svg 就替换 .sheet 内容
     function renderSheet(result) {
       if (!paneSheet) return;
@@ -193,6 +312,7 @@
         MM.toast(result.message || '记谱以失败收场,但已保留报告与可印源稿。', 'error');
       }
       renderRead(result);
+      renderLyricsEditor(job, result);
       renderSheet(result);
       renderTake(job, result);
       MM.switchOut(panel, 0);
