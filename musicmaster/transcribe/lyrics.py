@@ -72,6 +72,87 @@ def _local_name(element: ET.Element) -> str:
     return element.tag.rsplit("}", 1)[-1]
 
 
+def _note_pitch(note: ET.Element) -> str:
+    pitch = next((child for child in note if _local_name(child) == "pitch"), None)
+    if pitch is None:
+        return ""
+    step = next((child.text or "" for child in pitch if _local_name(child) == "step"), "")
+    alter = next((child.text or "0" for child in pitch if _local_name(child) == "alter"), "0")
+    octave = next((child.text or "" for child in pitch if _local_name(child) == "octave"), "")
+    accidental = {"1": "#", "-1": "b", "0": ""}.get(alter, f"({alter})")
+    return f"{step}{accidental}{octave}"
+
+
+def _lyric_slots(root: ET.Element) -> list[dict]:
+    slots: list[dict] = []
+    note_index = 0
+    for note in (node for node in root.iter() if _local_name(node) == "note"):
+        has_pitch = any(_local_name(child) == "pitch" for child in note)
+        tied_from_previous = any(
+            _local_name(child) == "tie" and child.attrib.get("type") == "stop"
+            for child in note
+        )
+        if has_pitch and not tied_from_previous:
+            lyric = next((child for child in note if _local_name(child) == "lyric"), None)
+            text = ""
+            if lyric is not None:
+                text_node = next((child for child in lyric.iter() if _local_name(child) == "text"), None)
+                text = text_node.text or "" if text_node is not None else ""
+            slots.append({
+                "index": note_index,
+                "pitch": _note_pitch(note),
+                "lyric": text,
+            })
+        note_index += 1
+    return slots
+
+
+def extract_lyric_slots(musicxml_path: str | Path) -> list[dict]:
+    """Return one editable lyric slot per pitched note (excluding tied continuations)."""
+    return _lyric_slots(ET.parse(Path(musicxml_path)).getroot())
+
+
+def apply_lyric_assignments(musicxml_path: str | Path, assignments: Iterable[str]) -> dict:
+    """Replace lyrics by exact note-slot position; empty values clear a slot and '—' is retained."""
+    path = Path(musicxml_path)
+    tree = ET.parse(path)
+    root = tree.getroot()
+    namespace = root.tag[1:].split("}", 1)[0] if root.tag.startswith("{") else ""
+    q = (lambda name: f"{{{namespace}}}{name}") if namespace else (lambda name: name)
+    ET.register_namespace("", namespace) if namespace else None
+    values = [str(value or "").strip() for value in assignments]
+    notes = [node for node in root.iter() if _local_name(node) == "note"]
+    slot_notes = []
+    for note in notes:
+        has_pitch = any(_local_name(child) == "pitch" for child in note)
+        tied_from_previous = any(
+            _local_name(child) == "tie" and child.attrib.get("type") == "stop"
+            for child in note
+        )
+        if has_pitch and not tied_from_previous:
+            slot_notes.append(note)
+    if len(values) != len(slot_notes):
+        raise ValueError(f"歌词槽位数量不匹配：需要 {len(slot_notes)} 个，收到 {len(values)} 个。")
+
+    for note, value in zip(slot_notes, values):
+        for child in list(note):
+            if _local_name(child) == "lyric":
+                note.remove(child)
+        if value:
+            lyric = ET.SubElement(note, q("lyric"))
+            ET.SubElement(lyric, q("syllabic")).text = "single"
+            ET.SubElement(lyric, q("text")).text = value
+
+    tree.write(path, encoding="utf-8", xml_declaration=True)
+    slots = _lyric_slots(root)
+    return {
+        "lyricSlots": len(slots),
+        "assignedCount": sum(1 for item in slots if item["lyric"]),
+        "emptyCount": sum(1 for item in slots if not item["lyric"]),
+        "assignments": slots,
+    }
+
+
 def attach_lyrics_to_musicxml(musicxml_path: str | Path, tokens: Iterable[str]) -> dict:
     """Write lyric tokens onto successive pitched notes in a MusicXML partwise file.
 
