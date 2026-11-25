@@ -14,6 +14,10 @@ def test_tokenize_apostrophes_and_opening_punctuation():
     assert tokenize_lyrics("“don't stop”") == ["“don't", "stop”"]
 
 
+def test_tokenize_em_dash_as_explicit_melisma_slot():
+    assert tokenize_lyrics("春——风") == ["春", "—", "—", "风"]
+
+
 def test_attach_lyrics_skips_rests_and_tied_continuations(tmp_path: Path):
     source = tmp_path / "score.musicxml"
     source.write_text("""<?xml version="1.0" encoding="UTF-8"?>
@@ -48,6 +52,58 @@ def test_unassigned_lyrics_are_reported(tmp_path: Path):
     result = attach_lyrics_to_musicxml(source, ["一", "二"])
     assert result["assignedCount"] == 1
     assert result["unassignedCount"] == 1
+
+
+def test_extract_lyric_slots_skips_rests_and_tied_continuations(tmp_path: Path):
+    from musicmaster.transcribe.lyrics import extract_lyric_slots
+
+    source = tmp_path / "slots.musicxml"
+    source.write_text("""<score-partwise>
+      <part><measure>
+        <note><pitch><step>C</step><octave>4</octave></pitch><lyric><text>春</text></lyric></note>
+        <note><rest/></note>
+        <note><pitch><step>D</step><octave>4</octave></pitch><tie type="start"/></note>
+        <note><pitch><step>D</step><octave>4</octave></pitch><tie type="stop"/></note>
+        <note><pitch><step>E</step><octave>4</octave></pitch></note>
+      </measure></part>
+    </score-partwise>""", encoding="utf-8")
+    assert extract_lyric_slots(source) == [
+        {"index": 0, "pitch": "C4", "lyric": "春"},
+        {"index": 2, "pitch": "D4", "lyric": ""},
+        {"index": 4, "pitch": "E4", "lyric": ""},
+    ]
+
+
+def test_apply_lyric_assignments_preserves_empty_and_melisma_slots(tmp_path: Path):
+    from musicmaster.transcribe.lyrics import apply_lyric_assignments, extract_lyric_slots
+
+    source = tmp_path / "edit.musicxml"
+    source.write_text("""<score-partwise>
+      <part><measure>
+        <note><pitch><step>C</step><octave>4</octave></pitch></note>
+        <note><rest/></note>
+        <note><pitch><step>D</step><octave>4</octave></pitch></note>
+        <note><pitch><step>E</step><octave>4</octave></pitch></note>
+      </measure></part>
+    </score-partwise>""", encoding="utf-8")
+    result = apply_lyric_assignments(source, ["春", "", "—"])
+    assert result["lyricSlots"] == 3
+    assert result["assignedCount"] == 2
+    assert result["emptyCount"] == 1
+    assert [slot["lyric"] for slot in extract_lyric_slots(source)] == ["春", "", "—"]
+
+
+def test_apply_lyric_assignments_rejects_wrong_slot_count(tmp_path: Path):
+    from musicmaster.transcribe.lyrics import apply_lyric_assignments
+
+    source = tmp_path / "count.musicxml"
+    source.write_text(
+        '<score-partwise><part><measure><note><pitch><step>C</step><octave>4</octave></pitch></note></measure></part></score-partwise>',
+        encoding="utf-8",
+    )
+    import pytest
+    with pytest.raises(ValueError, match="槽位数量不匹配"):
+        apply_lyric_assignments(source, [])
 
 
 def test_jianpu_ly_import_keeps_musicxml_lyrics(tmp_path: Path):
