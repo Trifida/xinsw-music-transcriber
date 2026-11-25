@@ -243,46 +243,23 @@ def test_cloud_upload_never_provisions_gpu_even_when_legacy_auto_flag_is_enabled
     assert store.jobs[result["job_id"]]["status"] == "queued"
 
 
-def test_queued_job_dispatch_sweep_is_opt_in_and_uses_stable_minute_key(api, monkeypatch):
+def test_queued_job_dispatch_sweep_stays_disabled_even_with_legacy_flag(api, monkeypatch):
     client, store, _ = api
     monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
-    headers = {"Authorization": "Bearer " + "d" * 40}
-
-    disabled = client.post(
-        "/api/internal/dispatcher/dispatch-queued", headers=headers
-    )
-    assert disabled.status_code == 200
-    assert disabled.json()["status"] == "disabled"
-
     monkeypatch.setenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", "true")
-
-    class FixedDateTime:
-        @staticmethod
-        def now(tz):
-            return datetime(2026, 11, 25, 12, 30, tzinfo=tz)
-
-    monkeypatch.setattr(cloud_api, "datetime", FixedDateTime)
+    headers = {"Authorization": "Bearer " + "d" * 40}
     store.jobs["queued-job"] = {"id": "queued-job", "status": "queued"}
-    calls = []
-    monkeypatch.setattr(
-        cloud_api, "provision_cloud_worker",
-        lambda *, idempotency_key: calls.append(idempotency_key) or {
-            "worker_id": "dispatch-test", "status": "starting",
-        },
-    )
-    first = client.post(
-        "/api/internal/dispatcher/dispatch-queued", headers=headers
-    )
-    second = client.post(
-        "/api/internal/dispatcher/dispatch-queued", headers=headers
-    )
 
-    assert first.status_code == 200
-    assert first.json()["status"] == "worker_dispatch_requested"
-    assert first.json()["queued_jobs"] == 1
-    assert second.status_code == 200
-    assert calls[0] == calls[1]
-    assert calls[0].startswith("queue-sweep-")
+    def forbidden_provision(**kwargs):
+        raise AssertionError("automatic queue dispatch must not provision a GPU")
+
+    monkeypatch.setattr(cloud_api, "provision_cloud_worker", forbidden_provision)
+    response = client.post("/api/internal/dispatcher/dispatch-queued", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "enabled": False, "status": "disabled", "queued_jobs": 0,
+    }
 
 
 def test_cloud_upload_rejects_oversized_lyrics(api):
