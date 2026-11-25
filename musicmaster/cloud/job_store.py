@@ -8,12 +8,19 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
+from typing import Any, Callable, TypeVar
 from uuid import UUID
 
 
 class JobStoreError(RuntimeError):
     """A durable job-store operation failed."""
+
+
+class DispatchCapacityError(RuntimeError):
+    """The dispatcher is already running or the configured worker cap is full."""
+
+
+_T = TypeVar("_T")
 
 
 class PostgresJobStore:
@@ -388,6 +395,41 @@ class PostgresJobStore:
             cur.execute("SELECT count(*) AS total FROM music_jobs WHERE status = 'queued'")
             row = cur.fetchone()
             return int(row["total"] if row else 0)
+
+    def run_with_dispatch_capacity(
+        self, max_workers: int, operation: Callable[[], _T]
+    ) -> _T:
+        """Serialize provisioning and enforce the active-worker cap in Postgres.
+
+        A transaction-scoped advisory lock makes this safe across multiple API
+        processes/instances. The lock is held while the provider operation runs,
+        so a second request fails fast rather than creating another GPU.
+        """
+        cap = int(max_workers)
+        if not 1 <= cap <= 10:
+            raise ValueError("max_workers must be between 1 and 10.")
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT pg_try_advisory_xact_lock(20261125, 1) AS acquired"
+            )
+            lock = cur.fetchone()
+            if not lock or not lock["acquired"]:
+                raise DispatchCapacityError("Another worker provisioning request is active.")
+            cur.execute(
+                """
+                SELECT count(*) AS total
+                FROM music_workers
+                WHERE status IN ('starting', 'idle', 'busy', 'stopping')
+                """
+            )
+            row = cur.fetchone()
+            active = int(row["total"] if row else 0)
+            if active >= cap:
+                raise DispatchCapacityError(
+                    f"Worker capacity is full ({active}/{cap})."
+                )
+            # Keep the transaction/advisory lock open until provisioning finishes.
+            return operation()
 
     def latest_worker(self) -> dict | None:
         with self._connect() as conn, conn.cursor() as cur:
