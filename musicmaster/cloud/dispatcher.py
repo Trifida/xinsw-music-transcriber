@@ -34,6 +34,7 @@ def create_autodl_worker(
     req_gpu_amount: int = 1,
     expand_system_disk_by_gb: int = 0,
     expires_seconds: int = 900,
+    worker_id: str | None = None,
     worker_id_factory: Callable[[], str] | None = None,
 ) -> dict[str, str]:
     """Create a worker, persist its one-time credential, then power it on.
@@ -47,7 +48,11 @@ def create_autodl_worker(
     its ID remains persisted for operator-led recovery; this function
     intentionally does not power off or release paid resources automatically.
     """
-    worker_id = (worker_id_factory or (lambda: "worker-" + uuid.uuid4().hex))()
+    worker_id = (
+        str(worker_id).strip()
+        if worker_id is not None
+        else (worker_id_factory or (lambda: "worker-" + uuid.uuid4().hex))()
+    )
     worker_id = str(worker_id).strip()
     if not worker_id or len(worker_id) > 128:
         raise ValueError("worker_id must contain 1–128 characters.")
