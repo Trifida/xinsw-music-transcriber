@@ -60,6 +60,8 @@ def test_colab_launcher_does_not_install_dependencies_or_provision_gpu():
     assert "create_autodl_worker" not in SOURCE
     assert "subprocess.run" in SOURCE
     assert "subprocess.Popen" not in SOURCE
+    assert "--device" in (ROOT / "scripts" / "setup_sep.py").read_text(encoding="utf-8")
+    assert "https://download.pytorch.org/whl/cpu" in (ROOT / "scripts" / "setup_sep.py").read_text(encoding="utf-8")
 
 
 def test_cpu_runtime_is_accepted_as_a_compute_fallback():
@@ -76,4 +78,5 @@ def test_cpu_runtime_is_accepted_as_a_compute_fallback():
     assert fake_torch.cuda.is_available() is False
     assert fake_torch.cuda.device_count() == 0
     assert "当前 Colab 运行时没有分配可用 CUDA GPU" not in SOURCE
-    assert "当前使用 CPU Runtime" in SOURCE
+    assert "DEVICE=" in SOURCE
+    assert "设备：" in SOURCE
