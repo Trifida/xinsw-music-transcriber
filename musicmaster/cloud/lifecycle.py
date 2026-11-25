@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from musicmaster.cloud.autodl_pro import AutoDLProError
+
 
 STOPPED_PROVIDER_STATES = frozenset({"shutdown", "stopped"})
 RUNNING_PROVIDER_STATES = frozenset({"running"})
@@ -43,7 +45,7 @@ def reconcile_idle_worker(
 
     try:
         provider_status = str(autodl_client.get_status(instance_uuid)).strip().lower()
-    except Exception:
+    except AutoDLProError as status_error:
         # A release may have succeeded at AutoDL while the API process died
         # before the Postgres row was finalized. A failed status lookup alone
         # is not proof: require a complete, paginated instance-list scan.
@@ -53,9 +55,9 @@ def reconcile_idle_worker(
         try:
             listed_instance = find_instance(instance_uuid)
         except Exception:
-            # Keep the original status failure visible; neither failure permits
-            # destructive follow-up or a false stopped transition.
-            raise
+            # Keep the original provider status error visible; neither failure
+            # permits destructive follow-up or a false stopped transition.
+            raise status_error
         if listed_instance is not None:
             return {
                 "worker_id": worker_id,
