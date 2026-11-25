@@ -14,8 +14,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Runtime libraries for TensorFlow, librosa/soundfile, ffmpeg decoding and score rendering.
+# Runtime libraries plus a compiler toolchain for Python packages with native extensions (e.g. diffq).
 RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential \
       ca-certificates \
       ffmpeg \
       fonts-dejavu-core \
