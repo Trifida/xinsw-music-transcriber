@@ -431,6 +431,57 @@ class PostgresJobStore:
             # Keep the transaction/advisory lock open until provisioning finishes.
             return operation()
 
+    def get_worker(self, worker_id: str) -> dict | None:
+        worker = str(worker_id).strip()
+        if not worker or len(worker) > 128:
+            raise ValueError("worker_id must contain 1–128 characters.")
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT worker_id, instance_uuid, status, active_job_id,
+                       last_seen_at, created_at, updated_at
+                FROM music_workers WHERE worker_id = %s
+                """,
+                (worker,),
+            )
+            return cur.fetchone()
+
+    def mark_stale_idle_worker_stopping(
+        self, worker_id: str, *, idle_seconds: int
+    ) -> bool:
+        """Atomically reserve shutdown only for a stale, truly idle worker."""
+        seconds = max(60, min(int(idle_seconds), 86400))
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE music_workers
+                SET status = 'stopping', updated_at = now()
+                WHERE worker_id = %s
+                  AND status = 'idle'
+                  AND active_job_id IS NULL
+                  AND last_seen_at < now() - (%s * interval '1 second')
+                  AND instance_uuid IS NOT NULL
+                RETURNING worker_id
+                """,
+                (str(worker_id).strip(), seconds),
+            )
+            return cur.fetchone() is not None
+
+    def mark_worker_stopped_after_release(self, worker_id: str) -> bool:
+        """Persist stopped only after provider release returned success."""
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE music_workers
+                SET status = 'stopped', active_job_id = NULL,
+                    updated_at = now()
+                WHERE worker_id = %s AND status = 'stopping'
+                RETURNING worker_id
+                """,
+                (str(worker_id).strip(),),
+            )
+            return cur.fetchone() is not None
+
     def latest_worker(self) -> dict | None:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
