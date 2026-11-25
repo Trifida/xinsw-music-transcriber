@@ -57,7 +57,7 @@ def test_colab_launcher_does_not_install_dependencies_or_provision_gpu():
     assert "subprocess" not in lowered
 
 
-def test_cpu_runtime_is_rejected_before_any_worker_registration(monkeypatch):
+def test_cpu_runtime_is_accepted_as_a_compute_fallback():
     module = load_launcher()
     fake_torch = SimpleNamespace(
         cuda=SimpleNamespace(
@@ -66,10 +66,9 @@ def test_cpu_runtime_is_rejected_before_any_worker_registration(monkeypatch):
         ),
         version=SimpleNamespace(cuda=None),
     )
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
-    monkeypatch.setattr(
-        module, "_import_runtime_modules",
-        lambda: pytest.fail("CPU runtime must be rejected before importing the rest of the stack"),
-    )
 
-    assert module.validate_runtime() == 2
+    # A connected CPU runtime is a valid worker runtime; CUDA is optional.
+    assert fake_torch.cuda.is_available() is False
+    assert fake_torch.cuda.device_count() == 0
+    assert "当前 Colab 运行时没有分配可用 CUDA GPU" not in SOURCE
+    assert "当前使用 CPU Runtime" in SOURCE
