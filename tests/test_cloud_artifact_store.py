@@ -74,7 +74,7 @@ def test_add_artifact_rejects_conflict_owned_by_another_job(monkeypatch):
 
 def test_complete_job_accepts_retry_after_same_worker_already_completed(monkeypatch):
     store = PostgresJobStore(dsn="postgresql://unused")
-    connection = _Connection([None, {"id": uuid4()}, {"worker_id": "gpu-worker"}])
+    connection = _Connection([None, {"id": uuid4()}])
     monkeypatch.setattr(store, "_connect", lambda: connection)
 
     assert store.complete_job(uuid4(), "gpu-worker", {"status": "completed"}) is True
@@ -82,4 +82,4 @@ def test_complete_job_accepts_retry_after_same_worker_already_completed(monkeypa
     statements = [statement for statement, _ in connection.cur.statements]
     assert "status = 'completed'" in statements[1]
     assert "worker_id = %s" in statements[1]
-    assert "SET status = 'idle'" in statements[2]
+    assert len(statements) == 2
