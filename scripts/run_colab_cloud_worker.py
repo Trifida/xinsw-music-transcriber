@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Run the durable cloud worker inside an already-allocated Google Colab GPU runtime.
+"""Run the durable cloud worker inside an already-allocated Google Colab CPU or GPU runtime.
 
 This launcher never provisions, powers on, shuts down, or releases a GPU. It
 performs real import checks for the complete V1 processing stack and confirms
-that the separation subprocess will use this same CUDA-enabled interpreter.
+that the separation subprocess will use this same interpreter.
 It performs no pip installs and downloads no weights.
 """
 from __future__ import annotations
@@ -66,24 +66,22 @@ def validate_runtime() -> tuple[str, str] | int:
     if sys.version_info < (3, 10):
         return _fail("项目要求 Python 3.10 或更高版本。")
 
-    # Check GPU first. A CPU runtime must never register as an available GPU worker.
+    # Use the already-connected runtime as-is. CPU is a supported fallback;
+    # this launcher never requests or provisions a GPU.
     try:
         import torch
     except Exception as exc:  # noqa: BLE001
         return _fail(f"无法导入 PyTorch：{type(exc).__name__}: {exc}")
 
-    if not torch.cuda.is_available() or torch.cuda.device_count() < 1:
-        return _fail(
-            "当前 Colab 运行时没有分配可用 CUDA GPU。请在 Colab 选择 GPU 运行时后再启动；"
-            "本脚本不会创建或启动 GPU。"
-        )
-    if not getattr(torch.version, "cuda", None):
-        return _fail("当前 PyTorch 是 CPU 版本，不包含 CUDA 支持。")
-
-    device_name = torch.cuda.get_device_name(0)
-    device_props = torch.cuda.get_device_properties(0)
-    memory_gib = round(device_props.total_memory / (1024 ** 3), 2)
-    print(f"[Colab Worker] GPU：{device_name}，显存 {memory_gib} GiB", flush=True)
+    has_cuda = bool(torch.cuda.is_available() and torch.cuda.device_count() > 0)
+    if has_cuda:
+        device_name = torch.cuda.get_device_name(0)
+        device_props = torch.cuda.get_device_properties(0)
+        memory_gib = round(device_props.total_memory / (1024 ** 3), 2)
+        print(f"[Colab Worker] GPU：{device_name}，显存 {memory_gib} GiB", flush=True)
+    else:
+        device_name = "CPU"
+        print("[Colab Worker] 当前使用 CPU Runtime；任务处理会明显慢于 GPU。", flush=True)
 
     modules, import_errors = _import_runtime_modules()
     if import_errors:
@@ -176,7 +174,7 @@ def validate_runtime() -> tuple[str, str] | int:
         )
     print(f"[Colab Worker] Worker ID：{os.environ['MUSICMASTER_WORKER_ID']}", flush=True)
     print(f"[Colab Worker] API 主机：{parsed.netloc}", flush=True)
-    print("[Colab Worker] 分离子进程已确认使用当前 CUDA Python。", flush=True)
+    print("[Colab Worker] 分离子进程已确认使用当前 Python 解释器。", flush=True)
     print("[Colab Worker] 不会创建 GPU；按 Ctrl+C 可停止本次 Worker。", flush=True)
     return api_url, device_name
 
