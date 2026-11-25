@@ -1,0 +1,61 @@
+# CPU-first cloud worker image.
+# The core and separator runtimes intentionally use separate virtual environments:
+# TensorFlow 2.15 requires NumPy <2, while the validated audio-separator stack uses NumPy 2.
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONUTF8=1 \
+    PYTHONIOENCODING=utf-8 \
+    PYTHONPATH=/app \
+    MUSICMASTER_SEP_PYTHON=/opt/xinsw-sep-venv/bin/python \
+    MUSICMASTER_SEP_MODELS=/models/audio-separator \
+    MUSICMASTER_WORKER_DATA=/tmp/xinsw-worker \
+    MUSICMASTER_WORKER_POLL_SECONDS=5
+
+WORKDIR /app
+
+# Runtime libraries for TensorFlow, librosa/soundfile, ffmpeg decoding and score rendering.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      ffmpeg \
+      fonts-dejavu-core \
+      fonts-noto-cjk \
+      fontconfig \
+      libatomic1 \
+      libgomp1 \
+      libsndfile1 \
+      libstdc++6 \
+      lilypond \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . /app
+
+# Core environment: TensorFlow/CREPE/transcription/rendering.
+RUN python -m venv /opt/xinsw-core-venv \
+    && /opt/xinsw-core-venv/bin/python -m pip install --no-cache-dir --upgrade pip \
+    && /opt/xinsw-core-venv/bin/python -m pip install --no-cache-dir "setuptools<81" wheel \
+    && /opt/xinsw-core-venv/bin/python -m pip install --no-cache-dir -r requirements/locks/core-cpu.txt \
+    && /opt/xinsw-core-venv/bin/python -m pip install --no-cache-dir --no-build-isolation --no-deps /app/vendor/crepe \
+    && if [ -n "$CREPE_MODEL_URL" ]; then CREPE_MODEL_URL="$CREPE_MODEL_URL" /opt/xinsw-core-venv/bin/python scripts/prepare_crepe_model.py; else /opt/xinsw-core-venv/bin/python scripts/prepare_crepe_model.py; fi \
+    && /opt/xinsw-core-venv/bin/python -m pip check \
+    && /opt/xinsw-core-venv/bin/python -c "import tensorflow, librosa, music21, hmmlearn, crepe; from pathlib import Path; import crepe.core; assert (Path(crepe.core.__file__).parent / 'model-full.h5').is_file(); print('core runtime: OK')"
+
+# Separator environment: CPU-only PyTorch + audio-separator.
+# The PyTorch CPU index is explicit so the +cpu wheel pins are resolved exactly.
+RUN python -m venv /opt/xinsw-sep-venv \
+    && /opt/xinsw-sep-venv/bin/python -m pip install --no-cache-dir --upgrade pip \
+    && /opt/xinsw-sep-venv/bin/python -m pip install --no-cache-dir \
+         --index-url https://download.pytorch.org/whl/cpu \
+         --extra-index-url https://pypi.org/simple \
+         -r requirements/locks/separator-cpu.txt \
+    && /opt/xinsw-sep-venv/bin/python -m pip check \
+    && /opt/xinsw-sep-venv/bin/python -c "import torch, torchaudio, torchvision; from audio_separator.separator import Separator; assert torch.__version__.startswith('2.11.0+cpu'); assert torchaudio.__version__.startswith('2.11.0+cpu'); assert torchvision.__version__.startswith('0.26.0+cpu'); assert not torch.cuda.is_available(); print('separator runtime: OK', torch.__version__, torchaudio.__version__, torchvision.__version__)"
+
+# Verify that the worker entry point and the two sides of the runtime bridge import cleanly.
+RUN /opt/xinsw-core-venv/bin/python -c "import musicmaster.cloud.worker, musicmaster.workflows.full_transcribe, musicmaster.web.runners, musicmaster.transcribe.autopilot; print('worker entrypoints: OK')" \
+    && test -x /opt/xinsw-sep-venv/bin/python \
+    && mkdir -p /models/audio-separator /tmp/xinsw-worker
+
+# MUSICMASTER_API_URL and MUSICMASTER_WORKER_TOKEN (or the short-lived bootstrap token)
+# are injected at runtime. No credentials or model weights are baked into this image.
+CMD ["/opt/xinsw-core-venv/bin/python", "-m", "musicmaster.cloud.worker"]
