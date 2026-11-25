@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Run the durable cloud worker inside an already-allocated Google Colab CPU or GPU runtime.
+"""Run the durable worker with separate core and audio-separation environments.
 
-This launcher never provisions, powers on, shuts down, or releases a GPU. It
-performs real import checks for the complete V1 processing stack and confirms
-that the separation subprocess will use this same interpreter.
-It performs no pip installs and downloads no weights.
+This launcher never provisions, powers on, shuts down, or releases a GPU. Core
+transcription dependencies stay isolated from the NumPy 2 / PyTorch separator
+stack. It performs import checks but no pip installs and downloads no weights.
 """
 from __future__ import annotations
 
@@ -24,9 +23,8 @@ DEFAULT_MODEL_DIR = DRIVE_ROOT / "XinsW_Models" / "BS-RoFormer"
 CHECKPOINT = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
 CONFIG = "model_bs_roformer_ep_317_sdr_12.9755.yaml"
 
-# Import the concrete modules used by the actual full-song processing path.
-# Importing only the audio_separator package root is insufficient: the
-# Separator class and torchaudio can still fail later when the first job starts.
+# Modules imported directly by the core transcription / worker process.
+# PyTorch and audio-separator are checked in the dedicated separator venv below.
 REQUIRED_MODULES = (
     "numpy",
     "librosa",
@@ -74,9 +72,6 @@ def validate_runtime() -> tuple[str, str] | int:
             "完整乐曲流程依赖导入失败：" + "；".join(import_errors)
             + "。请按已核验的 Colab 环境方案修复；本脚本不会自动安装或升级依赖。"
         )
-    if not hasattr(modules["audio_separator.separator"], "Separator"):
-        return _fail("audio_separator.separator 已导入，但找不到 Separator 类。")
-
     if not DRIVE_ROOT.is_dir():
         return _fail("Google Drive 尚未挂载，找不到 /content/drive/MyDrive。")
 
@@ -178,7 +173,7 @@ def validate_runtime() -> tuple[str, str] | int:
         )
     print(f"[Colab Worker] Worker ID：{os.environ['MUSICMASTER_WORKER_ID']}", flush=True)
     print(f"[Colab Worker] API 主机：{parsed.netloc}", flush=True)
-    print("[Colab Worker] 分离子进程已确认使用当前 Python 解释器。", flush=True)
+    print("[Colab Worker] 分离子进程已确认使用独立分离 Python 环境。", flush=True)
     print("[Colab Worker] 不会创建 GPU；按 Ctrl+C 可停止本次 Worker。", flush=True)
     return api_url, device_name
 
