@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib
 import os
 import socket
+import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -30,9 +31,6 @@ REQUIRED_MODULES = (
     "numpy",
     "librosa",
     "soundfile",
-    "torch",
-    "torchaudio",
-    "audio_separator.separator",
     "tensorflow",
     "crepe",
     "hmmlearn",
@@ -66,23 +64,10 @@ def validate_runtime() -> tuple[str, str] | int:
     if sys.version_info < (3, 10):
         return _fail("项目要求 Python 3.10 或更高版本。")
 
-    # Use the already-connected runtime as-is. CPU is a supported fallback;
-    # this launcher never requests or provisions a GPU.
-    try:
-        import torch
-    except Exception as exc:  # noqa: BLE001
-        return _fail(f"无法导入 PyTorch：{type(exc).__name__}: {exc}")
-
-    has_cuda = bool(torch.cuda.is_available() and torch.cuda.device_count() > 0)
-    if has_cuda:
-        device_name = torch.cuda.get_device_name(0)
-        device_props = torch.cuda.get_device_properties(0)
-        memory_gib = round(device_props.total_memory / (1024 ** 3), 2)
-        print(f"[Colab Worker] GPU：{device_name}，显存 {memory_gib} GiB", flush=True)
-    else:
-        device_name = "CPU"
-        print("[Colab Worker] 当前使用 CPU Runtime；任务处理会明显慢于 GPU。", flush=True)
-
+    # Core transcription runs in the Python 3.11 core environment.
+    # Audio separation intentionally runs in its own environment because its
+    # current dependency stack requires NumPy 2 while core TensorFlow 2.15
+    # requires NumPy <2. Never mix these incompatible stacks.
     modules, import_errors = _import_runtime_modules()
     if import_errors:
         return _fail(
@@ -115,14 +100,6 @@ def validate_runtime() -> tuple[str, str] | int:
             "不要把凭据写进 Notebook 单元或提交到 GitHub。"
         )
 
-    sep_python = os.environ.get("MUSICMASTER_SEP_PYTHON", "").strip()
-    if sep_python and Path(sep_python).resolve() != Path(sys.executable).resolve():
-        return _fail(
-            "MUSICMASTER_SEP_PYTHON 指向了另一个 Python 环境；"
-            "Colab Worker 必须使用当前已验证 CUDA 的解释器。"
-        )
-
-    os.environ["MUSICMASTER_SEP_PYTHON"] = sys.executable
     os.environ["MUSICMASTER_SEP_MODELS"] = str(model_dir.resolve())
     os.environ.setdefault("MUSICMASTER_WORKER_ID", "colab-" + socket.gethostname()[:100])
     os.environ.setdefault("MUSICMASTER_WORKER_DATA", "/content/xinsw-worker-tmp")
@@ -139,13 +116,40 @@ def validate_runtime() -> tuple[str, str] | int:
     except Exception as exc:  # noqa: BLE001
         return _fail(f"项目工作流导入失败：{type(exc).__name__}: {str(exc)[:200]}")
 
-    if not resolved_sep_python:
-        return _fail("分离子进程没有找到 Python 解释器，MUSICMASTER_SEP_PYTHON 未生效。")
-    if Path(resolved_sep_python).resolve() != Path(sys.executable).resolve():
+    if not resolved_sep_python or not Path(resolved_sep_python).is_file():
         return _fail(
-            "分离子进程解析到的 Python 与当前 CUDA Python 不一致："
-            f"{resolved_sep_python}"
+            "没有找到独立的人声分离 Python 环境。请设置 MUSICMASTER_SEP_PYTHON，"
+            "指向 /content/xinsw-sep-venv/bin/python。"
         )
+
+    # Probe the dedicated separator environment separately. Its NumPy/PyTorch
+    # stack must not be imported into the TensorFlow 2.15 core environment.
+    probe_code = (
+        "import torch, torchaudio; "
+        "from audio_separator.separator import Separator; "
+        "print('TORCH=' + torch.__version__); "
+        "print('TORCHAUDIO=' + torchaudio.__version__); "
+        "print('DEVICE=' + (torch.cuda.get_device_name(0) if "
+        "torch.cuda.is_available() and torch.cuda.device_count() else 'CPU'))"
+    )
+    try:
+        probe = subprocess.run(
+            [resolved_sep_python, "-c", probe_code],
+            capture_output=True, text=True, timeout=90, check=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _fail(f"分离环境检查失败：{type(exc).__name__}: {str(exc)[:200]}")
+    if probe.returncode != 0:
+        detail = (probe.stderr or probe.stdout or "无详细错误").strip()[-500:]
+        return _fail(f"分离环境无法导入 PyTorch / torchaudio / audio-separator：{detail}")
+
+    sep_lines = [line.strip() for line in probe.stdout.splitlines() if line.strip()]
+    sep_info = {line.split("=", 1)[0]: line.split("=", 1)[1]
+                for line in sep_lines if "=" in line}
+    if not all(key in sep_info for key in ("TORCH", "TORCHAUDIO", "DEVICE")):
+        return _fail("分离环境检查没有返回完整版本信息。")
+    device_name = sep_info["DEVICE"]
+    os.environ["MUSICMASTER_SEP_PYTHON"] = str(Path(resolved_sep_python).resolve())
 
     # Stage 2/3 weights may be fetched by audio-separator on first use. Warn,
     # rather than blocking registration: stage 1's BS-RoFormer is the required
@@ -162,9 +166,9 @@ def validate_runtime() -> tuple[str, str] | int:
 
     print("[Colab Worker] 完整乐曲工作流依赖导入通过。", flush=True)
     print(f"[Colab Worker] Python：{sys.executable}", flush=True)
-    print(f"[Colab Worker] PyTorch：{modules['torch'].__version__}；"
-          f"torchaudio：{modules['torchaudio'].__version__}；"
-          f"TensorFlow：{modules['tensorflow'].__version__}", flush=True)
+    print(f"[Colab Worker] 核心 TensorFlow：{modules['tensorflow'].__version__}", flush=True)
+    print(f"[Colab Worker] 分离环境 PyTorch：{sep_info['TORCH']}；"
+          f"torchaudio：{sep_info['TORCHAUDIO']}；设备：{device_name}", flush=True)
     print(f"[Colab Worker] 模型目录：{model_dir.resolve()}", flush=True)
     if missing_optional:
         print(
