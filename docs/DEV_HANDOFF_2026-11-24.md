@@ -405,3 +405,20 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - Reviewed the latest recovery diff: provider name is deterministic and worker-derived; matching scans all pages and detects duplicates; DB linking is conditional on unresolved error state; the endpoint is dispatcher-authenticated and makes no provider mutations.
 - Remaining confidence gap: the Python test suite has not executed in a visible functioning runner. Do not merge or deploy based on static review alone.
 - No AutoDL provider mutation, GPU start/stop/release, production deploy, main merge, or Neon production-main modification occurred.
+
+## 2026-11-25 continued — idempotent manual worker provisioning
+
+- Rechecked PR #12 at HEAD `5d8ddfd2de559ebe63c4f06541b187fd47a03602`: Open / Draft / unmerged; base `main`; head `deploy/v1-production`.
+- Code review identified a duplicate-provisioning gap: the manual dispatcher endpoint previously generated a fresh worker ID on every POST. If a client timed out and retried while capacity allowed multiple workers, the retry could create another paid AutoDL instance.
+- `POST /api/internal/dispatcher/workers` now requires a 16–128 character printable ASCII `Idempotency-Key` header. The server hashes it into a deterministic `dispatch-<sha256>` worker ID; the raw key is neither persisted nor returned.
+- A replay finds the existing worker row and returns its state without creating an AutoDL client or calling create/power_on. An unresolved error row is returned with `retry_safe: false`; it must go through manual instance recovery rather than a new request key.
+- `create_autodl_worker` accepts an optional caller-supplied worker ID while preserving its random-ID behavior for other callers.
+- Added API tests for missing key, stable worker ID, replay behavior, and distinct keys against the capacity gate. Updated worker source bundle documentation.
+- No database migration was added: the existing unique worker ID is the durable idempotency record. No AutoDL API was called; no GPU was created, powered on/off, or released.
+- CI at the pre-change HEAD `5d8ddfd2de559ebe63c4f06541b187fd47a03602` again failed in 1–2 seconds. All three checks (runner diagnostic, cloud-jobs, legacy-jianpu) had `steps: null` and `logs_url: null`; GitHub check runs each showed one annotation but the annotations endpoint was unavailable through the current integration. No pytest execution is confirmed.
+
+### Next
+1. Review the idempotency implementation and tests at the new HEAD.
+2. Restore a functioning Actions runner or run focused tests in a real Linux/Python environment; do not claim tests passed until an actual test process runs.
+3. Before using the endpoint, callers must generate and retain one unique idempotency key per intentional worker request, reusing that exact key for all retries.
+4. Keep all AutoDL provider mutations, production deployment, main merge, and Neon production changes behind explicit authorization.
