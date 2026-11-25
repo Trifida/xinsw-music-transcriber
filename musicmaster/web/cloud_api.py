@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import os
 import re
 import uuid
@@ -15,7 +16,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from fastapi.encoders import jsonable_encoder
 
@@ -27,6 +28,7 @@ from musicmaster.cloud.lifecycle import reconcile_idle_worker
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".mp3", ".wav", ".flac", ".m4a", ".ogg"}
 SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._()\-\u4e00-\u9fff]+")
@@ -232,6 +234,31 @@ def provision_cloud_worker(
     return result
 
 
+def _auto_dispatch_enabled() -> bool:
+    return os.environ.get("MUSICMASTER_AUTODL_AUTO_DISPATCH", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def _dispatch_cloud_job(job_id: str) -> None:
+    """Provision a worker after upload only when the explicit feature flag is enabled."""
+    if not _auto_dispatch_enabled():
+        return
+    try:
+        result = provision_cloud_worker(idempotency_key=f"cloud-job-{job_id}")
+        logger.info(
+            "Cloud job %s dispatch check: worker=%s status=%s",
+            job_id, result.get("worker_id"), result.get("status"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        # The durable job remains queued. A later dispatch attempt can safely
+        # replay the same idempotency key without creating a duplicate worker.
+        logger.exception(
+            "Cloud job %s remains queued after worker dispatch error: %s",
+            job_id, type(exc).__name__,
+        )
+
+
 @router.post(
     "/api/internal/dispatcher/workers/{worker_id}/recover-instance",
     dependencies=[Depends(_dispatcher_auth)],
@@ -396,6 +423,7 @@ def reconcile_idle_cloud_workers(request: WorkerSweepRequest) -> dict:
 
 @router.post("/api/cloud/jobs")
 def create_cloud_job(
+    background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     engine: str = Form("crepe"),
     key: str = Form(""),
@@ -457,7 +485,10 @@ def create_cloud_job(
         if isinstance(exc, HTTPException):
             raise
         raise HTTPException(status_code=503, detail=f"任务提交失败：{type(exc).__name__}") from None
-    return {"job_id": str(job_id), "status": "queued"}
+    dispatch = "scheduled" if _auto_dispatch_enabled() else "disabled"
+    if dispatch == "scheduled":
+        background_tasks.add_task(_dispatch_cloud_job, str(job_id))
+    return {"job_id": str(job_id), "status": "queued", "dispatch": dispatch}
 
 
 @router.get("/api/cloud/jobs/{job_id}")
