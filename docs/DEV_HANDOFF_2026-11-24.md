@@ -459,3 +459,10 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - 未修改 Neon production main，未部署 Render 生产服务，未合并 PR。
 - 所有本轮新增测试均为“已编写、待真实运行”，不能标记为通过。
 - 下一步先核验最新 HEAD 的 workflow 结果，再恢复测试运行；随后优先补齐逐音歌词编辑，而不是继续堆叠未验证的云调度功能。
+
+### Final check snapshot for this continuation
+
+- After the roadmap and handoff commits, PR #12 HEAD was 83a0cf9cc1e0beb1340aa50c9691a3c4c7152c29 (159 commits, 32 changed files; still Draft / Open / unmerged).
+- On that HEAD, the CI runner diagnostic, cloud-jobs, and legacy-jianpu checks again failed within approximately 1–2 seconds. The latest Jobs API responses had steps=null and logs_url=null. The check-run API showed one annotation per failed check but its annotation endpoint was not accessible through the current GitHub integration. No pytest execution is confirmed.
+- New cloud-lyrics tests and the advisory-lock idempotency-race regression test are therefore authored but unverified.
+- The product roadmap snapshot is in docs/PRODUCT_ROADMAP_V1_V2.md. It explicitly corrects the prior overstatement about per-note lyric editing: current checked-in UI has a whole-lyrics text area and automatic first-pass alignment, but no per-note editing and save-back workflow was found.
