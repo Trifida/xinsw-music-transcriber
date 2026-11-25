@@ -588,6 +588,44 @@ class PostgresJobStore:
             )
             return cur.fetchone() is not None
 
+    def recover_worker_instance(self, worker_id: str, instance_uuid: str) -> bool:
+        """Link a uniquely discovered provider instance to an unresolved error worker.
+
+        This changes database state only. It never powers on, powers off, or
+        releases the provider instance.
+        """
+        worker = str(worker_id).strip()
+        value = str(instance_uuid).strip()
+        if not worker or len(worker) > 128:
+            raise ValueError("worker_id must contain 1–128 characters.")
+        if not value.startswith("pro-") or len(value) > 80:
+            raise ValueError("Invalid AutoDL Pro instance ID.")
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE music_workers
+                SET instance_uuid = %s, updated_at = now()
+                WHERE worker_id = %s
+                  AND status = 'error'
+                  AND instance_uuid IS NULL
+                  AND active_job_id IS NULL
+                RETURNING worker_id
+                """,
+                (value, worker),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return False
+            cur.execute(
+                """
+                UPDATE music_worker_bootstrap_tokens
+                SET instance_uuid = %s
+                WHERE worker_id = %s AND instance_uuid IS NULL
+                """,
+                (value, worker),
+            )
+            return True
+
     def issue_bootstrap_token(
         self, token_hash: str, worker_id: str, *, expires_seconds: int = 900
     ) -> None:
