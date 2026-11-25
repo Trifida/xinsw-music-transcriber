@@ -270,3 +270,5 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 2. Add a bounded batch stale-idle sweep endpoint (dry-run by default; no provider mutations in dry-run), still manual-only.
 3. Add durable queue-trigger/idempotency before enabling any automatic provisioning.
 4. Keep all production, Neon-main, Render deploy, and paid AutoDL operations behind explicit authorization.
+
+- Follow-up hardening: status recovery catches only the AutoDL provider API error type (not arbitrary programming exceptions), preserves the original status error if the list lookup also fails, and accepts a valid empty listing (`max_page: 0`, empty list) while rejecting inconsistent zero-page responses.
