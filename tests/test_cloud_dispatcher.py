@@ -327,6 +327,47 @@ def test_stale_error_worker_is_included_in_read_only_reconciliation_candidates(m
 
 
 
+def test_create_worker_uses_supplied_stable_worker_id(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        dispatcher, "build_worker_start_command",
+        lambda api_url, token: "safe-start-command",
+    )
+
+    class Store:
+        def prepare_worker(self, worker_id):
+            calls.append(("prepare", worker_id))
+
+        def issue_bootstrap_token(self, token_hash, worker_id, expires_seconds=900):
+            calls.append(("token", worker_id))
+
+        def set_bootstrap_instance(self, token_hash, instance_uuid):
+            return True
+
+        def set_worker_instance(self, worker_id, instance_uuid):
+            return True
+
+    class AutoDL:
+        def create_instance(self, **kwargs):
+            calls.append(("create", kwargs["instance_name"]))
+            return "pro-stable"
+
+        def power_on(self, instance_uuid, start_command=None):
+            calls.append(("power_on", instance_uuid))
+
+    result = dispatcher.create_autodl_worker(
+        store=Store(),
+        autodl_client=AutoDL(),
+        api_url="https://api.example.test",
+        image_uuid="image",
+        cuda_v_from=124,
+        worker_id="dispatch-stable-request",
+    )
+    assert result["worker_id"] == "dispatch-stable-request"
+    assert calls[0] == ("prepare", "dispatch-stable-request")
+    assert calls[2] == ("create", dispatcher.worker_instance_name("dispatch-stable-request"))
+
+
 def test_worker_instance_name_is_deterministic_compact_and_distinct():
     first = dispatcher.worker_instance_name("worker-alpha")
     assert first == dispatcher.worker_instance_name("worker-alpha")
