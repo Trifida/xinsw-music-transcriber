@@ -54,7 +54,7 @@ def main(model_dir: Path | None = None) -> int:
         print(f"CREPE full model already present: {model} ({model.stat().st_size} bytes)")
         return 0
 
-    url = os.environ.get("CREPE_MODEL_URL", DEFAULT_URL).strip()
+    url = os.environ.get("CREPE_MODEL_URL", "").strip() or DEFAULT_URL
     if not url.lower().startswith("https://"):
         print("ERROR: CREPE_MODEL_URL must use HTTPS.", file=sys.stderr)
         return 2
