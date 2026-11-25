@@ -350,3 +350,21 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - Because this diagnostic contains no checkout, setup action, dependency installation, Python test, or repository code, the failure occurs before any authored shell step can be confirmed as executed.
 - This is strong evidence of a GitHub Actions job/runner provisioning or reporting problem, not evidence of a failing application test. The exact GitHub-side root cause remains unconfirmed because the job exposes no steps, annotations, or logs.
 - Do not keep changing application code to chase these failures. The next CI task is to inspect repository Actions settings/hosted-runner availability and GitHub service/account restrictions in the GitHub UI or account owner settings. Then rerun the minimal diagnostic. Only after it succeeds should cloud and jianpu pytest workflows be used as code-quality gates.
+
+## 2026-11-25 continued — unresolved AutoDL create timeout safety
+
+- Rechecked PR #12 before editing: Open / Draft / unmerged; branch `deploy/v1-production`; HEAD was `5cfc171a658025b737de03b43a9eed6435e9a0e4`.
+- Reviewed the AutoDL create call window. If AutoDL creates a paid instance but the response is lost/times out before `instance_uuid` is persisted, the worker is marked `error` with no linked instance ID. The prior capacity query excluded this row, which could permit a second paid create request.
+- Fixed `PostgresJobStore.run_with_dispatch_capacity()`: every `error` worker now reserves capacity, whether or not `instance_uuid` is known. This intentionally trades temporary capacity blockage for protection against duplicate paid instances. An unresolved error row requires operator investigation before another provisioning attempt.
+- Updated `tests/test_cloud_dispatcher.py` to assert that unresolved error rows are included in the capacity predicate, including the no-instance-ID case. Updated `docs/WORKER_SOURCE_BUNDLE.md` with the operational rule.
+- Commits from this safety fix: `7b8b00c73071a87f6330c4234ecefd604610483c` (capacity SQL), `ac278a49c1af1863ec22aaa64c66afa329036100` (regression test), followed by the documentation commits recorded below.
+- Latest CI snapshot before this fix: on HEAD `5cfc171a658025b737de03b43a9eed6435e9a0e4`, the minimal runner diagnostic, cloud-jobs, and legacy-jianpu jobs all failed in 1–2 seconds. All three jobs had `steps: null` and `logs_url: null`; log downloads returned BlobNotFound. The GitHub check-run records each had one annotation, but the current GitHub fetch surface rejected the annotations endpoint. No pytest execution can be confirmed.
+- GitHub's public status history contains resolved Actions incidents earlier in November, but that does not establish a current incident or explain this repository's failures. The current observed failure remains unclassified at the GitHub job/check layer.
+- No CI tests have been represented as passing. No paid AutoDL create/start/power-off/release API was called. No production deploy, main merge, or Neon production-main change occurred.
+
+### Next actions
+1. Recheck the new HEAD and its workflow runs after the documentation commits.
+2. Investigate the check-run annotation through the GitHub web UI or repository owner account; the API currently shows only annotation count, with no accessible step/log details.
+3. Run the focused dispatcher/lifecycle/bootstrap pytest suites in a functioning Linux/Python environment before relying on the change.
+4. Design an operator recovery path for ambiguous `error` rows with no instance ID. Do not automatically retry or free capacity based only on a missing ID; AutoDL create may have succeeded remotely.
+5. Keep all paid provider mutations, production deployment, main merge, and Neon production changes behind explicit user authorization.
