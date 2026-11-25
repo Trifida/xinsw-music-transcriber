@@ -185,3 +185,14 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - GitHub 长期令牌不得进入 GPU。
 - 不将 Worker Token 写入代码包、文件或日志。
 - 所有生产环境变量、数据库和部署变更必须先获得用户明确授权。
+
+
+## 2026-11-25 continued — self-contained AutoDL bootstrap carrier
+
+- Rechecked PR #12 live: still open, Draft, base `main`, head `deploy/v1-production`; no merge or deployment. At the start of this work the head was `7b563bdead40679994fc92bac8914ca1694e76dd`.
+- Confirmed the real API response contract in `musicmaster/web/cloud_api.py`: bootstrap exchange returns `worker_token`, `worker_id`, `instance_uuid`; worker bundle manifest returns `repository_commit`, `sha256`, `object_key`, `url`. These match the bootstrap helper.
+- Added `build_worker_start_command(api_url, bootstrap_token)` in `musicmaster/cloud/autodl_pro.py`. It embeds a compressed copy of the bootstrap helper into the AutoDL startup command, so a fresh image can fetch the pinned source bundle without a preinstalled repository checkout. The command uses only a short-lived, single-use bootstrap token, exchanges it for the worker token, removes the bootstrap token from the process environment, and execs the launcher from the verified bundle.
+- Added unit tests for embedded helper integrity, HTTPS URL validation, and bootstrap-token length. Updated `docs/WORKER_SOURCE_BUNDLE.md` with the no-preinstalled-checkout flow and provider command-history sensitivity.
+- This builder is not yet wired into a complete dispatcher/token-issuance workflow. The caller must create a short-expiry single-use bootstrap token and pass the generated command into `AutoDLProClient.create_instance(start_command=...)` or `power_on(start_command=...)`. No GPU instance was created or powered on.
+- GitHub Actions still reports failed jobs with `steps: null` and `logs_url: null`; no usable logs or artifacts are available. Tests are authored but not yet verified by a functioning CI execution.
+- Next: inspect the actual generated command with `bash -n` in a Linux test environment; run the focused pytest suites; wire token issuance and generated start command into the dispatcher only after lifecycle safety checks; then revisit Actions runner/log availability.
