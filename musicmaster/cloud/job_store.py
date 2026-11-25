@@ -315,15 +315,16 @@ class PostgresJobStore:
             cur.execute(
                 """
                 INSERT INTO music_job_artifacts
-                    (job_id, object_key, file_name, role, content_type, size_bytes)
-                SELECT j.id, %s, %s, %s, %s, %s
+                    (job_id, object_key, file_name, role, content_type, size_bytes, attempt_count)
+                SELECT j.id, %s, %s, %s, %s, %s, j.attempt_count
                 FROM music_jobs AS j
                 WHERE j.id = %s AND j.worker_id = %s AND j.status = 'running'
                 ON CONFLICT (object_key) DO UPDATE
                 SET file_name = EXCLUDED.file_name,
                     role = EXCLUDED.role,
                     content_type = EXCLUDED.content_type,
-                    size_bytes = EXCLUDED.size_bytes
+                    size_bytes = EXCLUDED.size_bytes,
+                    attempt_count = EXCLUDED.attempt_count
                 WHERE music_job_artifacts.job_id = EXCLUDED.job_id
                 RETURNING *
                 """,
@@ -343,8 +344,12 @@ class PostgresJobStore:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, object_key, file_name, role, content_type, size_bytes, created_at
-                FROM music_job_artifacts WHERE job_id = %s ORDER BY id
+                SELECT a.id, a.object_key, a.file_name, a.role,
+                       a.content_type, a.size_bytes, a.created_at
+                FROM music_job_artifacts AS a
+                JOIN music_jobs AS j ON j.id = a.job_id
+                WHERE a.job_id = %s AND a.attempt_count = j.attempt_count
+                ORDER BY a.id
                 """,
                 (self._uuid(job_id),),
             )
