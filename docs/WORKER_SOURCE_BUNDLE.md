@@ -48,11 +48,10 @@ do not match the configured commit and checksum.
 ## AutoDL bootstrap sequence
 
 A fresh AutoDL image does **not** need a preinstalled repository checkout.
-On the trusted API host, call
-`build_worker_start_command(api_url, bootstrap_token)` from
-`musicmaster.cloud.autodl_pro`, then pass the returned string as the
-`start_command` argument to `AutoDLProClient.create_instance(...)` (or
-`power_on(...)`). The builder embeds a compressed copy of the small
+On the trusted API host, the manual provisioning endpoint invokes
+`create_autodl_worker(...)` from `musicmaster.cloud.dispatcher`. The orchestration
+uses `build_worker_start_command(api_url, bootstrap_token)` internally. The
+builder embeds a compressed copy of the small
 `scripts/bootstrap_worker_bundle.py` helper directly in the startup command.
 The instance writes that helper to a temporary file, runs it, and downloads
 the complete pinned source archive. The verified archive then supplies the
@@ -61,16 +60,14 @@ normal worker launcher and all application code.
 The startup command carries only the short-lived, single-use
 `MUSICMASTER_BOOTSTRAP_TOKEN`; it never embeds a GitHub token or long-lived
 worker token. Calling the manual endpoint can incur GPU charges, so keep the
-dispatcher credential private and do not expose this route to the public UI. Because the startup command is sent to AutoDL as instance
-configuration, create a short-expiry bootstrap token immediately before
-starting the instance and treat the provider's command/configuration history
-as sensitive until that token has been consumed or expired. The builder
-validates the API URL and token length. The trusted API host can now call
-`create_autodl_worker(...)` from `musicmaster.cloud.dispatcher` to create the
-worker row, issue a hashed one-time token, create an instance without a startup
-command, persist the instance ID, and only then power it on with the generated
-command. This ordering prevents a fast boot from consuming the token before
-the instance ID has been attached to its database record.
+dispatcher credential private and do not expose this route to the public UI.
+Because the startup command is sent to AutoDL as instance configuration, the
+one-time token remains sensitive until consumed or expired. The dispatcher
+creates the worker row, stores only a SHA-256 token hash, creates the instance
+without a startup command, persists the instance ID, and only then powers it
+on with the generated command. This ordering prevents a fast boot from
+consuming the token before the instance ID has been attached to its database
+record.
 
 The bootstrap helper performs these steps before installing model dependencies:
 
