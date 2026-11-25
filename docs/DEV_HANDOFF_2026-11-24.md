@@ -422,3 +422,12 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 2. Restore a functioning Actions runner or run focused tests in a real Linux/Python environment; do not claim tests passed until an actual test process runs.
 3. Before using the endpoint, callers must generate and retain one unique idempotency key per intentional worker request, reusing that exact key for all retries.
 4. Keep all AutoDL provider mutations, production deployment, main merge, and Neon production changes behind explicit authorization.
+
+## Idempotency follow-up implementation details — 2026-11-25
+
+- The dispatcher route now validates `Idempotency-Key` (16–128 printable ASCII characters) and derives the worker ID as `dispatch-` plus the full SHA-256 digest.
+- It checks `PostgresJobStore.get_worker()` before provisioning. Any existing row is returned as an idempotent replay, including unresolved errors; replay never constructs `AutoDLProClient` and never calls `create_autodl_worker`.
+- The deterministic worker ID is passed into `create_autodl_worker(worker_id=...)`. Its prior random worker-ID behavior remains the default for other callers.
+- Added tests for missing keys, stable worker ID propagation, idempotent replay without provider access, and distinct keys through the capacity gate. The invalid-capacity test now supplies a valid key.
+- No migration was added; the worker primary key is the durable replay record. A concurrent same-key request may receive the existing fail-fast 409 while the first request holds the advisory lock; retrying with the same key after the first completes returns its durable record.
+- On HEAD `cb2fc2113bb3f28d1da537be6ffb5a12cc904675`, all three GitHub Actions checks (cloud-jobs, runner diagnostic, legacy-jianpu) again failed immediately with `steps: null` and `logs_url: null`. This does not confirm pytest execution.
