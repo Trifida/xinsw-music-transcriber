@@ -77,6 +77,32 @@ def _local_name(element: ET.Element) -> str:
     return element.tag.rsplit("}", 1)[-1]
 
 
+def _is_tied_from_previous(note: ET.Element) -> bool:
+    """Recognize both MusicXML's legacy <tie> and notation-level <tied> stop markers."""
+    return any(
+        _local_name(child) in {"tie", "tied"} and child.attrib.get("type") == "stop"
+        for child in note.iter()
+    )
+
+
+def _set_note_lyric(note: ET.Element, value: str, q) -> None:
+    """Replace a note lyric while keeping MusicXML's lyric/play/listen child order."""
+    for child in list(note):
+        if _local_name(child) == "lyric":
+            note.remove(child)
+    if not value:
+        return
+    lyric = ET.Element(q("lyric"))
+    ET.SubElement(lyric, q("syllabic")).text = "single"
+    ET.SubElement(lyric, q("text")).text = value
+    insert_at = next(
+        (index for index, child in enumerate(list(note))
+         if _local_name(child) in {"play", "listen"}),
+        len(note),
+    )
+    note.insert(insert_at, lyric)
+
+
 def _note_pitch(note: ET.Element) -> str:
     pitch = next((child for child in note if _local_name(child) == "pitch"), None)
     if pitch is None:
@@ -93,10 +119,7 @@ def _lyric_slots(root: ET.Element) -> list[dict]:
     note_index = 0
     for note in (node for node in root.iter() if _local_name(node) == "note"):
         has_pitch = any(_local_name(child) == "pitch" for child in note)
-        tied_from_previous = any(
-            _local_name(child) == "tie" and child.attrib.get("type") == "stop"
-            for child in note
-        )
+        tied_from_previous = _is_tied_from_previous(note)
         if has_pitch and not tied_from_previous:
             lyric = next((child for child in note if _local_name(child) == "lyric"), None)
             text = ""
@@ -130,23 +153,14 @@ def apply_lyric_assignments(musicxml_path: str | Path, assignments: Iterable[str
     slot_notes = []
     for note in notes:
         has_pitch = any(_local_name(child) == "pitch" for child in note)
-        tied_from_previous = any(
-            _local_name(child) == "tie" and child.attrib.get("type") == "stop"
-            for child in note
-        )
+        tied_from_previous = _is_tied_from_previous(note)
         if has_pitch and not tied_from_previous:
             slot_notes.append(note)
     if len(values) != len(slot_notes):
         raise ValueError(f"歌词槽位数量不匹配：需要 {len(slot_notes)} 个，收到 {len(values)} 个。")
 
     for note, value in zip(slot_notes, values):
-        for child in list(note):
-            if _local_name(child) == "lyric":
-                note.remove(child)
-        if value:
-            lyric = ET.SubElement(note, q("lyric"))
-            ET.SubElement(lyric, q("syllabic")).text = "single"
-            ET.SubElement(lyric, q("text")).text = value
+        _set_note_lyric(note, value, q)
 
     tree.write(path, encoding="utf-8", xml_declaration=True)
     slots = _lyric_slots(root)
@@ -173,23 +187,19 @@ def attach_lyrics_to_musicxml(musicxml_path: str | Path, tokens: Iterable[str]) 
 
     slots: list[ET.Element] = []
     for note in (node for node in root.iter() if _local_name(node) == "note"):
-        for child in list(note):
-            if _local_name(child) == "lyric":
-                note.remove(child)
         has_pitch = any(_local_name(child) == "pitch" for child in note)
-        tied_from_previous = any(
-            _local_name(child) == "tie" and child.attrib.get("type") == "stop"
-            for child in note
-        )
+        tied_from_previous = _is_tied_from_previous(note)
         if has_pitch and not tied_from_previous:
             slots.append(note)
+        else:
+            for child in list(note):
+                if _local_name(child) == "lyric":
+                    note.remove(child)
 
     lyric_tokens = [str(token) for token in tokens if str(token)]
     assigned = min(len(lyric_tokens), len(slots))
     for note, token in zip(slots, lyric_tokens[:assigned]):
-        lyric = ET.SubElement(note, q("lyric"))
-        ET.SubElement(lyric, q("syllabic")).text = "single"
-        ET.SubElement(lyric, q("text")).text = token
+        _set_note_lyric(note, token, q)
 
     tree.write(path, encoding="utf-8", xml_declaration=True)
     return {
