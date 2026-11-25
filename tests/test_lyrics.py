@@ -109,7 +109,7 @@ def test_apply_lyric_assignments_rejects_wrong_slot_count(tmp_path: Path):
 def test_join_lyric_slots_keeps_latin_word_spacing_without_chinese_spaces():
     from musicmaster.transcribe.lyrics import join_lyric_slots
 
-    assert join_lyric_slots(["春", "风，", "Hello", "world!", "你", "好"]) == "春风，Hello world!你好"
+    assert join_lyric_slots(["春", "风，", "Hello", "world!", "Again", "你", "好"]) == "春风，Hello world! Again你好"
     assert join_lyric_slots(["", "Hello", "", "world"]) == "Hello world"
 
 
