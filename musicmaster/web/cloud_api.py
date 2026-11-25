@@ -17,7 +17,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from fastapi.encoders import jsonable_encoder
 
@@ -408,7 +408,6 @@ def reconcile_idle_cloud_workers(request: WorkerSweepRequest) -> dict:
 
 @router.post("/api/cloud/jobs")
 def create_cloud_job(
-    background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     engine: str = Form("crepe"),
     key: str = Form(""),
