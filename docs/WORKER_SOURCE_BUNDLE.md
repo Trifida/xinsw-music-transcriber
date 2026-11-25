@@ -110,7 +110,8 @@ The manual provisioning endpoint runs through
 `PostgresJobStore.run_with_dispatch_capacity(max_workers, operation)`.
 It acquires a transaction-scoped PostgreSQL advisory lock using
 `pg_try_advisory_xact_lock`, counts workers in `starting`, `idle`, `busy`,
-or `stopping`, and rejects provisioning if another dispatcher is active or
+`stopping`, or `error` (including error rows without a known instance ID),
+and rejects provisioning if another dispatcher is active or
 the configured capacity is full. The lock remains held until the AutoDL
 create/persist/power-on operation returns. Configure
 `MUSICMASTER_AUTODL_MAX_WORKERS` to an integer from 1 through 10; the default
@@ -179,3 +180,38 @@ status-confirmation rules.
 ### Unresolved provisioning errors reserve capacity
 
 The capacity query counts **all** worker rows in `starting`, `idle`, `busy`, `stopping`, or `error`, including error rows with no linked AutoDL instance ID. This is intentionally conservative: the AutoDL create request may have succeeded remotely while its response was lost or timed out before the instance ID could be persisted. Such a row is an unresolved provisioning intent and must not silently free a slot for another paid create request. Resolve it through operator investigation before retrying provisioning.
+
+
+
+## Recovery after an ambiguous AutoDL create timeout
+
+Every newly provisioned worker receives a deterministic, compact AutoDL
+`instance_name` label derived from its worker ID (`XW-<24 hex characters>`).
+If the create request times out after AutoDL may have accepted it but before
+the API host receives/persists the instance UUID, the worker remains in
+`error` and continues to reserve capacity.
+
+A dispatcher-authenticated, manual recovery endpoint is available:
+
+`POST /api/internal/dispatcher/workers/{worker_id}/recover-instance`
+
+It only accepts an `error` worker with no linked instance and no active job.
+It scans the complete paginated AutoDL instance list and compares the exact
+provider `name` label:
+
+- Exactly one match: link that UUID to the worker and its bootstrap-token row.
+  This is a database-only operation; it does not power on, power off, or
+  release the provider instance.
+- No match: leave the worker unchanged and return `retry_safe: false`.
+  AutoDL listing may lag a create request, so absence from one complete scan
+  is not proof that retrying creation is safe. Wait and check again.
+- More than one match: leave the worker unchanged and report ambiguity. Never
+  guess which paid instance belongs to the worker.
+- Incomplete, malformed, or unavailable pagination: fail closed; do not link
+  an instance or clear the capacity reservation.
+
+This deterministic label is applied only to newly created workers. Older
+ambiguous error rows that were created with the former generic instance name
+cannot be automatically matched by this mechanism and require manual
+investigation in the AutoDL console. The endpoint is not called automatically
+and performs no provider mutation.
