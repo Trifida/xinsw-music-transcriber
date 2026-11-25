@@ -212,3 +212,12 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - Current PR head before this note: `cd05d2dadcf1fc003d46f4e3585f8220fc8a9db6`; subsequent workflow/docs/handoff commits may advance it. Always re-read the PR head.
 - CI has not yet provided a usable test result. The new tests are authored but not verified in a functioning runner.
 - Next: add an authenticated dispatcher endpoint/config validation, test it with injected fake AutoDL client and store; then implement durable single-dispatcher lease/queue trigger and instance lifecycle monitoring. Do not run paid GPU.
+
+
+## 2026-11-25 continued — authenticated manual provisioning endpoint
+
+- Added `POST /api/internal/dispatcher/workers` to `musicmaster/web/cloud_api.py`, protected by a separate `MUSICMASTER_DISPATCHER_TOKEN` (requires at least 32 characters and constant-time comparison). Worker credentials do not authorize provisioning.
+- Provisioning settings are server-side only: `MUSICMASTER_API_URL`, `MUSICMASTER_AUTODL_IMAGE_UUID`, `MUSICMASTER_AUTODL_CUDA_V_FROM`, and `AUTODL_PRO_TOKEN`. No image, GPU type, AutoDL token, or bootstrap token is accepted from the caller.
+- The endpoint provisions exactly one worker per authorized POST. It is manual-only; upload/queue events do not call it. **Calling it can incur GPU charges.** It has not been called in this development session.
+- Added API tests for missing dispatcher configuration, bad credentials, and server-side settings injection. CI includes the dispatcher orchestration test; the existing API test file already runs in the cloud-jobs workflow.
+- Remaining before safe real use: ensure the dispatcher credential is generated/stored securely in the API host, validate the AutoDL image and `cuda_v_from` against the selected image, implement a durable capacity/lease gate to prevent multiple concurrent requests from creating excess instances, add provider status/heartbeat/idle shutdown/release handling, and run tests in a functioning CI environment. No GPU was created or powered on.
