@@ -148,7 +148,10 @@ class PostgresJobStore:
                 WITH candidate AS (
                     SELECT id, worker_id AS previous_worker_id
                     FROM music_jobs
-                    WHERE status = 'queued'
+                    WHERE (status = 'queued' AND (
+                               COALESCE((options->>'manual_start_requested')::boolean, false)
+                               OR COALESCE((options->>'auto_dispatch_requested')::boolean, false)
+                           ))
                        OR (status = 'running' AND lease_expires_at < now()
                            AND attempt_count < max_attempts)
                     ORDER BY created_at, id
@@ -423,6 +426,39 @@ class PostgresJobStore:
                 return row["status"]
             return None
 
+
+    def has_live_worker(self, *, heartbeat_seconds: int = 120) -> bool:
+        """Return whether a registered worker has sent a recent idle/busy heartbeat."""
+        seconds = max(30, min(int(heartbeat_seconds), 600))
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM music_workers
+                    WHERE status IN ('idle', 'busy')
+                      AND last_seen_at >= now() - (%s * interval '1 second')
+                ) AS available
+                """,
+                (seconds,),
+            )
+            row = cur.fetchone()
+            return bool(row and row["available"])
+
+    def request_job_start(self, job_id: str | UUID) -> bool:
+        """Mark a queued job as user-approved for an already-running worker to claim."""
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE music_jobs
+                SET options = jsonb_set(COALESCE(options, '{}'::jsonb),
+                                        '{manual_start_requested}', 'true'::jsonb, true),
+                    stage = '等待 GPU Worker 领取', updated_at = now()
+                WHERE id = %s AND status = 'queued'
+                RETURNING id
+                """,
+                (self._uuid(job_id),),
+            )
+            return cur.fetchone() is not None
 
     def count_queued_jobs(self) -> int:
         with self._connect() as conn, conn.cursor() as cur:
