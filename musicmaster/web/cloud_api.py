@@ -188,6 +188,25 @@ def provision_cloud_worker(
         cuda_v_from = int(cuda_value)
         client = AutoDLProClient()
         max_workers = int(os.environ.get("MUSICMASTER_AUTODL_MAX_WORKERS", "1"))
+        def replay_existing_worker() -> dict | None:
+            # Recheck after acquiring the advisory lock. Two requests can both
+            # miss the first lookup before either inserts its deterministic ID.
+            existing = store.get_worker(worker_id)
+            if existing is None:
+                return None
+            return {
+                "worker_id": worker_id,
+                "instance_uuid": existing.get("instance_uuid"),
+                "status": existing.get("status", "unknown"),
+                "idempotent_replay": True,
+                "retry_safe": False,
+                "next_step": (
+                    "Inspect and recover this worker; do not submit a new key to retry an ambiguous create."
+                    if existing.get("status") == "error" and not existing.get("instance_uuid")
+                    else "Use the existing worker record; this request will not provision another instance."
+                ),
+            }
+
         result = store.run_with_dispatch_capacity(
             max_workers,
             lambda: create_autodl_worker(
@@ -198,6 +217,7 @@ def provision_cloud_worker(
                 cuda_v_from=cuda_v_from,
                 worker_id=worker_id,
             ),
+            replay_if=replay_existing_worker,
         )
     except HTTPException:
         raise
