@@ -106,6 +106,30 @@ def test_apply_lyric_assignments_rejects_wrong_slot_count(tmp_path: Path):
         apply_lyric_assignments(source, [])
 
 
+def test_notation_level_tie_stop_is_not_a_new_lyric_slot(tmp_path: Path):
+    from musicmaster.transcribe.lyrics import extract_lyric_slots, apply_lyric_assignments
+
+    source = tmp_path / "notation-tie.musicxml"
+    source.write_text("""<score-partwise>
+      <part><measure>
+        <note><pitch><step>C</step><octave>4</octave></pitch></note>
+        <note><pitch><step>C</step><octave>4</octave></pitch>
+          <notations><tied type="stop"/></notations>
+        </note>
+        <note><pitch><step>D</step><octave>4</octave></pitch><play/></note>
+      </measure></part>
+    </score-partwise>""", encoding="utf-8")
+
+    assert len(extract_lyric_slots(source)) == 2
+    apply_lyric_assignments(source, ["长", "音"])
+    root = ET.parse(source).getroot()
+    notes = [node for node in root.iter() if node.tag.endswith("note")]
+    assert [next((n.text for n in note.iter() if n.tag.endswith("text")), None)
+            for note in notes] == ["长", None, "音"]
+    last_children = [child.tag.rsplit("}", 1)[-1] for child in notes[-1]]
+    assert last_children.index("lyric") < last_children.index("play")
+
+
 def test_jianpu_ly_import_keeps_musicxml_lyrics(tmp_path: Path):
     from music21 import note, stream
     from musicmaster.core.render import musicxml_to_lilypond
