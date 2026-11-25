@@ -36,6 +36,11 @@ def tokenize_lyrics(value: str) -> list[str]:
         if char.isspace() or char == "\u3000":
             index += 1
             continue
+        if char in {"—", "–"}:
+            tokens.append(prefix + "—")
+            prefix = ""
+            index += 1
+            continue
         if _is_punctuation(char):
             if char in OPENING_PUNCTUATION or not tokens:
                 prefix += char
