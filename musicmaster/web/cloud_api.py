@@ -81,6 +81,11 @@ def _public_job(job: dict[str, Any]) -> dict[str, Any]:
     return {key: job.get(key) for key in allowed}
 
 
+class WorkerSweepRequest(BaseModel):
+    dry_run: bool = True
+    limit: int = Field(default=10, ge=1, le=25)
+
+
 class BootstrapRequest(BaseModel):
     bootstrap_token: str = Field(min_length=32, max_length=256)
 
@@ -201,6 +206,68 @@ def reconcile_cloud_worker(worker_id: str) -> dict:
         raise HTTPException(
             status_code=503,
             detail=f"Worker lifecycle reconciliation failed: {type(exc).__name__}",
+        ) from None
+
+
+@router.post(
+    "/api/internal/dispatcher/workers/reconcile-idle",
+    dependencies=[Depends(_dispatcher_auth)],
+)
+def reconcile_idle_cloud_workers(request: WorkerSweepRequest) -> dict:
+    """Batch-reconcile stale idle workers; dry-run is the default and is read-only."""
+    idle_value = os.environ.get("MUSICMASTER_AUTODL_IDLE_SECONDS", "300")
+    try:
+        idle_seconds = int(idle_value)
+        if not 60 <= idle_seconds <= 86400:
+            raise ValueError
+        store, _ = _components()
+        candidates = store.list_stale_idle_workers(
+            idle_seconds=idle_seconds, limit=request.limit
+        )
+        if request.dry_run:
+            return {
+                "dry_run": True,
+                "candidate_count": len(candidates),
+                "workers": [
+                    {
+                        "worker_id": row["worker_id"],
+                        "instance_uuid": row["instance_uuid"],
+                        "last_seen_at": row.get("last_seen_at"),
+                    }
+                    for row in candidates
+                ],
+            }
+
+        client = AutoDLProClient()
+        results = []
+        for row in candidates:
+            worker_id = row["worker_id"]
+            try:
+                results.append(reconcile_idle_worker(
+                    store=store,
+                    autodl_client=client,
+                    worker_id=worker_id,
+                    idle_seconds=idle_seconds,
+                ))
+            except Exception as exc:  # noqa: BLE001
+                # One provider/API failure must not hide the outcome for the rest
+                # of this bounded batch. Do not expose provider messages/secrets.
+                results.append({
+                    "worker_id": worker_id,
+                    "status": "error",
+                    "error": type(exc).__name__,
+                })
+        return {
+            "dry_run": False,
+            "candidate_count": len(candidates),
+            "results": results,
+        }
+    except ValueError:
+        raise HTTPException(status_code=503, detail="Worker lifecycle configuration is invalid.") from None
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503,
+            detail=f"Worker batch reconciliation failed: {type(exc).__name__}",
         ) from None
 
 
