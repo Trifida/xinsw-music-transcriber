@@ -17,7 +17,7 @@
 - `MUSICMASTER_AUTODL_CUDA_V_FROM`：镜像要求的 CUDA 版本值
 - `MUSICMASTER_AUTODL_MAX_WORKERS`：并发 Worker 上限，默认 1，允许 1–10
 
-用户上传成功后，任务先可靠写入对象存储和 PostgreSQL 队列，再由 FastAPI 后台任务使用稳定的任务幂等键请求 Dispatcher。容量已满或另一项创建操作正在进行时，任务保持 queued；已运行的 Worker 会继续轮询并领取队列任务。Dispatcher 不会因重试而为同一任务重复创建实例。
+用户上传成功后，任务先可靠写入对象存储和 PostgreSQL 队列，再由 FastAPI 后台任务使用稳定的任务幂等键请求 Dispatcher。另有 `.github/workflows/autodl-dispatch-queued.yml` 每 5 分钟检查一次持久化队列，作为 API 重启或后台任务中断后的补偿入口；它也要求 GitHub Repository Variable `MUSICMASTER_AUTODL_AUTO_DISPATCH=true`，且 Render API 自身的同名环境变量也必须启用。容量已满或另一项创建操作正在进行时，任务保持 queued；已运行的 Worker 会继续轮询并领取队列任务。Dispatcher 不会因同一分钟的重复调度请求而重复创建实例。
 
 ## 2. Worker 实际执行链
 
