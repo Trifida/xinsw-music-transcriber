@@ -65,6 +65,8 @@ class FakeStore:
         return "failed"
 
     def run_with_dispatch_capacity(self, max_workers, operation):
+        if not 1 <= int(max_workers) <= 10:
+            raise ValueError("max_workers must be between 1 and 10.")
         if getattr(self, "capacity_full", False):
             from musicmaster.cloud.job_store import DispatchCapacityError
             raise DispatchCapacityError("Worker capacity is full.")
