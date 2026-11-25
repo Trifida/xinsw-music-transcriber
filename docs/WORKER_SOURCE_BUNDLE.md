@@ -132,3 +132,16 @@ The API exposes a manual, dispatcher-authenticated reconciliation endpoint:
 - The DB changes to `stopped` only after the release API returns success.
 - This endpoint is manual-only; no background scheduler calls it yet. Do not expose the dispatcher token to the browser. Calls can power off/release paid instances.
 - Provider release and Postgres cannot participate in one atomic transaction. If the provider release succeeds but the API process dies before recording `stopped`, operator reconciliation may be required; automatic "not found means released" inference is intentionally not implemented.
+
+
+## Recovery after an interrupted provider release
+
+AutoDL Pro exposes a paginated instance-list endpoint. The reconciler now uses
+that endpoint only when an instance status lookup fails (for example, after a
+release succeeded but the API process stopped before updating Postgres). It
+scans every page advertised by the provider response and treats a missing
+instance as released only after the listing is complete and structurally valid.
+If the instance is still listed, or listing is incomplete/unavailable, the DB
+row remains `stopping`; no second release is attempted based on uncertainty.
+This is a recovery check, not a scheduler. The instance-list API contract is
+documented by AutoDL at https://autodl.com/docs/instance_pro_api/.
