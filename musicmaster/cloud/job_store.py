@@ -148,10 +148,8 @@ class PostgresJobStore:
                 WITH candidate AS (
                     SELECT id, worker_id AS previous_worker_id
                     FROM music_jobs
-                    WHERE (status = 'queued' AND (
-                               COALESCE((options->>'manual_start_requested')::boolean, false)
-                               OR COALESCE((options->>'auto_dispatch_requested')::boolean, false)
-                           ))
+                    WHERE (status = 'queued' AND
+                               COALESCE((options->>'manual_start_requested')::boolean, false))
                        OR (status = 'running' AND lease_expires_at < now()
                            AND attempt_count < max_attempts)
                     ORDER BY created_at, id
