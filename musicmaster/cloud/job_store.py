@@ -453,8 +453,7 @@ class PostgresJobStore:
                 """
                 SELECT count(*) AS total
                 FROM music_workers
-                WHERE status IN ('starting', 'idle', 'busy', 'stopping')
-                   OR (status = 'error' AND instance_uuid IS NOT NULL)
+                WHERE status IN ('starting', 'idle', 'busy', 'stopping', 'error')
                 """
             )
             row = cur.fetchone()
