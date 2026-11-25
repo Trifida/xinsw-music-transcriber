@@ -217,8 +217,12 @@ class AutoDLProClient:
         total_pages = first.get("max_page")
         if not isinstance(items, list) or not isinstance(total_pages, int):
             raise AutoDLProError("AutoDL Pro instance list is missing list/max_page fields.")
-        if total_pages < 1 or total_pages > int(max_pages):
+        if total_pages < 0 or total_pages > int(max_pages):
             raise AutoDLProError("AutoDL Pro instance list pagination is outside the safe limit.")
+        if total_pages == 0:
+            if items:
+                raise AutoDLProError("AutoDL Pro reported zero pages but returned instance records.")
+            return None
 
         for page_index in range(1, total_pages + 1):
             page = first if page_index == 1 else self.list_instances(
