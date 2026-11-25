@@ -1,7 +1,6 @@
 /* Full-song upload entry for the transcription panel.
  * This submits the original mixed recording to the durable cloud-job API.
- * It does not claim that a GPU worker has started: automatic dispatch is a
- * separate unfinished capability and the UI says so explicitly.
+ * GPU provisioning is opt-in; queue status and completed artifact downloads are shown explicitly.
  */
 (function () {
   'use strict';
@@ -13,6 +12,7 @@
     var submit = document.getElementById('full-song-submit');
     var status = document.getElementById('full-song-status');
     var refresh = document.getElementById('full-song-refresh');
+    var artifactsContainer = document.getElementById('full-song-artifacts');
     if (!fileInput || !submit || !status || !refresh) return;
 
     var sourceOptions = document.querySelectorAll('input[name="tr"]');
@@ -42,6 +42,41 @@
       submit.setAttribute('aria-busy', busy ? 'true' : 'false');
     }
 
+    function renderArtifactLinks(artifacts) {
+      if (!artifactsContainer) return;
+      artifactsContainer.textContent = '';
+      (artifacts || []).forEach(function (item) {
+        if (!item || item.id == null) return;
+        var row = document.createElement('div');
+        row.textContent = '正在准备下载：' + (item.file_name || item.name || '文件');
+        artifactsContainer.appendChild(row);
+        var endpoint = '/api/cloud/jobs/' + encodeURIComponent(activeJobId)
+          + '/artifacts/' + encodeURIComponent(item.id) + '/download';
+        fetch(endpoint)
+          .then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (data) {
+              if (!response.ok || !data.url) {
+                throw new Error(data.detail || '下载链接暂不可用');
+              }
+              return data;
+            });
+          })
+          .then(function (data) {
+            var link = document.createElement('a');
+            link.href = data.url;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = '下载 ' + (data.file_name || item.file_name || item.name || '文件');
+            row.textContent = '';
+            row.appendChild(link);
+          })
+          .catch(function () {
+            row.textContent = (item.file_name || item.name || '文件')
+              + '：下载链接暂不可用，请重新查询任务状态。';
+          });
+      });
+    }
+
     function explainJob(job, artifacts) {
       var state = String(job.status || 'unknown').toLowerCase();
       var stage = job.stage ? '\n当前阶段：' + job.stage : '';
@@ -61,6 +96,8 @@
         message += '\n处理失败：' + (job.error || '服务端未提供详细原因');
       }
       status.textContent = message;
+      if (state === 'completed') renderArtifactLinks(artifacts);
+      else if (artifactsContainer) artifactsContainer.textContent = '';
     }
 
     fileInput.addEventListener('change', function () {
@@ -97,6 +134,7 @@
 
       setBusy(true);
       refresh.hidden = true;
+      if (artifactsContainer) artifactsContainer.textContent = '';
       status.textContent = '正在把完整歌曲上传到云端任务队列…';
       fetch('/api/cloud/jobs', { method: 'POST', body: body })
         .then(function (response) {
