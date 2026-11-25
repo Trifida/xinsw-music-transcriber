@@ -51,3 +51,10 @@ def test_old_status_response_cannot_overwrite_a_newer_task():
     script = SCRIPT.read_text(encoding="utf-8")
     assert "var queriedJobId = activeJobId;" in script
     assert "if (queriedJobId !== activeJobId) return;" in script
+def test_full_song_upload_reports_real_transfer_progress():
+    script = SCRIPT.read_text(encoding="utf-8")
+    assert "function uploadFullSong(body)" in script
+    assert "request.upload.addEventListener('progress'" in script
+    assert "event.loaded / event.total" in script
+    assert "正在上传完整歌曲：" in script
+    assert "request.timeout = 15 * 60 * 1000;" in script
