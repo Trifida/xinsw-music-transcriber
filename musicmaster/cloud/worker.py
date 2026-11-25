@@ -155,6 +155,18 @@ def _put_file(url: str, file_path: Path, content_type: str) -> None:
         connection.close()
 
 
+def _retry_transient(operation, *, attempts: int = 3):
+    """Retry the same idempotent upload/confirmation after temporary failures."""
+    limit = max(1, min(int(attempts), 5))
+    for attempt in range(limit):
+        try:
+            return operation()
+        except RetryableWorkerError:
+            if attempt + 1 >= limit:
+                raise
+            time.sleep(min(2 ** attempt, 4))
+
+
 def _artifact_role(path: Path) -> str:
     suffix = path.suffix.lower()
     if suffix in {".wav", ".mp3", ".flac", ".m4a", ".ogg"}:
@@ -281,21 +293,28 @@ def _process_job(
                         "content_type": content_type,
                     },
                 )
-                _put_file(str(upload["url"]), file_path, content_type)
-                _api(
-                    base, token, "POST", f"/api/internal/jobs/{job_id}/artifact-complete",
-                    {
-                        "worker_id": worker_id,
-                        "object_key": upload["object_key"],
-                        "file_name": filename,
-                        "role": _artifact_role(file_path),
-                        "content_type": content_type,
-                    },
+                _retry_transient(
+                    lambda: _put_file(str(upload["url"]), file_path, content_type)
+                )
+                confirmation = {
+                    "worker_id": worker_id,
+                    "object_key": upload["object_key"],
+                    "file_name": filename,
+                    "role": _artifact_role(file_path),
+                    "content_type": content_type,
+                }
+                _retry_transient(
+                    lambda: _api(
+                        base, token, "POST",
+                        f"/api/internal/jobs/{job_id}/artifact-complete", confirmation,
+                    )
                 )
 
-            _api(
-                base, token, "POST", f"/api/internal/jobs/{job_id}/complete",
-                {"worker_id": worker_id, "result": manifest},
+            _retry_transient(
+                lambda: _api(
+                    base, token, "POST", f"/api/internal/jobs/{job_id}/complete",
+                    {"worker_id": worker_id, "result": manifest},
+                )
             )
         finally:
             stop_heartbeat.set()
