@@ -60,7 +60,8 @@ normal worker launcher and all application code.
 
 The startup command carries only the short-lived, single-use
 `MUSICMASTER_BOOTSTRAP_TOKEN`; it never embeds a GitHub token or long-lived
-worker token. Because the startup command is sent to AutoDL as instance
+worker token. Calling the manual endpoint can incur GPU charges, so keep the
+dispatcher credential private and do not expose this route to the public UI. Because the startup command is sent to AutoDL as instance
 configuration, create a short-expiry bootstrap token immediately before
 starting the instance and treat the provider's command/configuration history
 as sensitive until that token has been consumed or expired. The builder
@@ -92,9 +93,14 @@ code and worker dependencies are taken from the checksum-verified commit bundle.
 
 ## Remaining deployment boundary
 
-The provisioning helper implements the create → persist instance ID → power-on
-sequence, but it is not yet exposed through an authenticated dispatcher API or
-connected to automatic queue-depth/capacity decisions. It does not publish the
+The provisioning helper is exposed through a manual endpoint
+`POST /api/internal/dispatcher/workers`, protected by a separate
+`MUSICMASTER_DISPATCHER_TOKEN` (minimum 32 characters). Configure
+`MUSICMASTER_API_URL`, `MUSICMASTER_AUTODL_IMAGE_UUID`,
+`MUSICMASTER_AUTODL_CUDA_V_FROM`, and `AUTODL_PRO_TOKEN` only on the trusted
+API host. The endpoint provisions exactly one worker per authorized request.
+It is **not** called automatically by queue uploads or a polling loop; queue
+capacity decisions remain a separate future task. It does not publish the
 bundle automatically, configure Render secrets, monitor the instance through
 the full job lifecycle, shut instances down, or release them. The dispatcher
 must verify AutoDL has powered off before releasing a paid instance. No paid
