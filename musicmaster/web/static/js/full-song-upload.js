@@ -15,6 +15,17 @@
     var refresh = document.getElementById('full-song-refresh');
     if (!fileInput || !submit || !status || !refresh) return;
 
+    var sourceOptions = document.querySelectorAll('input[name="transcribe-source"]');
+    var vocalFields = document.getElementById('vocal-mode-fields');
+    var fullSongFields = document.getElementById('full-song-fields');
+    Array.prototype.forEach.call(sourceOptions, function (option) {
+      option.addEventListener('change', function () {
+        var fullSongMode = option.checked && option.value === 'full-song';
+        if (vocalFields) vocalFields.hidden = fullSongMode;
+        if (fullSongFields) fullSongFields.hidden = !fullSongMode;
+      });
+    });
+
     var activeJobId = '';
 
     function setBusy(busy) {
