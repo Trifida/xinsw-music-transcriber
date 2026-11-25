@@ -21,6 +21,8 @@ from fastapi.encoders import jsonable_encoder
 
 from musicmaster.cloud.job_store import JobStoreError, PostgresJobStore
 from musicmaster.cloud.object_store import ObjectStoreError, S3ObjectStore
+from musicmaster.cloud.autodl_pro import AutoDLProClient
+from musicmaster.cloud.dispatcher import create_autodl_worker
 
 
 router = APIRouter()
@@ -47,6 +49,17 @@ def _worker_auth(authorization: str | None = Header(default=None)) -> None:
     token = supplied[7:].strip()
     if not hmac.compare_digest(token, expected):
         raise HTTPException(status_code=401, detail="Invalid worker credential.")
+
+
+def _dispatcher_auth(authorization: str | None = Header(default=None)) -> None:
+    expected = os.environ.get("MUSICMASTER_DISPATCHER_TOKEN", "").strip()
+    if len(expected) < 32:
+        raise HTTPException(status_code=503, detail="Dispatcher API is not configured.")
+    supplied = (authorization or "").strip()
+    if not supplied.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Dispatcher authentication required.")
+    if not hmac.compare_digest(supplied[7:].strip(), expected):
+        raise HTTPException(status_code=401, detail="Invalid dispatcher credential.")
 
 
 def _safe_filename(value: str) -> str:
@@ -123,6 +136,33 @@ class FailRequest(BaseModel):
 def cloud_health() -> dict:
     _components()
     return {"ok": True, "service": "musicmaster-cloud-jobs"}
+
+
+@router.post("/api/internal/dispatcher/workers", dependencies=[Depends(_dispatcher_auth)])
+def provision_cloud_worker() -> dict:
+    """Manually provision one worker; queue automation is intentionally separate."""
+    api_url = os.environ.get("MUSICMASTER_API_URL", "").strip()
+    image_uuid = os.environ.get("MUSICMASTER_AUTODL_IMAGE_UUID", "").strip()
+    cuda_value = os.environ.get("MUSICMASTER_AUTODL_CUDA_V_FROM", "").strip()
+    if not api_url.startswith("https://") or not image_uuid or not cuda_value:
+        raise HTTPException(status_code=503, detail="Dispatcher provisioning settings are incomplete.")
+    try:
+        cuda_v_from = int(cuda_value)
+        store, _ = _components()
+        client = AutoDLProClient()
+        result = create_autodl_worker(
+            store=store,
+            autodl_client=client,
+            api_url=api_url,
+            image_uuid=image_uuid,
+            cuda_v_from=cuda_v_from,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503,
+            detail=f"Worker provisioning failed: {type(exc).__name__}",
+        ) from None
+    return result
 
 
 @router.post("/api/cloud/jobs")
