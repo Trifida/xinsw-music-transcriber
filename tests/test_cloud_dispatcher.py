@@ -170,7 +170,7 @@ def test_postgres_capacity_gate_holds_advisory_lock_during_operation(monkeypatch
     assert conn.closed is True
     assert "pg_try_advisory_xact_lock" in conn.fake_cursor.queries[0][0]
     assert "status IN ('starting', 'idle', 'busy', 'stopping')" in conn.fake_cursor.queries[1][0]
-    assert "status = 'error' AND instance_uuid IS NOT NULL" in conn.fake_cursor.queries[1][0]
+    assert "status IN ('starting', 'idle', 'busy', 'stopping', 'error')" in conn.fake_cursor.queries[1][0]
 
 
 def test_postgres_capacity_gate_fails_fast_when_another_dispatcher_holds_lock(monkeypatch):
@@ -298,7 +298,7 @@ def test_list_stale_idle_workers_is_read_only_and_bounded(monkeypatch):
 
 
 
-def test_error_worker_with_linked_instance_counts_against_dispatch_capacity(monkeypatch):
+def test_unresolved_error_worker_counts_against_dispatch_capacity_even_without_instance_id(monkeypatch):
     from musicmaster.cloud.job_store import DispatchCapacityError, PostgresJobStore
 
     store = PostgresJobStore("postgresql://unused")
@@ -309,7 +309,7 @@ def test_error_worker_with_linked_instance_counts_against_dispatch_capacity(monk
         store.run_with_dispatch_capacity(1, lambda: "must-not-create-another-gpu")
 
     query = conn.fake_cursor.queries[1][0]
-    assert "status = 'error' AND instance_uuid IS NOT NULL" in query
+    assert "status IN ('starting', 'idle', 'busy', 'stopping', 'error')" in query
 
 
 def test_stale_error_worker_is_included_in_read_only_reconciliation_candidates(monkeypatch):
