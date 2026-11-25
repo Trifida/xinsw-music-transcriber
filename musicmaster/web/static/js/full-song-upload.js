@@ -80,12 +80,12 @@
     function explainJob(job, artifacts) {
       var state = String(job.status || 'unknown').toLowerCase();
       var stage = job.stage ? '\n当前阶段：' + job.stage : '';
-      var pct = Number.isFinite(Number(job.progress))
+      var pct = job.progress != null && Number.isFinite(Number(job.progress))
         ? '\n进度：' + Math.round(Number(job.progress) * 100) + '%'
         : '';
       var message = '任务编号：' + job.id + '\n任务状态：' + state + stage + pct;
       if (state === 'queued') {
-        message += '\n任务已进入云端队列。当前自动 GPU 调度尚未启用，任务不会自行开始处理。';
+        message += '\n任务已进入云端队列，等待 GPU Worker 领取；如果长时间没有开始，请检查自动调度配置。';
       } else if (state === 'running') {
         message += '\nGPU Worker 已开始处理，请稍后再次查询。';
       } else if (state === 'completed') {
