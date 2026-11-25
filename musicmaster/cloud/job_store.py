@@ -319,6 +319,12 @@ class PostgresJobStore:
                 SELECT j.id, %s, %s, %s, %s, %s
                 FROM music_jobs AS j
                 WHERE j.id = %s AND j.worker_id = %s AND j.status = 'running'
+                ON CONFLICT (object_key) DO UPDATE
+                SET file_name = EXCLUDED.file_name,
+                    role = EXCLUDED.role,
+                    content_type = EXCLUDED.content_type,
+                    size_bytes = EXCLUDED.size_bytes
+                WHERE music_job_artifacts.job_id = EXCLUDED.job_id
                 RETURNING *
                 """,
                 (
@@ -363,6 +369,17 @@ class PostgresJobStore:
                 ),
             )
             updated = cur.fetchone() is not None
+            if not updated:
+                # The completion response may have been lost after the transaction
+                # committed. Treat the same worker's already-completed job as success.
+                cur.execute(
+                    """
+                    SELECT id FROM music_jobs
+                    WHERE id = %s AND worker_id = %s AND status = 'completed'
+                    """,
+                    (self._uuid(job_id), str(worker_id).strip()),
+                )
+                updated = cur.fetchone() is not None
             if updated:
                 cur.execute(
                     """
