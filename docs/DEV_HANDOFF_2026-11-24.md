@@ -431,3 +431,31 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - Added tests for missing keys, stable worker ID propagation, idempotent replay without provider access, and distinct keys through the capacity gate. The invalid-capacity test now supplies a valid key.
 - No migration was added; the worker primary key is the durable replay record. A concurrent same-key request may receive the existing fail-fast 409 while the first request holds the advisory lock; retrying with the same key after the first completes returns its durable record.
 - On HEAD `cb2fc2113bb3f28d1da537be6ffb5a12cc904675`, all three GitHub Actions checks (cloud-jobs, runner diagnostic, legacy-jianpu) again failed immediately with `steps: null` and `logs_url: null`. This does not confirm pytest execution.
+
+## 2026-11-25 继续开发与全路线图盘点
+
+**PR #12 当前代码 HEAD（本轮盘点时）：** 93d2723aec6cdd7e8f3b1c63f4667a26942c37f0，后续文档提交会继续更新 HEAD。仍为 Draft / Open；未合并 main、未部署生产。
+
+### 本轮新增开发
+
+1. 云端任务上传 API 新增手动歌词字段，限制 100,000 字符，并把歌词文本写入任务 options。
+2. GPU Worker 将任务 options 中的歌词传入整曲工作流。
+3. 整曲工作流将歌词传入 V1 runner，并把 lyrics.txt、lyrics_alignment.json 纳入云端结果清单；manifest 增加歌词对齐状态。
+4. 补充云端上传歌词保存、超长歌词拒绝、整曲工作流传递歌词的测试。
+5. 发现并修复同一 Idempotency-Key 并发竞态：两次请求可能都在首轮查询时看到“无 Worker”；现在在 PostgreSQL advisory lock 内执行二次幂等检查，再决定是否检查容量和创建实例；AutoDL client 延迟到锁内幂等检查通过后才创建。新增竞态回归测试。
+
+### 本轮路线图复核发现的真实缺口
+
+- 当前本地记谱 UI 有整段歌词输入框和自动初步对齐；但在当前分支前端代码中未找到逐音编辑控件或人工修改回写 API。此前交接中将“逐音歌词编辑已完成”描述得过于乐观，需按本次代码核对结果更正。
+- 当前云端上传 API 和 Worker 之前没有传递歌词；本轮已补代码和测试，但尚未通过可见 CI 或真实 GPU 验证。
+- 当前整曲流程保留伴奏音轨，但只对主唱音轨做主旋律识别；没有完成真实伴奏多声部扒谱。
+- Dispatcher 创建、实例恢复、空闲关机/释放目前均是人工触发；自动队列调度和定时生命周期管理尚未完成。
+- 当前 Actions 仍没有可见 steps/logs，新增测试未确认执行。
+
+### 测试 / 安全边界
+
+- 本轮只更新 deploy/v1-production。
+- 未调用 AutoDL；未创建、启动、关机或释放 GPU。
+- 未修改 Neon production main，未部署 Render 生产服务，未合并 PR。
+- 所有本轮新增测试均为“已编写、待真实运行”，不能标记为通过。
+- 下一步先核验最新 HEAD 的 workflow 结果，再恢复测试运行；随后优先补齐逐音歌词编辑，而不是继续堆叠未验证的云调度功能。
