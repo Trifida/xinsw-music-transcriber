@@ -102,8 +102,8 @@
       status.textContent = message;
       if (state === 'completed') renderArtifactLinks(artifacts);
       else if (artifactsContainer) artifactsContainer.textContent = '';
-      start.hidden = state !== 'queued';
-      start.disabled = state !== 'queued';
+      start.hidden = state !== 'queued' || autoPoll;
+      start.disabled = state !== 'queued' || autoPoll;
     }
 
     fileInput.addEventListener('change', function () {
@@ -160,8 +160,8 @@
           if (!data.job_id) throw new Error('服务器没有返回任务编号。');
           activeJobId = data.job_id;
           refresh.hidden = false;
-          status.textContent = '完整乐曲已上传并进入云端队列。\\n任务编号：' + activeJobId
-            + '\\n当前状态：等待开始记谱。点击下方「开始记谱」后，系统只检查并使用已经运行的 GPU。';
+          status.textContent = '完整乐曲已上传并进入云端队列。\n任务编号：' + activeJobId
+            + '\n当前状态：等待开始记谱。点击下方「开始记谱」后，系统只检查并使用已经运行的 GPU。';
           start.hidden = false;
           start.disabled = false;
           autoPoll = false;
