@@ -330,3 +330,55 @@ def test_worker_bundle_endpoint_requires_auth_and_returns_pinned_digest(api, mon
     assert response.json()["sha256"] == digest
     assert response.json()["object_key"] == object_key
     assert response.json()["url"].startswith("https://")
+
+
+
+def test_dispatcher_endpoint_requires_separate_strong_credential(api, monkeypatch):
+    client, _, _ = api
+    monkeypatch.delenv("MUSICMASTER_DISPATCHER_TOKEN", raising=False)
+    unavailable = client.post("/api/internal/dispatcher/workers")
+    assert unavailable.status_code == 503
+
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    unauthorized = client.post(
+        "/api/internal/dispatcher/workers",
+        headers={"Authorization": "Bearer wrong"},
+    )
+    assert unauthorized.status_code == 401
+
+
+def test_dispatcher_endpoint_uses_server_side_autodl_configuration(api, monkeypatch):
+    client, store, objects = api
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    monkeypatch.setenv("MUSICMASTER_API_URL", "https://api.example.test")
+    monkeypatch.setenv("MUSICMASTER_AUTODL_IMAGE_UUID", "configured-image")
+    monkeypatch.setenv("MUSICMASTER_AUTODL_CUDA_V_FROM", "124")
+    seen = {}
+
+    class FakeAutoDLClient:
+        def __init__(self):
+            seen["client_created"] = True
+
+    def fake_provision(**kwargs):
+        seen.update(kwargs)
+        return {
+            "worker_id": "worker-test",
+            "instance_uuid": "pro-test123",
+            "status": "starting",
+        }
+
+    monkeypatch.setattr(cloud_api, "AutoDLProClient", FakeAutoDLClient)
+    monkeypatch.setattr(cloud_api, "create_autodl_worker", fake_provision)
+    response = client.post(
+        "/api/internal/dispatcher/workers",
+        headers={"Authorization": "Bearer " + "d" * 40},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["instance_uuid"] == "pro-test123"
+    assert seen["client_created"] is True
+    assert seen["store"] is store
+    assert seen["api_url"] == "https://api.example.test"
+    assert seen["image_uuid"] == "configured-image"
+    assert seen["cuda_v_from"] == 124
+    assert "bootstrap_token" not in str(response.json()).lower()
