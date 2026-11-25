@@ -11,6 +11,7 @@ import hmac
 import logging
 import os
 import re
+import time
 import uuid
 from functools import lru_cache
 from pathlib import Path
@@ -438,12 +439,25 @@ def create_cloud_job(
     if size_bytes > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="单个音频文件暂时不能超过 250 MB。")
 
+    request_started = time.monotonic()
+    request_id = uuid.uuid4().hex[:12]
+    logger.info(
+        "cloud_upload accepted request_id=%s filename=%s size_bytes=%s content_type=%s",
+        request_id, filename, size_bytes, content_type if (content_type := (audio.content_type or "application/octet-stream")) else "application/octet-stream",
+    )
     store, objects = _components()
     job_id = uuid.uuid4()
     object_key = f"jobs/{job_id}/source/{filename}"
-    content_type = audio.content_type or "application/octet-stream"
     try:
+        stage_started = time.monotonic()
+        logger.info("cloud_upload object_store_start request_id=%s job_id=%s", request_id, job_id)
         objects.upload_fileobj(audio.file, object_key, content_type=content_type)
+        logger.info(
+            "cloud_upload object_store_complete request_id=%s job_id=%s elapsed_ms=%d",
+            request_id, job_id, int((time.monotonic() - stage_started) * 1000),
+        )
+        stage_started = time.monotonic()
+        logger.info("cloud_upload database_create_start request_id=%s job_id=%s", request_id, job_id)
         store.create_job(
             job_id,
             source_object_key=object_key,
@@ -461,7 +475,18 @@ def create_cloud_job(
         )
         if not store.mark_upload_complete(job_id, size_bytes):
             raise JobStoreError("The uploaded job could not be queued.")
+        logger.info(
+            "cloud_upload queued request_id=%s job_id=%s size_bytes=%s database_elapsed_ms=%d total_elapsed_ms=%d",
+            request_id, job_id, size_bytes,
+            int((time.monotonic() - stage_started) * 1000),
+            int((time.monotonic() - request_started) * 1000),
+        )
     except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "cloud_upload failed request_id=%s job_id=%s error_type=%s total_elapsed_ms=%d",
+            request_id, job_id, type(exc).__name__,
+            int((time.monotonic() - request_started) * 1000),
+        )
         try:
             objects.delete(object_key)
         except Exception:
