@@ -280,14 +280,12 @@ def _process_job(
 
 def run() -> int:
     base, token, worker_id, instance_id = _config()
-    idle_limit = max(0, int(os.environ.get("MUSICMASTER_WORKER_IDLE_SECONDS", "0")))
     poll_seconds = max(2, min(30, int(os.environ.get("MUSICMASTER_WORKER_POLL_SECONDS", "5"))))
     _api(
         base, token, "POST", "/api/internal/workers/register",
         {"worker_id": worker_id, "instance_uuid": instance_id},
     )
     print(f"[cloud-worker] registered: {worker_id}", flush=True)
-    idle_since = time.monotonic()
 
     while True:
         try:
@@ -301,17 +299,9 @@ def run() -> int:
                     base, token, "POST", "/api/internal/workers/heartbeat",
                     {"worker_id": worker_id, "status": "idle"},
                 )
-                if idle_limit > 0 and time.monotonic() - idle_since >= idle_limit:
-                    _api(
-                        base, token, "POST", "/api/internal/workers/heartbeat",
-                        {"worker_id": worker_id, "status": "stopping"},
-                    )
-                    print("[cloud-worker] idle timeout reached; exiting for instance shutdown.", flush=True)
-                    return 0
                 time.sleep(poll_seconds)
                 continue
 
-            idle_since = time.monotonic()
             job_id = str(job["id"])
             print(f"[cloud-worker] claimed job {job_id}", flush=True)
             try:
