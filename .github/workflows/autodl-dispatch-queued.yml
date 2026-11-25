@@ -1,0 +1,33 @@
+name: AutoDL queued job dispatch
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch-queued-jobs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Keep automatic dispatch disabled unless explicitly enabled
+        if: ${{ vars.MUSICMASTER_AUTODL_AUTO_DISPATCH != 'true' }}
+        run: echo "AutoDL automatic dispatch is disabled. No GPU provisioning was requested."
+
+      - name: Ask the API to dispatch durable queued jobs
+        if: ${{ vars.MUSICMASTER_AUTODL_AUTO_DISPATCH == 'true' }}
+        env:
+          MUSICMASTER_API_URL: ${{ vars.MUSICMASTER_API_URL }}
+          MUSICMASTER_DISPATCHER_TOKEN: ${{ secrets.MUSICMASTER_DISPATCHER_TOKEN }}
+        run: |
+          set -euo pipefail
+          : "${MUSICMASTER_API_URL:?Set the MUSICMASTER_API_URL repository variable}"
+          : "${MUSICMASTER_DISPATCHER_TOKEN:?Set the MUSICMASTER_DISPATCHER_TOKEN repository secret}"
+          curl --fail-with-body --silent --show-error \
+            -X POST "${MUSICMASTER_API_URL%/}/api/internal/dispatcher/dispatch-queued" \
+            -H "Authorization: Bearer ${MUSICMASTER_DISPATCHER_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{}'
