@@ -411,16 +411,14 @@ def run_transcribe(job, audio_path: str, engine: str = "crepe", key: str = "",
                 lyrics_slots = extract_lyric_slots(mx)
                 import json
                 alignment_path = d / "lyrics_alignment.json"
-                if not alignment_path.is_file():
-                    alignment_path.write_text(
-                        json.dumps({
-                            "source": "user-provided" if lyric_text else "none",
-                            "status": "not-provided" if not lyric_text else "completed",
-                            "alignmentStatus": "not-attempted" if not lyric_text else "aligned",
-                            "assignments": lyrics_slots,
-                        }, ensure_ascii=False, indent=2),
-                        encoding="utf-8",
-                    )
+                alignment_path.write_text(
+                    json.dumps(
+                        {**lyrics_info, "assignments": lyrics_slots},
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
             except Exception as slot_error:  # noqa: BLE001
                 print(f"[Lyrics] editable slot extraction skipped: {type(slot_error).__name__}: {slot_error}", flush=True)
 
