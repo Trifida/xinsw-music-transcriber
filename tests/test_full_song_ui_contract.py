@@ -39,3 +39,15 @@ def test_failed_replacement_upload_preserves_previous_task():
     assert "if (previousJobId)" in script[upload_catch:]
     assert "saveJobId(previousJobId);" in script[upload_catch:]
     assert "queryJob(false);" in script[upload_catch:]
+def test_missing_task_record_clears_stale_recovery_reference():
+    script = SCRIPT.read_text(encoding="utf-8")
+    assert "error.status = response.status;" in script
+    assert "error.status === 404" in script
+    assert "saveJobId('');" in script
+    assert "这条任务记录已不存在或已过期" in script
+
+
+def test_old_status_response_cannot_overwrite_a_newer_task():
+    script = SCRIPT.read_text(encoding="utf-8")
+    assert "var queriedJobId = activeJobId;" in script
+    assert "if (queriedJobId !== activeJobId) return;" in script
