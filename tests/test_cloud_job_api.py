@@ -156,8 +156,9 @@ def test_worker_auth_rejects_missing_token_and_accepts_valid_token(api):
     assert response.json() == {"job": None}
 
 
-def test_cloud_upload_creates_private_object_and_queues_job(api):
+def test_cloud_upload_creates_private_object_and_queues_job(api, monkeypatch):
     client, store, objects = api
+    monkeypatch.delenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", raising=False)
     response = client.post(
         "/api/cloud/jobs",
         files={"audio": ("原曲.mp3", b"audio-bytes", "audio/mpeg")},
@@ -169,11 +170,37 @@ def test_cloud_upload_creates_private_object_and_queues_job(api):
     assert response.status_code == 200
     result = response.json()
     assert result["status"] == "queued"
+    assert result["dispatch"] == "disabled"
     assert objects.uploaded[0] == b"audio-bytes"
     assert objects.uploaded[1].startswith(f"jobs/{result['job_id']}/source/")
     assert store.jobs[result["job_id"]]["status"] == "queued"
     assert store.jobs[result["job_id"]]["source_size_bytes"] == len(b"audio-bytes")
     assert store.jobs[result["job_id"]]["options"]["lyrics"] == "春风又绿江南岸"
+
+
+def test_cloud_upload_schedules_opt_in_dispatch_with_stable_job_key(api, monkeypatch):
+    client, store, objects = api
+    monkeypatch.setenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", "true")
+    dispatched = []
+    monkeypatch.setattr(
+        cloud_api, "provision_cloud_worker",
+        lambda *, idempotency_key: dispatched.append(idempotency_key) or {
+            "worker_id": "dispatch-test", "status": "starting",
+        },
+    )
+
+    response = client.post(
+        "/api/cloud/jobs",
+        files={"audio": ("原曲.mp3", b"audio-bytes", "audio/mpeg")},
+        data={"engine": "crepe", "lyrics": "手动歌词"},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["status"] == "queued"
+    assert result["dispatch"] == "scheduled"
+    assert dispatched == [f"cloud-job-{result['job_id']}"]
+    assert store.jobs[result["job_id"]]["status"] == "queued"
 
 
 def test_cloud_upload_rejects_oversized_lyrics(api):
