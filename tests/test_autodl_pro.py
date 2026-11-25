@@ -135,6 +135,29 @@ def test_find_instance_returns_none_only_after_all_pages(monkeypatch):
     assert calls == [1, 2, 3]
 
 
+def test_find_instance_accepts_a_well_formed_empty_instance_list(monkeypatch):
+    def fake_urlopen(request, timeout):
+        return FakeResponse({"code": "Success", "data": {
+            "list": [], "page_index": 1, "page_size": 100, "max_page": 0
+        }, "msg": ""})
+
+    monkeypatch.setattr("musicmaster.cloud.autodl_pro.urlopen", fake_urlopen)
+    client = AutoDLProClient("secret")
+    assert client.find_instance("pro-missing") is None
+
+
+def test_find_instance_rejects_zero_pages_with_records(monkeypatch):
+    def fake_urlopen(request, timeout):
+        return FakeResponse({"code": "Success", "data": {
+            "list": [{"uuid": "pro-target"}], "max_page": 0
+        }, "msg": ""})
+
+    monkeypatch.setattr("musicmaster.cloud.autodl_pro.urlopen", fake_urlopen)
+    client = AutoDLProClient("secret")
+    with pytest.raises(AutoDLProError, match="zero pages"):
+        client.find_instance("pro-target")
+
+
 def test_find_instance_rejects_incomplete_pagination(monkeypatch):
     def fake_urlopen(request, timeout):
         return FakeResponse({"code": "Success", "data": {"list": []}, "msg": ""})
