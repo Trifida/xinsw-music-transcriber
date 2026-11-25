@@ -144,17 +144,48 @@ def cloud_health() -> dict:
     return {"ok": True, "service": "musicmaster-cloud-jobs"}
 
 
+def _idempotent_worker_id(idempotency_key: str | None) -> str:
+    """Derive a stable opaque worker ID from a caller-provided request key."""
+    key = str(idempotency_key or "").strip()
+    if not 16 <= len(key) <= 128 or any(ord(char) < 33 or ord(char) > 126 for char in key):
+        raise HTTPException(
+            status_code=400,
+            detail="A 16–128 character printable Idempotency-Key header is required.",
+        )
+    return "dispatch-" + hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
 @router.post("/api/internal/dispatcher/workers", dependencies=[Depends(_dispatcher_auth)])
-def provision_cloud_worker() -> dict:
-    """Manually provision one worker; queue automation is intentionally separate."""
-    api_url = os.environ.get("MUSICMASTER_API_URL", "").strip()
-    image_uuid = os.environ.get("MUSICMASTER_AUTODL_IMAGE_UUID", "").strip()
-    cuda_value = os.environ.get("MUSICMASTER_AUTODL_CUDA_V_FROM", "").strip()
-    if not api_url.startswith("https://") or not image_uuid or not cuda_value:
-        raise HTTPException(status_code=503, detail="Dispatcher provisioning settings are incomplete.")
+def provision_cloud_worker(
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict:
+    """Provision one worker per idempotency key; retries never create a second GPU."""
     try:
-        cuda_v_from = int(cuda_value)
+        worker_id = _idempotent_worker_id(idempotency_key)
         store, _ = _components()
+
+        # A replay returns the existing durable record and never calls AutoDL.
+        existing = store.get_worker(worker_id)
+        if existing is not None:
+            return {
+                "worker_id": worker_id,
+                "instance_uuid": existing.get("instance_uuid"),
+                "status": existing.get("status", "unknown"),
+                "idempotent_replay": True,
+                "retry_safe": False,
+                "next_step": (
+                    "Inspect and recover this worker; do not submit a new key to retry an ambiguous create."
+                    if existing.get("status") == "error" and not existing.get("instance_uuid")
+                    else "Use the existing worker record; this request will not provision another instance."
+                ),
+            }
+
+        api_url = os.environ.get("MUSICMASTER_API_URL", "").strip()
+        image_uuid = os.environ.get("MUSICMASTER_AUTODL_IMAGE_UUID", "").strip()
+        cuda_value = os.environ.get("MUSICMASTER_AUTODL_CUDA_V_FROM", "").strip()
+        if not api_url.startswith("https://") or not image_uuid or not cuda_value:
+            raise HTTPException(status_code=503, detail="Dispatcher provisioning settings are incomplete.")
+        cuda_v_from = int(cuda_value)
         client = AutoDLProClient()
         max_workers = int(os.environ.get("MUSICMASTER_AUTODL_MAX_WORKERS", "1"))
         result = store.run_with_dispatch_capacity(
@@ -165,6 +196,7 @@ def provision_cloud_worker() -> dict:
                 api_url=api_url,
                 image_uuid=image_uuid,
                 cuda_v_from=cuda_v_from,
+                worker_id=worker_id,
             ),
         )
     except DispatchCapacityError as exc:
