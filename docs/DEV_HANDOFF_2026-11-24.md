@@ -466,3 +466,29 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - On that HEAD, the CI runner diagnostic, cloud-jobs, and legacy-jianpu checks again failed within approximately 1–2 seconds. The latest Jobs API responses had steps=null and logs_url=null. The check-run API showed one annotation per failed check but its annotation endpoint was not accessible through the current GitHub integration. No pytest execution is confirmed.
 - New cloud-lyrics tests and the advisory-lock idempotency-race regression test are therefore authored but unverified.
 - The product roadmap snapshot is in docs/PRODUCT_ROADMAP_V1_V2.md. It explicitly corrects the prior overstatement about per-note lyric editing: current checked-in UI has a whole-lyrics text area and automatic first-pass alignment, but no per-note editing and save-back workflow was found.
+
+## 2026-11-25 逐音歌词编辑首版开发交接
+
+### 本轮代码修改
+- `musicmaster/transcribe/lyrics.py`
+  - 新增 `extract_lyric_slots`：逐个提取 MusicXML 可唱音符槽位，排除休止符和 tie stop 延音续段，返回原始 note index、音高、当前歌词。
+  - 新增 `apply_lyric_assignments`：按槽位精确写入；空字符串清空对应音符；“—”作为独立文本保留；槽位数不一致时拒绝写入。
+  - tokenizer 将 em dash/en dash 转成独立拖腔 token。
+- `musicmaster/web/runners.py`
+  - CREPE 主旋律识别完成后，无论用户是否预先输入歌词，都向前端提供逐音槽位；其他复音引擎标记为不支持。
+- `musicmaster/web/server.py`
+  - 新增 `POST /api/job/{job_id}/lyrics`。
+  - 仅成功的本地 transcribe job 可编辑；限制 1000 个槽位、单槽 80 字符。
+  - 保存 MusicXML、lyrics.txt、lyrics_alignment.json，尝试重渲染五线谱 SVG、简谱 SVG/PDF，并刷新 Job 结果和下载列表。
+  - 重复保存时报告只保留一段人工校正记录，不无限追加。
+- `musicmaster/web/static/js/transcribe.js`
+  - 结果页新增逐音歌词编辑器；逐行展示音符序号、音高和输入框；保存后更新预览与下载列表。
+- `tests/test_lyrics.py`
+  - 新增 tokenizer 拖腔、槽位提取、空位/拖腔写回、数量不匹配和保存 API 测试。
+
+### 尚未完成 / 验收红线
+- 当前 GitHub Actions 在最新实现提交上仍立即失败，Jobs API 返回 `steps: null`、`logs_url: null`；新增测试尚未确认执行。
+- 需要验证实际 jianpu-ly / Verovio 是否把“—”显示为期望的拖腔样式；当前首版以独立 lyric text 写入 MusicXML，不宣称已完成专业延音线/歌词延长线语义。
+- 当前只实现本地 JobManager 的编辑和保存。云端 PostgreSQL/对象存储任务的逐音修改 API 与产物覆盖尚未实现。
+- 长曲 UI 首版采用滚动逐行输入，后续根据实际体验优化分页/分段编辑，但不要先做复杂 UI。
+- 下一步优先：恢复测试执行；修正测试/渲染问题；用已有真实歌曲产物做一次从编辑到 MusicXML、简谱 PDF、五线谱 SVG 的人工验收。之后再接云端编辑接口，最后才进入自动 GPU 调度器。
