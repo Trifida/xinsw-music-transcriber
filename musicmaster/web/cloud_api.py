@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Uploa
 from pydantic import BaseModel, Field
 from fastapi.encoders import jsonable_encoder
 
-from musicmaster.cloud.job_store import JobStoreError, PostgresJobStore
+from musicmaster.cloud.job_store import DispatchCapacityError, JobStoreError, PostgresJobStore
 from musicmaster.cloud.object_store import ObjectStoreError, S3ObjectStore
 from musicmaster.cloud.autodl_pro import AutoDLProClient
 from musicmaster.cloud.dispatcher import create_autodl_worker
@@ -150,13 +150,21 @@ def provision_cloud_worker() -> dict:
         cuda_v_from = int(cuda_value)
         store, _ = _components()
         client = AutoDLProClient()
-        result = create_autodl_worker(
-            store=store,
-            autodl_client=client,
-            api_url=api_url,
-            image_uuid=image_uuid,
-            cuda_v_from=cuda_v_from,
+        max_workers = int(os.environ.get("MUSICMASTER_AUTODL_MAX_WORKERS", "1"))
+        result = store.run_with_dispatch_capacity(
+            max_workers,
+            lambda: create_autodl_worker(
+                store=store,
+                autodl_client=client,
+                api_url=api_url,
+                image_uuid=image_uuid,
+                cuda_v_from=cuda_v_from,
+            ),
         )
+    except DispatchCapacityError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=503, detail="Dispatcher capacity configuration is invalid.") from None
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=503,
