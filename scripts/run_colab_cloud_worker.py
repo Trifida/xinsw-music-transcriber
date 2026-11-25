@@ -3,13 +3,13 @@
 """Run the durable cloud worker inside an already-allocated Google Colab GPU runtime.
 
 This launcher never provisions, powers on, shuts down, or releases a GPU. It
-refuses to register a worker unless the current Python process has CUDA, the
-separation/transcription dependencies are importable, and the Drive model
-directory is present. It performs no pip installs and downloads no weights.
+performs real import checks for the complete V1 processing stack and confirms
+that the separation subprocess will use this same CUDA-enabled interpreter.
+It performs no pip installs and downloads no weights.
 """
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import os
 import socket
 import sys
@@ -23,12 +23,25 @@ DEFAULT_MODEL_DIR = DRIVE_ROOT / "XinsW_Models" / "BS-RoFormer"
 CHECKPOINT = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
 CONFIG = "model_bs_roformer_ep_317_sdr_12.9755.yaml"
 
-
-def _module_available(name: str) -> bool:
-    try:
-        return importlib.util.find_spec(name) is not None
-    except (ImportError, ValueError):
-        return False
+# These are imported by the actual full-song path. Importing them here catches
+# broken wheels / ABI or TensorFlow-Keras incompatibilities before registration.
+REQUIRED_MODULES = (
+    "numpy",
+    "librosa",
+    "soundfile",
+    "torch",
+    "audio_separator",
+    "tensorflow",
+    "crepe",
+    "hmmlearn",
+    "music21",
+)
+PROJECT_MODULES = (
+    "musicmaster.cloud.worker",
+    "musicmaster.workflows.full_transcribe",
+    "musicmaster.separate.pipeline",
+    "musicmaster.transcribe.autopilot",
+)
 
 
 def _fail(message: str, code: int = 2) -> int:
@@ -36,7 +49,21 @@ def _fail(message: str, code: int = 2) -> int:
     return code
 
 
+def _import_runtime_modules() -> tuple[dict[str, object], list[str]]:
+    loaded: dict[str, object] = {}
+    errors: list[str] = []
+    for name in REQUIRED_MODULES:
+        try:
+            loaded[name] = importlib.import_module(name)
+        except Exception as exc:  # noqa: BLE001 — report the actual broken dependency
+            errors.append(f"{name} ({type(exc).__name__}: {str(exc)[:160]})")
+    return loaded, errors
+
+
 def validate_runtime() -> tuple[str, str] | int:
+    if sys.version_info < (3, 10):
+        return _fail("项目要求 Python 3.10 或更高版本。")
+
     # Check GPU first. A CPU runtime must never register as an available GPU worker.
     try:
         import torch
@@ -56,27 +83,28 @@ def validate_runtime() -> tuple[str, str] | int:
     memory_gib = round(device_props.total_memory / (1024 ** 3), 2)
     print(f"[Colab Worker] GPU：{device_name}，显存 {memory_gib} GiB", flush=True)
 
-    required_modules = ("audio_separator", "tensorflow", "crepe", "hmmlearn", "music21")
-    missing = [name for name in required_modules if not _module_available(name)]
-    if missing:
-        return _fail(
-            "当前环境缺少必要模块：" + "、".join(missing)
-            + "。请先按已核验的 Colab 依赖方案准备环境；本脚本不会自动安装。"
-        )
+    modules, import_errors = _import_runtime_modules()
+    if import_errors:
+        return _fail("完整乐曲流程依赖导入失败：" + "；".join(import_errors)
+                     + "。请按已核验的 Colab 环境方案修复；本脚本不会自动安装或升级依赖。")
 
-    if not Path("/content/drive/MyDrive").is_dir():
+    if not DRIVE_ROOT.is_dir():
         return _fail("Google Drive 尚未挂载，找不到 /content/drive/MyDrive。")
 
     model_dir = Path(os.environ.get("MUSICMASTER_SEP_MODELS", str(DEFAULT_MODEL_DIR))).expanduser()
-    for filename in (CHECKPOINT, CONFIG):
-        if not (model_dir / filename).is_file():
-            return _fail(f"模型文件缺失：{model_dir / filename}")
+    missing_required = [
+        str(model_dir / filename) for filename in (CHECKPOINT, CONFIG)
+        if not (model_dir / filename).is_file()
+    ]
+    if missing_required:
+        return _fail("BS-RoFormer 必需文件缺失：" + "、".join(missing_required))
 
     api_url = os.environ.get("MUSICMASTER_API_URL", "").strip().rstrip("/")
     token = os.environ.get("MUSICMASTER_WORKER_TOKEN", "").strip()
     parsed = urlsplit(api_url)
-    if parsed.scheme != "https" or not parsed.netloc:
-        return _fail("请先设置 HTTPS 格式的 MUSICMASTER_API_URL。")
+    if (parsed.scheme != "https" or not parsed.netloc
+            or parsed.path not in ("", "/") or parsed.query or parsed.fragment):
+        return _fail("MUSICMASTER_API_URL 必须是 API 根地址，例如 https://你的服务.onrender.com（不要附加 /api 路径）。")
     if not token:
         return _fail(
             "未设置 MUSICMASTER_WORKER_TOKEN。请通过 Colab Secrets 安全提供已有 Worker 凭据；"
@@ -96,14 +124,51 @@ def validate_runtime() -> tuple[str, str] | int:
     os.environ.setdefault("MUSICMASTER_WORKER_DATA", "/content/xinsw-worker-tmp")
     os.environ.setdefault("MUSICMASTER_WORKER_POLL_SECONDS", "5")
 
-    # The worker and its separation subprocess must import this exact checkout.
+    # Import the real project entrypoints only after environment paths are set.
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
+    try:
+        for module_name in PROJECT_MODULES:
+            importlib.import_module(module_name)
+        from musicmaster.web.runners import _sep_python
+        resolved_sep_python = _sep_python()
+    except Exception as exc:  # noqa: BLE001
+        return _fail(f"项目工作流导入失败：{type(exc).__name__}: {str(exc)[:200]}")
 
-    print("[Colab Worker] 依赖与模型目录检查通过。", flush=True)
+    if not resolved_sep_python:
+        return _fail("分离子进程没有找到 Python 解释器，MUSICMASTER_SEP_PYTHON 未生效。")
+    if Path(resolved_sep_python).resolve() != Path(sys.executable).resolve():
+        return _fail(
+            "分离子进程解析到的 Python 与当前 CUDA Python 不一致："
+            f"{resolved_sep_python}"
+        )
+
+    # Stage 2/3 weights may be fetched by audio-separator on first use. Warn,
+    # rather than blocking registration: stage 1's BS-RoFormer is the required
+    # persistent model already checked above.
+    try:
+        from musicmaster.separate import pipeline
+        optional_models = (
+            *pipeline.DEHARMONY_MODELS.values(),
+            *pipeline.DENOISE_MODELS.values(),
+        )
+        missing_optional = [name for name in optional_models if not (model_dir / name).is_file()]
+    except Exception:
+        missing_optional = []
+
+    print("[Colab Worker] 完整乐曲工作流依赖导入通过。", flush=True)
+    print(f"[Colab Worker] Python：{sys.executable}", flush=True)
+    print(f"[Colab Worker] PyTorch：{modules['torch'].__version__}；TensorFlow：{modules['tensorflow'].__version__}", flush=True)
     print(f"[Colab Worker] 模型目录：{model_dir.resolve()}", flush=True)
+    if missing_optional:
+        print(
+            "[Colab Worker] 提醒：以下去和声/降噪模型尚未缓存，首次运行相应阶段时 "
+            "audio-separator 可能需要联网下载：" + "、".join(missing_optional),
+            flush=True,
+        )
     print(f"[Colab Worker] Worker ID：{os.environ['MUSICMASTER_WORKER_ID']}", flush=True)
     print(f"[Colab Worker] API 主机：{parsed.netloc}", flush=True)
+    print("[Colab Worker] 分离子进程已确认使用当前 CUDA Python。", flush=True)
     print("[Colab Worker] 不会创建 GPU；按 Ctrl+C 可停止本次 Worker。", flush=True)
     return api_url, device_name
 
