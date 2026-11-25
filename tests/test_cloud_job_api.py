@@ -181,7 +181,7 @@ def test_cloud_upload_creates_private_object_and_queues_job(api, monkeypatch):
     assert response.status_code == 200
     result = response.json()
     assert result["status"] == "queued"
-    assert result["dispatch"] == "disabled"
+    assert result["dispatch"] == "manual"
     assert objects.uploaded[0] == b"audio-bytes"
     assert objects.uploaded[1].startswith(f"jobs/{result['job_id']}/source/")
     assert store.jobs[result["job_id"]]["status"] == "queued"
@@ -217,28 +217,23 @@ def test_manual_start_rejects_unknown_job(api):
     assert response.status_code == 404
 
 
-def test_cloud_upload_schedules_opt_in_dispatch_with_stable_job_key(api, monkeypatch):
-    client, store, objects = api
+def test_cloud_upload_never_provisions_gpu_even_when_legacy_auto_flag_is_enabled(api, monkeypatch):
+    client, store, _ = api
     monkeypatch.setenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", "true")
-    dispatched = []
-    monkeypatch.setattr(
-        cloud_api, "provision_cloud_worker",
-        lambda *, idempotency_key: dispatched.append(idempotency_key) or {
-            "worker_id": "dispatch-test", "status": "starting",
-        },
-    )
 
+    def forbidden_provision(**kwargs):
+        raise AssertionError("full-song upload must never provision a GPU")
+
+    monkeypatch.setattr(cloud_api, "provision_cloud_worker", forbidden_provision)
     response = client.post(
         "/api/cloud/jobs",
         files={"audio": ("原曲.mp3", b"audio-bytes", "audio/mpeg")},
-        data={"engine": "crepe", "lyrics": "手动歌词"},
     )
 
     assert response.status_code == 200
     result = response.json()
     assert result["status"] == "queued"
-    assert result["dispatch"] == "scheduled"
-    assert dispatched == [f"cloud-job-{result['job_id']}"]
+    assert result["dispatch"] == "manual"
     assert store.jobs[result["job_id"]]["status"] == "queued"
 
 
