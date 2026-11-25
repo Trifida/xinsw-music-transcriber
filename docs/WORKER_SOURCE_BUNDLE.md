@@ -47,13 +47,27 @@ do not match the configured commit and checksum.
 
 ## AutoDL bootstrap sequence
 
-The AutoDL image or persistent startup volume must contain a small bootstrap
-checkout with `scripts/run_autodl_cloud_worker.sh` and
-`scripts/bootstrap_worker_bundle.py`. Configure the instance start command to
-run that launcher; do not pass a GitHub token or long-lived worker token in the
-command line.
+A fresh AutoDL image does **not** need a preinstalled repository checkout.
+On the trusted API host, call
+`build_worker_start_command(api_url, bootstrap_token)` from
+`musicmaster.cloud.autodl_pro`, then pass the returned string as the
+`start_command` argument to `AutoDLProClient.create_instance(...)` (or
+`power_on(...)`). The builder embeds a compressed copy of the small
+`scripts/bootstrap_worker_bundle.py` helper directly in the startup command.
+The instance writes that helper to a temporary file, runs it, and downloads
+the complete pinned source archive. The verified archive then supplies the
+normal worker launcher and all application code.
 
-The launcher performs these steps before installing model dependencies:
+The startup command carries only the short-lived, single-use
+`MUSICMASTER_BOOTSTRAP_TOKEN`; it never embeds a GitHub token or long-lived
+worker token. Because the startup command is sent to AutoDL as instance
+configuration, create a short-expiry bootstrap token immediately before
+starting the instance and treat the provider's command/configuration history
+as sensitive until that token has been consumed or expired. The builder
+validates the API URL and token length; it does not issue the bootstrap token
+or provision an instance by itself.
+
+The bootstrap helper performs these steps before installing model dependencies:
 
 1. Exchange the single-use `MUSICMASTER_BOOTSTRAP_TOKEN` for a worker token.
 2. Request the pinned bundle manifest using that worker token.
@@ -69,7 +83,7 @@ exchange. The worker token is held only in the running process environment and
 is not written to the bundle or a persistent credentials file. Set
 `MUSICMASTER_WORKER_BUNDLE_HOME` only when the default user cache is unsuitable.
 
-The bootstrap checkout is only a carrier for the launcher. All application
+The embedded helper is only a carrier for the download operation. All application
 code and worker dependencies are taken from the checksum-verified commit bundle.
 
 ## Remaining deployment boundary
