@@ -171,9 +171,10 @@ def api_save_lyrics(job_id: str, payload: LyricEditsRequest) -> dict:
         if musicxml is None:
             raise HTTPException(status_code=404, detail="找不到本次任务的 MusicXML 文件。")
         try:
-            from musicmaster.transcribe.lyrics import apply_lyric_assignments
+            from musicmaster.transcribe.lyrics import apply_lyric_assignments, join_lyric_slots
             import json
             applied = apply_lyric_assignments(musicxml, payload.assignments)
+            lyrics_text = join_lyric_slots(payload.assignments)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:  # noqa: BLE001
@@ -190,9 +191,7 @@ def api_save_lyrics(job_id: str, payload: LyricEditsRequest) -> dict:
             "unassignedCount": applied["emptyCount"],
             "message": "已保存逐音人工校正；空白位置保持无歌词，“—”作为拖腔标记保留。",
         }
-        (job_dir / "lyrics.txt").write_text(
-            "".join(item["lyric"] for item in slots), encoding="utf-8"
-        )
+        (job_dir / "lyrics.txt").write_text(lyrics_text, encoding="utf-8")
         (job_dir / "lyrics_alignment.json").write_text(
             json.dumps({**lyrics_info, "assignments": slots}, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -226,7 +225,7 @@ def api_save_lyrics(job_id: str, payload: LyricEditsRequest) -> dict:
         result.update({
             "lyrics_info": lyrics_info,
             "lyrics_slots": slots,
-            "lyrics_text": "".join(item["lyric"] for item in slots),
+            "lyrics_text": lyrics_text,
             "staff_svg": staff_svg,
             "jianpu_svg": jianpu_svg,
             "jianpu_page_count": 1 if jianpu_svg else None,
