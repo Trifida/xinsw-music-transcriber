@@ -250,6 +250,19 @@ def _dispatch_cloud_job(job_id: str) -> None:
             "Cloud job %s dispatch check: worker=%s status=%s",
             job_id, result.get("worker_id"), result.get("status"),
         )
+    except HTTPException as exc:
+        if exc.status_code == 409:
+            # A worker is already being provisioned or the configured worker
+            # capacity is occupied. Its polling loop will pick up queued jobs.
+            logger.info(
+                "Cloud job %s remains queued; dispatcher is busy or at capacity.",
+                job_id,
+            )
+            return
+        logger.exception(
+            "Cloud job %s remains queued after worker dispatch HTTP %s.",
+            job_id, exc.status_code,
+        )
     except Exception as exc:  # noqa: BLE001
         # The durable job remains queued. A later dispatch attempt can safely
         # replay the same idempotency key without creating a duplicate worker.
