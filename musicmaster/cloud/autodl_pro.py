@@ -198,6 +198,43 @@ class AutoDLProClient:
             raise AutoDLProError("AutoDL Pro 实例列表响应格式异常。")
         return data
 
+    def find_instance(
+        self, instance_uuid: str, *, page_size: int = 100, max_pages: int = 100
+    ) -> dict | None:
+        """Find an instance across the complete paginated Pro instance listing.
+
+        Returns None only after every page advertised by AutoDL has been read.
+        An incomplete or malformed listing is an error, never proof of absence.
+        """
+        target = self._validate_instance_id(instance_uuid)
+        if not 1 <= int(page_size) <= 100:
+            raise ValueError("page_size must be between 1 and 100.")
+        if not 1 <= int(max_pages) <= 1000:
+            raise ValueError("max_pages must be between 1 and 1000.")
+
+        first = self.list_instances(page_index=1, page_size=int(page_size))
+        items = first.get("list")
+        total_pages = first.get("max_page")
+        if not isinstance(items, list) or not isinstance(total_pages, int):
+            raise AutoDLProError("AutoDL Pro instance list is missing list/max_page fields.")
+        if total_pages < 1 or total_pages > int(max_pages):
+            raise AutoDLProError("AutoDL Pro instance list pagination is outside the safe limit.")
+
+        for page_index in range(1, total_pages + 1):
+            page = first if page_index == 1 else self.list_instances(
+                page_index=page_index, page_size=int(page_size)
+            )
+            page_items = page.get("list")
+            page_max = page.get("max_page")
+            if not isinstance(page_items, list) or page_max != total_pages:
+                raise AutoDLProError("AutoDL Pro instance list changed or became incomplete during pagination.")
+            for item in page_items:
+                if not isinstance(item, dict):
+                    raise AutoDLProError("AutoDL Pro instance list contains a malformed item.")
+                if item.get("uuid") == target:
+                    return item
+        return None
+
     def power_on(self, instance_uuid: str, *, start_command: str | None = None) -> None:
         payload: dict[str, Any] = {
             "instance_uuid": self._validate_instance_id(instance_uuid),
