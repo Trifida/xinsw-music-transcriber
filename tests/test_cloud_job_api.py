@@ -387,6 +387,20 @@ def test_worker_upload_role_classification(tmp_path):
     assert worker._artifact_role(tmp_path / "notes.json") == "metadata"
 
 
+def test_worker_marks_temporary_api_network_errors_retryable(monkeypatch):
+    import urllib.error
+
+    def unavailable(*args, **kwargs):
+        raise urllib.error.URLError("temporary network outage")
+
+    monkeypatch.setattr(worker.urllib.request, "urlopen", unavailable)
+    with pytest.raises(worker.RetryableWorkerError):
+        worker._api(
+            "https://api.example.test", "token", "POST",
+            "/api/internal/jobs/claim", {"worker_id": "gpu-1"},
+        )
+
+
 def test_worker_downloads_source_once_and_keeps_lease_through_completion(
     monkeypatch, tmp_path
 ):
