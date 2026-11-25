@@ -201,6 +201,8 @@ def test_save_lyrics_api_updates_musicxml_and_result_manifest(tmp_path, monkeypa
             return target if job_id == job.id and target.is_file() else None
 
     monkeypatch.setattr(server, "JM", Manager())
+    for stale_name in ("staff.svg", "jianpu.svg", "jianpu.pdf"):
+        (tmp_path / stale_name).write_text("<svg>old preview</svg>", encoding="utf-8")
     render_module = importlib.import_module("musicmaster.core.render")
     monkeypatch.setattr(render_module, "render", lambda *args, **kwargs: {})
 
@@ -218,3 +220,7 @@ def test_save_lyrics_api_updates_musicxml_and_result_manifest(tmp_path, monkeypa
     assert "out.musicxml" in [item["name"] for item in job.result["downloads"]]
     assert (tmp_path / "lyrics_alignment.json").is_file()
     assert "逐音歌词人工校正" in job.result["report_md"]
+    assert not (tmp_path / "staff.svg").exists()
+    assert not (tmp_path / "jianpu.svg").exists()
+    assert not (tmp_path / "jianpu.pdf").exists()
+    assert response["render_warnings"]
