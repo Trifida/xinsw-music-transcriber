@@ -113,11 +113,14 @@ class PostgresJobStore:
             # Serialize claim against idle-shutdown reservation. A worker already
             # marked stopping must never acquire another queued job.
             cur.execute(
-                "SELECT status FROM music_workers WHERE worker_id = %s FOR UPDATE",
+                "SELECT status, active_job_id FROM music_workers WHERE worker_id = %s FOR UPDATE",
                 (worker,),
             )
             worker_row = cur.fetchone()
-            if worker_row and worker_row["status"] not in {"starting", "idle", "busy"}:
+            if worker_row and (
+                worker_row["status"] not in {"starting", "idle"}
+                or worker_row.get("active_job_id") is not None
+            ):
                 return None
             # Exhausted leases become terminal failures; retryable expired leases
             # are reclaimed by the same atomic SKIP LOCKED statement below.
@@ -243,7 +246,7 @@ class PostgresJobStore:
                 ON CONFLICT (worker_id) DO UPDATE
                 SET instance_uuid = COALESCE(EXCLUDED.instance_uuid, music_workers.instance_uuid),
                     status = 'idle', last_seen_at = now(), updated_at = now()
-                WHERE music_workers.status IN ('starting', 'idle', 'busy')
+                WHERE music_workers.status IN ('starting', 'idle')
                 RETURNING *
                 """,
                 (worker, instance_uuid),
