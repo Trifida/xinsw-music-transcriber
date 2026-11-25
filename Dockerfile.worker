@@ -30,6 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY . /app
 
+ARG CREPE_MODEL_URL=""
+
 # Core environment: TensorFlow/CREPE/transcription/rendering.
 RUN python -m venv /opt/xinsw-core-venv \
     && /opt/xinsw-core-venv/bin/python -m pip install --no-cache-dir --upgrade pip \
@@ -49,7 +51,7 @@ RUN python -m venv /opt/xinsw-sep-venv \
          --extra-index-url https://pypi.org/simple \
          -r requirements/locks/separator-cpu.txt \
     && /opt/xinsw-sep-venv/bin/python -m pip check \
-    && /opt/xinsw-sep-venv/bin/python -c "import torch, torchaudio, torchvision; from audio_separator.separator import Separator; assert torch.__version__.startswith('2.11.0+cpu'); assert torchaudio.__version__.startswith('2.11.0+cpu'); assert torchvision.__version__.startswith('0.26.0+cpu'); assert not torch.cuda.is_available(); print('separator runtime: OK', torch.__version__, torchaudio.__version__, torchvision.__version__)"
+    && /opt/xinsw-sep-venv/bin/python -c "import torch, torchaudio, torchvision; from audio_separator.separator import Separator; assert torch.__version__.startswith('2.11.0+cpu'); assert torchaudio.__version__.startswith('2.11.0+cpu'); assert torchvision.__version__.startswith('0.26.0+cpu'); assert not torch.cuda.is_available(); assert torch.ops.torchvision.nms; print('separator runtime: OK', torch.__version__, torchaudio.__version__, torchvision.__version__)"
 
 # Verify that the worker entry point and the two sides of the runtime bridge import cleanly.
 RUN /opt/xinsw-core-venv/bin/python -c "import musicmaster.cloud.worker, musicmaster.workflows.full_transcribe, musicmaster.web.runners, musicmaster.transcribe.autopilot; print('worker entrypoints: OK')" \
