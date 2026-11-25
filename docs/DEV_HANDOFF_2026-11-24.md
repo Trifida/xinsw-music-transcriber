@@ -341,3 +341,12 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - The atomic idle-to-stopping transition now also accepts stale error rows. Fresh error rows are not touched; the lifecycle still confirms provider state before any power-off/release.
 - Added tests for error-worker capacity accounting, candidate discovery, stale-error shutdown, and fresh-error protection.
 - No schema change was needed because the existing status check constraint already includes error. No provider API mutation was performed.
+
+
+## CI runner diagnostic result (2026-11-25)
+
+- The new minimal workflow (.github/workflows/ci-runner-diagnostic.yml) was triggered by push on commit 03fb2fafad02bd3fccd6eefaaea28ae1d0aa215e.
+- It completed as failure in approximately 3 seconds. Its only job returned steps: null and logs_url: null; log download again returned BlobNotFound.
+- Because this diagnostic contains no checkout, setup action, dependency installation, Python test, or repository code, the failure occurs before any authored shell step can be confirmed as executed.
+- This is strong evidence of a GitHub Actions job/runner provisioning or reporting problem, not evidence of a failing application test. The exact GitHub-side root cause remains unconfirmed because the job exposes no steps, annotations, or logs.
+- Do not keep changing application code to chase these failures. The next CI task is to inspect repository Actions settings/hosted-runner availability and GitHub service/account restrictions in the GitHub UI or account owner settings. Then rerun the minimal diagnostic. Only after it succeeds should cloud and jianpu pytest workflows be used as code-quality gates.
