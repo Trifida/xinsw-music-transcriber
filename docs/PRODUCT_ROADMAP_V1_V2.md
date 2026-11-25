@@ -181,8 +181,8 @@ Google Drive MyDrive 中已发现：
 | 自动定调 | 已有实现，待验证 | SmartKeyAnalyzer 和相关测试存在；需用真实歌曲核验，自动定调不能修改原始识别音高 |
 | 手动歌词输入 | 已有实现 | 本地 V1 页面有歌词输入框，API 将用户文本传入 runner；V1 不调用 ASR |
 | 歌词初步对齐 | 已有实现，待验证 | 中文逐字、连续拉丁词按词切分；跳过休止符和 tie continuation；写入 MusicXML，并生成 lyrics.txt / lyrics_alignment.json |
-| 歌词逐音人工校正 | **未完成（当前分支缺口）** | 本轮检查到的页面是整段歌词 textarea，runner 只做初步自动分配；尚未找到逐音编辑控件、逐音修改 API，以及将人工修改稳定写回 MusicXML 的完整交互 |
-| 保存人工歌词修改 | **未完成（当前分支缺口）** | 当前有初步对齐 JSON 产物，但没有证据表明它保存了用户逐音修改后的最终映射 |
+| 歌词逐音人工校正 | **首版已实现，待验收** | 已新增逐音编辑器、本地保存 API、MusicXML 写回和谱面重渲染；CI 与真实歌曲验收尚未通过 |
+| 保存人工歌词修改 | **首版已实现，待验收** | 已写回 MusicXML、lyrics.txt、lyrics_alignment.json；云端任务编辑保存仍未接入 |
 | MusicXML / MIDI | 已有实现，待验证 | 转录 runner 生成 notes.json、MIDI、MusicXML；需真实音频验证跨格式音符与时值一致 |
 | 五线谱 SVG | 已有实现，待验证 | Verovio 渲染入口存在；需在正式部署镜像验证字体、分页和特殊记号 |
 | 简谱 SVG / PDF | 已有实现，待验证 | 使用原版 jianpu-ly + LilyPond；PDF 依赖部署环境中的 LilyPond 与字体，CI 当前不可验证 |
