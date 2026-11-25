@@ -73,6 +73,22 @@ def tokenize_lyrics(value: str) -> list[str]:
     return tokens
 
 
+def join_lyric_slots(assignments: Iterable[str]) -> str:
+    """Rebuild readable lyric text without inserting spaces between Chinese characters."""
+    output = ""
+    previous = ""
+    for raw in assignments:
+        token = str(raw or "").strip()
+        if not token:
+            previous = ""
+            continue
+        if output and previous and _is_latin_or_number(previous[-1]) and _is_latin_or_number(token[0]):
+            output += " "
+        output += token
+        previous = token
+    return output
+
+
 def _local_name(element: ET.Element) -> str:
     return element.tag.rsplit("}", 1)[-1]
 
