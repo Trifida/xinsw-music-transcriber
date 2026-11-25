@@ -223,3 +223,14 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 - Remaining before safe real use: ensure the dispatcher credential is generated/stored securely in the API host, validate the AutoDL image and `cuda_v_from` against the selected image, implement a durable capacity/lease gate to prevent multiple concurrent requests from creating excess instances, add provider status/heartbeat/idle shutdown/release handling, and run tests in a functioning CI environment. No GPU was created or powered on.
 
 - Latest verification snapshot after the manual endpoint/docs commits: PR head `1f6dbcadc6a925b7d09430b84c2e69249521c9df`, PR remains Open/Draft and unmerged. Three check runs (two cloud-jobs and one legacy-jianpu) again failed within about 1–2 seconds, each with one annotation. The current tool surface still cannot retrieve annotation bodies or usable job steps/logs. Treat this as an unresolved Actions pre-step/runner issue, not evidence that pytest failed or passed.
+
+
+## 2026-11-25 continued — PostgreSQL dispatcher lock and capacity control
+
+- Added `PostgresJobStore.run_with_dispatch_capacity(max_workers, operation)`.
+- Uses a transaction-scoped PostgreSQL advisory lock (`pg_try_advisory_xact_lock(20261125, 1)`) to serialize provisioning across multiple API processes. A concurrent request fails fast instead of creating another instance.
+- While holding the lock, counts workers in `starting`, `idle`, `busy`, and `stopping`. If count reaches the configured cap, provisioning is rejected. Stale active rows intentionally count against capacity until lifecycle reconciliation is implemented.
+- Updated the authenticated manual endpoint to use this gate and added `MUSICMASTER_AUTODL_MAX_WORKERS` (integer 1–10, default 1). Capacity contention/full returns HTTP 409; invalid configuration returns HTTP 503.
+- Added tests for lock-held operation ordering, lock contention, full capacity, invalid limits, endpoint capacity injection and conflict response. No schema migration is required.
+- This lock is held across the provider create/power-on operation. This is deliberate for cross-process exclusion; keep the AutoDL API timeout bounded. It is not a queue autoscaler and does not provide crash recovery for provider-side partial creation. Active stale worker records are conservative capacity reservations until the lifecycle reconciler is built.
+- No paid GPU instance was created or powered on. Tests have been authored but still require a functioning GitHub Actions run.
