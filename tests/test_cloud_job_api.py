@@ -75,13 +75,17 @@ class FakeStore:
         self.recovered_worker_instance = (worker_id, instance_uuid)
         return getattr(self, "recovery_allowed", True)
 
-    def run_with_dispatch_capacity(self, max_workers, operation):
+    def run_with_dispatch_capacity(self, max_workers, operation, *, replay_if=None):
         if not 1 <= int(max_workers) <= 10:
             raise ValueError("max_workers must be between 1 and 10.")
+        self.dispatch_max_workers = max_workers
+        if replay_if is not None:
+            replay = replay_if()
+            if replay is not None:
+                return replay
         if getattr(self, "capacity_full", False):
             from musicmaster.cloud.job_store import DispatchCapacityError
             raise DispatchCapacityError("Worker capacity is full.")
-        self.dispatch_max_workers = max_workers
         return operation()
 
 
@@ -474,6 +478,41 @@ def test_dispatcher_endpoint_requires_idempotency_key(api, monkeypatch):
     )
     assert response.status_code == 400
     assert "Idempotency-Key" in response.json()["detail"]
+
+
+def test_dispatcher_endpoint_rechecks_idempotency_after_capacity_lock(api, monkeypatch):
+    client, store, _ = api
+    monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    key = "request-key-race-check-01"
+    worker_id = cloud_api._idempotent_worker_id(key)
+    original_get_worker = store.get_worker
+    calls = {"count": 0}
+
+    def racing_lookup(value):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return None  # Both requests can observe the pre-insert state.
+        store.worker_record = {
+            "worker_id": worker_id,
+            "instance_uuid": "pro-already-created",
+            "status": "starting",
+            "active_job_id": None,
+        }
+        return original_get_worker(value)
+
+    store.get_worker = racing_lookup
+    monkeypatch.setattr(
+        cloud_api, "AutoDLProClient",
+        lambda: (_ for _ in ()).throw(AssertionError("locked replay must not contact AutoDL")),
+    )
+    response = client.post(
+        "/api/internal/dispatcher/workers",
+        headers={"Authorization": "Bearer " + "d" * 40, "Idempotency-Key": key},
+    )
+    assert response.status_code == 200
+    assert response.json()["idempotent_replay"] is True
+    assert response.json()["instance_uuid"] == "pro-already-created"
+    assert calls["count"] == 2
 
 
 def test_dispatcher_endpoint_replay_returns_existing_worker_without_autodl(api, monkeypatch):
