@@ -199,3 +199,16 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 
 - Follow-up: the AutoDL command test now also runs `bash -n` when Bash is available, so CI can catch malformed multiline startup commands without launching an instance. This is authored test coverage only; Actions still does not expose execution steps/logs.
 - CI diagnosis refinement: on head `6f89ecd7793b78abd1cbb5bc14fa17d84bd9d39e`, the GitHub check-run API shows three failed check runs (two cloud-jobs invocations and one legacy-jianpu), each completing roughly 1–2 seconds after start and each reporting exactly one annotation. The jobs endpoint still returns `steps: null` and `logs_url: null`; the available GitHub fetch surface cannot retrieve annotation bodies. This strongly suggests failure before normal test steps, but the exact runner/annotation cause remains unverified. Do not interpret these as pytest failures.
+
+
+## 2026-11-25 continued — AutoDL worker provisioning sequence
+
+- Added `musicmaster/cloud/dispatcher.py` with explicit `create_autodl_worker(...)` orchestration.
+- It generates a high-entropy one-time bootstrap token, stores only its SHA-256 hash in the bootstrap-token table, and creates the worker row.
+- Important race fix: AutoDL instance creation is called **without** a startup command first. The returned `pro-...` instance ID is persisted to both the bootstrap-token record and worker record. Only then does the dispatcher call `power_on(..., start_command=...)`. This prevents a fast boot from consuming the one-time token before its instance ID is associated in Postgres.
+- On failure, the worker is marked `error`. If an instance was already created, its ID is intentionally retained for operator recovery; the helper does not automatically power off or release a paid resource.
+- Added `tests/test_cloud_dispatcher.py` for operation ordering, token hashing, link-failure safety, and invalid worker IDs. Added it to the Cloud jobs CI test command.
+- This remains an orchestration helper, not a public/admin HTTP endpoint. It is not yet wired to queue-depth polling, Render secrets, AutoDL status monitoring, idle shutdown, or release. It has not been executed against AutoDL; no GPU instance was created or powered on.
+- Current PR head before this note: `cd05d2dadcf1fc003d46f4e3585f8220fc8a9db6`; subsequent workflow/docs/handoff commits may advance it. Always re-read the PR head.
+- CI has not yet provided a usable test result. The new tests are authored but not verified in a functioning runner.
+- Next: add an authenticated dispatcher endpoint/config validation, test it with injected fake AutoDL client and store; then implement durable single-dispatcher lease/queue trigger and instance lifecycle monitoring. Do not run paid GPU.
