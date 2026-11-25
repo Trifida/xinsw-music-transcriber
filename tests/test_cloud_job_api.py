@@ -443,7 +443,7 @@ def test_dispatcher_endpoint_rejects_invalid_capacity_setting(api, monkeypatch):
     monkeypatch.setattr(cloud_api, "AutoDLProClient", lambda: object())
     response = client.post(
         "/api/internal/dispatcher/workers",
-        headers={"Authorization": "Bearer " + "d" * 40},
+        headers={"Authorization": "Bearer " + "d" * 40, "Idempotency-Key": "request-key-invalid-01"},
     )
     assert response.status_code == 503
 
