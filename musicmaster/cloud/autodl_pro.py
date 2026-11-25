@@ -239,6 +239,61 @@ class AutoDLProClient:
                     return item
         return None
 
+    def find_instances_by_name(
+        self, instance_name: str, *, page_size: int = 100, max_pages: int = 100
+    ) -> list[dict]:
+        """Return exact-name matches only after scanning the complete paginated listing.
+
+        A complete scan is required so duplicate names are detected rather than
+        silently choosing the first match. An empty result is not proof that a
+        timed-out create request is safe to retry; provider listing may lag.
+        """
+        name = str(instance_name).strip()
+        if not name or len(name) > 128:
+            raise ValueError("instance_name must contain 1–128 characters.")
+        if not 1 <= int(page_size) <= 100:
+            raise ValueError("page_size must be between 1 and 100.")
+        if not 1 <= int(max_pages) <= 1000:
+            raise ValueError("max_pages must be between 1 and 1000.")
+
+        first = self.list_instances(page_index=1, page_size=int(page_size))
+        items = first.get("list")
+        total_pages = first.get("max_page")
+        if not isinstance(items, list) or not isinstance(total_pages, int):
+            raise AutoDLProError("AutoDL Pro instance list is missing list/max_page fields.")
+        if total_pages < 0 or total_pages > int(max_pages):
+            raise AutoDLProError("AutoDL Pro instance list pagination is outside the safe limit.")
+        if total_pages == 0:
+            if items:
+                raise AutoDLProError("AutoDL Pro reported zero pages but returned instance records.")
+            return []
+
+        matches: list[dict] = []
+        for page_index in range(1, total_pages + 1):
+            page = first if page_index == 1 else self.list_instances(
+                page_index=page_index, page_size=int(page_size)
+            )
+            page_items = page.get("list")
+            page_max = page.get("max_page")
+            returned_index = page.get("page_index", page_index)
+            if (not isinstance(page_items, list) or page_max != total_pages
+                    or returned_index != page_index):
+                raise AutoDLProError("AutoDL Pro instance list changed or became incomplete during pagination.")
+            for item in page_items:
+                if not isinstance(item, dict):
+                    raise AutoDLProError("AutoDL Pro instance list contains a malformed item.")
+                if item.get("name") == name:
+                    instance_uuid = item.get("uuid")
+                    if not isinstance(instance_uuid, str) or not instance_uuid.startswith("pro-"):
+                        raise AutoDLProError("AutoDL Pro exact-name match has an invalid instance ID.")
+                    matches.append({
+                        "uuid": instance_uuid,
+                        "name": name,
+                        "status": item.get("status"),
+                        "created_at": item.get("created_at"),
+                    })
+        return matches
+
     def power_on(self, instance_uuid: str, *, start_command: str | None = None) -> None:
         payload: dict[str, Any] = {
             "instance_uuid": self._validate_instance_id(instance_uuid),
