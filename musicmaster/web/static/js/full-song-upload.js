@@ -34,6 +34,9 @@
     showSelectedSource();
 
     var activeJobId = '';
+    var autoPoll = false;
+    var pollTimer = null;
+    var queryInFlight = false;
 
     function setBusy(busy) {
       submit.disabled = busy;
@@ -132,6 +135,10 @@
       body.append('denoise', 'dereverb');
       body.append('lyrics', lyricsInput ? lyricsInput.value : '');
 
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = null;
+      autoPoll = false;
+      activeJobId = '';
       setBusy(true);
       refresh.hidden = true;
       if (artifactsContainer) artifactsContainer.textContent = '';
@@ -154,6 +161,8 @@
             : '\n当前自动 GPU 调度未启用，本次上传只完成入队，不代表已经开始扒谱。';
           status.textContent = '完整乐曲已上传并进入云端队列。\n任务编号：' + activeJobId
             + '\n当前状态：' + (data.status || 'queued') + dispatchMessage;
+          autoPoll = data.dispatch === 'scheduled';
+          if (autoPoll) queryJob(false);
         })
         .catch(function (error) {
           status.textContent = '上传未成功：' + (error && error.message ? error.message : String(error));
@@ -163,10 +172,11 @@
         });
     });
 
-    refresh.addEventListener('click', function () {
-      if (!activeJobId) return;
+    function queryJob(showLoading) {
+      if (!activeJobId || queryInFlight) return;
+      queryInFlight = true;
       refresh.disabled = true;
-      status.textContent = '正在查询云端任务…';
+      if (showLoading) status.textContent = '正在查询云端任务…';
       fetch('/api/cloud/jobs/' + encodeURIComponent(activeJobId))
         .then(function (response) {
           return response.json().catch(function () { return {}; }).then(function (data) {
@@ -175,6 +185,35 @@
             }
             return data;
           });
+        })
+        .then(function (data) {
+          if (!data.job) throw new Error('服务器没有返回任务详情。');
+          explainJob(data.job, data.artifacts || []);
+          var state = String(data.job.status || '').toLowerCase();
+          if (autoPoll && (state === 'queued' || state === 'running')) {
+            if (pollTimer) clearTimeout(pollTimer);
+            pollTimer = setTimeout(function () { queryJob(false); }, 5000);
+          } else {
+            autoPoll = false;
+            pollTimer = null;
+          }
+        })
+        .catch(function (error) {
+          status.textContent = '查询失败：' + (error && error.message ? error.message : String(error));
+          if (autoPoll) {
+            if (pollTimer) clearTimeout(pollTimer);
+            pollTimer = setTimeout(function () { queryJob(false); }, 10000);
+          }
+        })
+        .finally(function () {
+          queryInFlight = false;
+          refresh.disabled = false;
+        });
+    }
+
+    refresh.addEventListener('click', function () {
+      queryJob(true);
+    });
         })
         .then(function (data) {
           if (!data.job) throw new Error('服务器没有返回任务详情。');
