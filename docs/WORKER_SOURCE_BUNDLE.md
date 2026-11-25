@@ -64,8 +64,12 @@ worker token. Because the startup command is sent to AutoDL as instance
 configuration, create a short-expiry bootstrap token immediately before
 starting the instance and treat the provider's command/configuration history
 as sensitive until that token has been consumed or expired. The builder
-validates the API URL and token length; it does not issue the bootstrap token
-or provision an instance by itself.
+validates the API URL and token length. The trusted API host can now call
+`create_autodl_worker(...)` from `musicmaster.cloud.dispatcher` to create the
+worker row, issue a hashed one-time token, create an instance without a startup
+command, persist the instance ID, and only then power it on with the generated
+command. This ordering prevents a fast boot from consuming the token before
+the instance ID has been attached to its database record.
 
 The bootstrap helper performs these steps before installing model dependencies:
 
@@ -88,8 +92,10 @@ code and worker dependencies are taken from the checksum-verified commit bundle.
 
 ## Remaining deployment boundary
 
-This implements the worker-side source download and verification. It does not
-provision or power on AutoDL instances, create bootstrap tokens, publish the
-bundle automatically, configure Render secrets, or shut instances down. The
-dispatcher must verify AutoDL has powered off before releasing a paid instance.
-No paid GPU should be started for CI or bootstrap unit tests.
+The provisioning helper implements the create → persist instance ID → power-on
+sequence, but it is not yet exposed through an authenticated dispatcher API or
+connected to automatic queue-depth/capacity decisions. It does not publish the
+bundle automatically, configure Render secrets, monitor the instance through
+the full job lifecycle, shut instances down, or release them. The dispatcher
+must verify AutoDL has powered off before releasing a paid instance. No paid
+GPU should be started for CI or bootstrap unit tests.
