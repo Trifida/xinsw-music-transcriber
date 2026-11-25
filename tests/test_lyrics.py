@@ -74,6 +74,18 @@ def test_extract_lyric_slots_skips_rests_and_tied_continuations(tmp_path: Path):
     ]
 
 
+def test_extract_lyric_slots_formats_decimal_accidentals(tmp_path: Path):
+    from musicmaster.transcribe.lyrics import extract_lyric_slots
+
+    source = tmp_path / "accidentals.musicxml"
+    source.write_text("""<score-partwise><part><measure>
+      <note><pitch><step>C</step><alter>1.0</alter><octave>4</octave></pitch></note>
+      <note><pitch><step>D</step><alter>-1.0</alter><octave>4</octave></pitch></note>
+      <note><pitch><step>E</step><alter>0.5</alter><octave>4</octave></pitch></note>
+    </measure></part></score-partwise>""", encoding="utf-8")
+    assert [slot["pitch"] for slot in extract_lyric_slots(source)] == ["C#4", "Db4", "E(+0.5)4"]
+
+
 def test_apply_lyric_assignments_preserves_empty_and_melisma_slots(tmp_path: Path):
     from musicmaster.transcribe.lyrics import apply_lyric_assignments, extract_lyric_slots
 
