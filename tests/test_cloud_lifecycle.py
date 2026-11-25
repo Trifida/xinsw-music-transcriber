@@ -17,7 +17,7 @@ class FakeStore:
         return dict(self.worker)
 
     def mark_stale_idle_worker_stopping(self, worker_id, *, idle_seconds):
-        if self.worker["status"] != "idle":
+        if self.worker["status"] not in {"idle", "error"}:
             return False
         self.worker["status"] = "stopping"
         self.marked_stopping = True
@@ -181,3 +181,30 @@ def test_recovery_does_not_finalize_when_provider_list_lookup_fails():
             store=store, autodl_client=provider, worker_id="worker-test"
         )
     assert store.marked_stopped is False
+
+
+
+def test_stale_error_worker_is_marked_stopping_before_provider_shutdown():
+    store = FakeStore(status="error")
+    provider = FakeAutoDL("running")
+    result = reconcile_idle_worker(
+        store=store, autodl_client=provider, worker_id="worker-test", idle_seconds=600
+    )
+    assert result["status"] == "stopping"
+    assert store.marked_stopping is True
+    assert store.idle_seconds == 600
+    assert provider.events == [
+        ("status", "pro-test"),
+        ("power_off", "pro-test"),
+    ]
+
+
+def test_fresh_error_worker_is_not_reconciled_or_powered_off():
+    store = FakeStore(status="error")
+    store.mark_stale_idle_worker_stopping = lambda *args, **kwargs: False
+    provider = FakeAutoDL("running")
+    result = reconcile_idle_worker(
+        store=store, autodl_client=provider, worker_id="worker-test", idle_seconds=600
+    )
+    assert result["status"] == "not_stale_or_not_reconcilable"
+    assert provider.events == []
