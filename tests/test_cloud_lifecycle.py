@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from musicmaster.cloud.autodl_pro import AutoDLProError
 from musicmaster.cloud.lifecycle import reconcile_idle_worker
 
 
@@ -129,7 +130,7 @@ class MissingStatusAutoDL(FakeAutoDL):
 
     def get_status(self, instance_uuid):
         self.events.append(("status_error", instance_uuid))
-        raise RuntimeError("provider status lookup unavailable")
+        raise AutoDLProError("provider status lookup unavailable")
 
     def find_instance(self, instance_uuid):
         self.events.append(("find_instance", instance_uuid))
@@ -175,7 +176,7 @@ def test_recovery_does_not_finalize_when_provider_list_lookup_fails():
 
     store = FakeStore(status="stopping")
     provider = BrokenListAutoDL(None)
-    with pytest.raises(RuntimeError, match="status lookup unavailable"):
+    with pytest.raises(AutoDLProError, match="status lookup unavailable"):
         reconcile_idle_worker(
             store=store, autodl_client=provider, worker_id="worker-test"
         )
