@@ -251,3 +251,22 @@ https://github.com/Trifida/xinsw-music-transcriber/pull/12
 
 - Follow-up hardening: `claim_next` now locks the worker row and permits a claim only for `starting`/`idle` workers with no active job; an already-busy worker cannot claim a second job. Re-registration cannot change a busy worker back to idle. Added regression coverage.
 - The worker no longer has its own idle auto-exit branch. It continues heartbeating while idle; only the server-side, dispatcher-authenticated lifecycle reconciler may reserve shutdown.
+
+
+## 2026-11-25 continued — interrupted AutoDL release recovery
+
+- Rechecked PR #12 at HEAD `35fdb1455ce9b8f3a01eae9e5b0207ea069ae9f1`: Open / Draft, base `main`, head `deploy/v1-production`; no merge or production deployment.
+- The previous lifecycle flow had a crash window: AutoDL release could succeed, then the API process could fail before `mark_worker_stopped_after_release`. A later status lookup might fail because the instance no longer exists, leaving the DB row permanently `stopping` and consuming capacity.
+- Added `AutoDLProClient.find_instance()`: validates the documented list response, scans every page up to the provider's advertised `max_page`, rejects malformed/incomplete pagination, and returns `None` only after a complete scan.
+- Updated `reconcile_idle_worker()`: if the status lookup errors, it performs the complete list scan. If the instance is still listed, it keeps the worker `stopping`; if absent from the complete list, it finalizes DB state to `stopped`. If the list lookup also fails or is incomplete, it does not finalize or release anything.
+- Added tests for multi-page match, complete absence, malformed pagination, interrupted-release recovery, still-listed instances, and list API failure.
+- No migration is needed: existing worker states already support `stopping` and `stopped`.
+- This remains conservative recovery only. No GPU API was called; no instance was created, started, powered off, or released. The endpoint remains manual-only; no scheduler/sweeper is wired.
+- AutoDL's official Pro API documents the paginated `/api/v1/dev/instance/pro/list` response with `data.list` and `data.max_page`, plus the status and release endpoints: https://autodl.com/docs/instance_pro_api/.
+- Latest observed Actions at the prior HEAD still fail within 1–2 seconds with empty steps/log URLs; this is unresolved and must not be represented as a pytest failure or success.
+
+### Next
+1. Verify the focused tests in a real Python/Linux environment and inspect the new commit's Actions checks.
+2. Add a bounded batch stale-idle sweep endpoint (dry-run by default; no provider mutations in dry-run), still manual-only.
+3. Add durable queue-trigger/idempotency before enabling any automatic provisioning.
+4. Keep all production, Neon-main, Render deploy, and paid AutoDL operations behind explicit authorization.
