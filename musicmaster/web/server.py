@@ -198,8 +198,14 @@ def api_save_lyrics(job_id: str, payload: LyricEditsRequest) -> dict:
         )
 
         render_warnings = []
-        staff_svg = result.get("staff_svg")
-        jianpu_svg = result.get("jianpu_svg")
+        staff_svg = None
+        jianpu_svg = None
+        # Remove previous renders first: a failed renderer must never leave stale
+        # previews/PDFs that appear to reflect the newly edited MusicXML.
+        for stale_name in ("staff.svg", "jianpu.svg", "jianpu.pdf"):
+            stale_path = job_dir / stale_name
+            if stale_path.is_file():
+                stale_path.unlink()
         try:
             from musicmaster.core.render import render as render_score
             rendered = render_score(
@@ -207,8 +213,12 @@ def api_save_lyrics(job_id: str, payload: LyricEditsRequest) -> dict:
             )
             if rendered.get("staff"):
                 staff_svg = runners._read_svg(Path(rendered["staff"]))
+            else:
+                render_warnings.append("五线谱 SVG 未能重新生成。")
             if rendered.get("jianpu"):
                 jianpu_svg = runners._read_svg(Path(rendered["jianpu"]))
+            else:
+                render_warnings.append("简谱 SVG 未能重新生成。")
             try:
                 render_score(str(musicxml), str(job_dir), formats=("jianpu",), jianpu_format="pdf")
             except Exception as exc:  # noqa: BLE001
