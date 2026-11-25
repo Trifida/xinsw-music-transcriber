@@ -119,3 +119,69 @@ Render 独立服务配置、Neon 测试分支、AutoDL 按任务启动、完整�
 https://github.com/Trifida/xinsw-music-transcriber/pull/12
 
 **交接原则：** 先核实远端真实状态，再继续写代码；不以聊天中的旧 SHA 覆盖 GitHub 最新状态。
+
+
+---
+
+## 七、2026-11-25 开发续接记录
+
+**本轮最新 PR HEAD：** `e09fc63bc393469676dc329d8cbe9d6335e7e6b2`  
+**分支：** `deploy/v1-production`  
+**PR #12：** 仍为 Draft / Open；未合并 main。
+
+### 已完成的 GPU worker source bootstrap 实现
+
+新增：
+- `scripts/bootstrap_worker_bundle.py`
+  - 使用一次性 Bootstrap Token 调用 `POST /api/internal/bootstrap` 换取 Worker Token。
+  - 使用 Worker Bearer Token 调用 `GET /api/internal/worker/bundle`。
+  - 验证 Commit SHA、SHA256 和对象 key 三者匹配。
+  - 只允许 HTTPS 下载，下载上限 512 MiB。
+  - 下载后校验完整 SHA256。
+  - tar.gz 解压前拒绝绝对路径、路径穿越、软链接、硬链接及特殊文件。
+  - 解压后要求存在 `musicmaster/cloud/worker.py`。
+  - 安装到按 Commit SHA 隔离的用户缓存目录；保留摘要标记。
+- `scripts/run_autodl_cloud_worker.sh`
+  - 增加启动前 bundle bootstrap。
+  - 从已校验的版本目录重新启动 Worker launcher。
+  - Bootstrap Token 在交换后从环境中清除；不落盘保存 Worker Token。
+- `tests/test_worker_bundle_bootstrap.py`
+  - 覆盖正常解压、路径穿越、链接文件、缺少 worker 入口、HTTPS 校验及完整 token→bundle 下载流程。
+- `.github/workflows/cloud-jobs-smoke.yml`
+  - 将 bootstrap 编译检查和测试加入 Cloud jobs CI。
+- `docs/WORKER_SOURCE_BUNDLE.md`
+  - 记录 AutoDL bootstrap 顺序和部署边界。
+
+### 关键限制，尚不能标记为 GPU 自动部署完成
+
+当前 launcher 必须先存在于 AutoDL 镜像或持久启动卷中，至少包含：
+- `scripts/run_autodl_cloud_worker.sh`
+- `scripts/bootstrap_worker_bundle.py`
+
+这两个文件是独立 bootstrap carrier；下载完成后，真正运行的应用代码来自 SHA256 验证通过的私有代码包。尚未实现 AutoDL 创建实例时自动注入这两个 carrier，也尚未完成实例创建/启动/关机/释放调度器。
+
+### 最新 CI 状态
+
+- 最新 Cloud jobs run：Run ID `45526409176`，Run #58。
+- Head SHA：`e09fc63bc393469676dc329d8cbe9d6335e7e6b2`。
+- 第一次运行失败；重跑 attempt 2 仍失败。
+- Job ID：`138910972012`。
+- GitHub Jobs API 的 steps 仍为空；下载日志返回 BlobNotFound 404。
+- 因此新增 bootstrap 测试没有获得可确认的执行结果，不能声称通过。
+- 同一 PR 的 Original jianpu renderer workflow 也仍失败，需独立追查。
+
+### 下一步
+
+1. **P0**：继续解决 Actions 失败无步骤/无日志的问题。检查 workflow run/job 的真实 GitHub 页面及仓库 Actions 设置；不能把空 steps 当成代码错误，也不能把测试标记通过。
+2. **P1**：为 bootstrap 增加完整端到端 mock 测试与 shell launcher 静态校验；在可用的安全 Linux 环境实际运行测试。
+3. **P1**：明确 AutoDL 镜像如何预置 bootstrap carrier；这一步需要先验证 AutoDL start_command / 镜像机制，不能假设 carrier 已存在。
+4. **P2**：实现持久化 dispatcher 和 AutoDL 生命周期状态机；付费 GPU 仍不得启动，除非用户明确授权。
+5. **P3**：Neon 测试分支、Render 配置、AutoDL 测试实例及真实音频全链路验证。
+
+### 安全边界重申
+
+- 只改 `deploy/v1-production`；不改 `main`、不合并 PR、不部署生产。
+- 不启动付费 GPU。
+- GitHub 长期令牌不得进入 GPU。
+- 不将 Worker Token 写入代码包、文件或日志。
+- 所有生产环境变量、数据库和部署变更必须先获得用户明确授权。
