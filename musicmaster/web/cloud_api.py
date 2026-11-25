@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import uuid
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -237,6 +238,43 @@ def provision_cloud_worker(
 def _auto_dispatch_enabled() -> bool:
     return os.environ.get("MUSICMASTER_AUTODL_AUTO_DISPATCH", "").strip().lower() in {
         "1", "true", "yes", "on",
+    }
+
+
+@router.post(
+    "/api/internal/dispatcher/dispatch-queued",
+    dependencies=[Depends(_dispatcher_auth)],
+)
+def dispatch_queued_cloud_jobs() -> dict:
+    """Durable periodic fallback for queued jobs missed by an API background task."""
+    if not _auto_dispatch_enabled():
+        return {"enabled": False, "status": "disabled", "queued_jobs": 0}
+
+    store, _ = _components()
+    queued_jobs = store.count_queued_jobs()
+    if queued_jobs <= 0:
+        return {"enabled": True, "status": "no_queued_jobs", "queued_jobs": 0}
+
+    # One deterministic key per UTC minute makes overlapping scheduled calls
+    # idempotent. The capacity gate prevents creating another GPU when the
+    # configured worker limit is already occupied.
+    minute_key = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
+    try:
+        worker = provision_cloud_worker(idempotency_key=f"queue-sweep-{minute_key}")
+    except HTTPException as exc:
+        if exc.status_code == 409:
+            return {
+                "enabled": True,
+                "status": "waiting_for_existing_worker_or_capacity",
+                "queued_jobs": queued_jobs,
+            }
+        raise
+    return {
+        "enabled": True,
+        "status": "worker_dispatch_requested",
+        "queued_jobs": queued_jobs,
+        "worker_id": worker.get("worker_id"),
+        "worker_status": worker.get("status"),
     }
 
 
