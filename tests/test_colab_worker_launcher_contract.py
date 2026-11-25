@@ -35,13 +35,14 @@ def test_colab_launcher_checks_project_entrypoints_and_sep_interpreter():
 
 def test_colab_launcher_requires_api_root_and_existing_bs_roformer_weights():
     assert 'parsed.path not in ("", "/")' in SOURCE
-    assert 'parsed.query or parsed.fragment' in SOURCE
+    assert "parsed.query or parsed.fragment" in SOURCE
     assert 'if not (model_dir / filename).is_file()' in SOURCE
     assert "MUSICMASTER_WORKER_TOKEN" in SOURCE
 
 
-def test_colab_launcher_never_installs_or_provisions_gpu():
+def test_colab_launcher_does_not_install_dependencies_or_provision_gpu():
     lowered = SOURCE.lower()
     assert "pip install" not in lowered
     assert "autodl" not in lowered
-    assert "create" not in lowered or "不会创建 gpu" in SOURCE
+    assert "create_autodl_worker" not in SOURCE
+    assert "subprocess" not in lowered
