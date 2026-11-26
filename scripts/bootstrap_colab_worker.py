@@ -147,8 +147,9 @@ def main() -> int:
             crepe_model_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(CREPE_MODEL_DRIVE, crepe_model_path)
         print("[Colab Bootstrap] 已从 Drive 恢复 CREPE 模型缓存。", flush=True)
-    elif not crepe_model_path.is_file() or crepe_model_path.stat().st_size < 10_000_000:
-        run([str(core_py), str(ROOT / "scripts/prepare_crepe_model.py")], env=env)
+    else:
+        if not crepe_model_path.is_file() or crepe_model_path.stat().st_size < 10_000_000:
+            run([str(core_py), str(ROOT / "scripts/prepare_crepe_model.py")], env=env)
         if crepe_model_path.is_file() and crepe_model_path.stat().st_size >= 10_000_000:
             CREPE_MODEL_DRIVE.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(crepe_model_path, CREPE_MODEL_DRIVE)
