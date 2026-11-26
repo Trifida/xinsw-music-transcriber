@@ -1,109 +1,75 @@
-# Google Colab CPU / GPU Worker（V1）
+# Google Colab GPU Worker（V1 稳定启动流程）
 
-本说明将现有云端任务队列 Worker 运行在用户主动连接的 Colab CPU 或 GPU Runtime 中。它不创建 GPU，不调用 AutoDL provisioning，也不自动安装依赖或下载模型。
+本项目 V1 使用用户主动连接的 Google Colab GPU Runtime（当前验收设备为 Tesla T4）。网站只负责任务队列和结果展示；Colab Worker 主动连接网站 API。网站不会创建、启动、关闭或释放 GPU。
 
-## 启动条件
+## 一次性准备
 
-1. Colab 当前运行时必须已经连接；CPU 和 GPU Runtime 均可注册为计算 Worker。CPU 处理速度会明显慢于 GPU。
-2. Google Drive 已挂载。
-3. 已有 Worker API 凭据通过 Colab Secrets 注入环境变量 `MUSICMASTER_WORKER_TOKEN`；不要把 token 写进 Notebook 源码、输出或 Git。启动器也支持由该凭据签发的短时一次性 `MUSICMASTER_BOOTSTRAP_TOKEN`。
-4. `MUSICMASTER_API_URL` 指向已部署服务的 HTTPS 根地址，不要附加 `/api`。
-5. 核心 Python 3.11 环境必须能导入 NumPy、librosa、soundfile、TensorFlow、CREPE、hmmlearn、music21、Verovio、jianpu-ly；同时系统必须安装 LilyPond CLI，供整曲任务生成简谱 SVG/PDF。人声分离使用独立 Python 环境，导入 PyTorch、torchaudio 和 audio-separator。两套环境不能混装：核心 TensorFlow 2.15 需要 NumPy <2，而当前 audio-separator 需要 NumPy 2。
-6. Drive 中必须存在 BS-RoFormer checkpoint 和 YAML。
-7. 私有仓库工作副本必须已在 Colab 中取得授权并检出本分支代码。
+1. 在 Colab 左侧 Secrets 中添加 `MUSICMASTER_WORKER_TOKEN`，并允许本 Notebook 读取。
+2. 确认 Colab Runtime 已选择 GPU（例如 Tesla T4），不要使用 CPU Runtime 进行本轮 GPU 验收。
+3. Google Drive 中必须已有以下两个 BS-RoFormer 文件：
 
-## 一键初始化（推荐）
+   `MyDrive/XinsW_Models/BS-RoFormer/model_bs_roformer_ep_317_sdr_12.9755.ckpt`
 
-仓库提供统一初始化脚本 `scripts/bootstrap_colab_worker.py`。它会在 Colab 本地 `/content` 下安装并配置 Python 3.11、核心环境、CUDA 13.0 分离环境和 LilyPond，最后检查 TensorFlow/CREPE、PyTorch、torchaudio、audio-separator、CUDA 与 BS-RoFormer 模型。uv 缓存、Python 和虚拟环境都不写入 Google Drive；Drive 只保存模型权重。
+   `MyDrive/XinsW_Models/BS-RoFormer/model_bs_roformer_ep_317_sdr_12.9755.yaml`
 
-在已检出本分支代码的仓库目录中，先在 Colab 的 Secrets 中添加 `MUSICMASTER_WORKER_TOKEN`，然后运行一个单元。该单元先用长期凭据在 API 上签发 15 分钟、单次使用的 Bootstrap Token，再把它交给 Worker 启动流程；不会打印任何凭据：
+4. 打开并运行 `notebooks/XinsW_Colab_GPU_Worker_V1.ipynb` 中唯一的启动代码单元。
 
-```python
-from google.colab import userdata
-import json
-import os
-import urllib.request
+## 每次启动
 
-api = "https://xinsw-transcriber-dev.onrender.com"
-worker_token = userdata.get("MUSICMASTER_WORKER_TOKEN")
-os.environ["MUSICMASTER_API_URL"] = api
+每次新建或重新连接 Colab Runtime 后，只需重新运行该 Notebook 的启动单元。它会自动：
 
-request = urllib.request.Request(
-    api + "/api/internal/bootstrap/issue",
-    data=json.dumps({"worker_id": "colab-t4", "expires_seconds": 900}).encode(),
-    headers={
-        "Authorization": "Bearer " + worker_token,
-        "Content-Type": "application/json",
-    },
-    method="POST",
-)
-with urllib.request.urlopen(request, timeout=30) as response:
-    bootstrap = json.loads(response.read().decode())["bootstrap_token"]
+1. 挂载 Google Drive，并从 Colab Secrets 读取 Worker 凭据（不打印凭据）。
+2. 从开发网站 API 获取当前固定版本的 Worker Source Bundle。
+3. 校验 commit SHA、SHA-256 和 HTTPS 下载地址；拒绝路径穿越、链接、特殊文件及超大归档。
+4. 从固定源码包启动 `scripts/bootstrap_colab_worker.py --start`。
+5. 自动建立 Python 3.11 核心环境和独立 CUDA 分离环境；安装缺少的 LilyPond；验证核心依赖、PyTorch、torchaudio、audio-separator、CUDA 和模型文件。
+6. 启动 Worker。看到 `[cloud-worker] registered` 后，返回网站上传完整乐曲并点击“开始记谱”。
 
-os.environ["MUSICMASTER_BOOTSTRAP_TOKEN"] = bootstrap
-del worker_token
-!python scripts/bootstrap_colab_worker.py --start
-```
+启动单元会持续运行，这是正常现象。不要关闭 Colab Runtime；要停止 Worker 时，在 Colab 中中断该代码单元即可。
 
-首次运行会安装依赖并启动 Worker；Colab Runtime 重启后再次运行同一单元即可重建本地环境并启动。安装缓存只在当前 Runtime 生命周期内有效，因此重启后可能重新下载依赖；不要将虚拟环境或 uv 缓存放进 Drive。若只想安装和检查环境、不启动 Worker，去掉命令末尾的 `--start`。
+## 持久化与重建规则
 
-该脚本的 CUDA 分离环境固定使用 PyTorch 2.11.0 / torchvision 0.26.0 / torchaudio 2.11.0 的 cu130 轮子。若 Colab GPU 驱动不兼容或 CUDA 不可用，脚本会在 Worker 注册前失败，不会把 CPU 伪装成 GPU Worker。
+Colab 的 Python 进程、虚拟环境和本地磁盘属于临时 Runtime，Google 不保证 Runtime 重启后仍保留。因此本项目不把虚拟环境直接放进 Google Drive，而是把可重复重建所需的资料持久化：
 
-## Colab 环境变量
+| 内容 | 保存位置 | 新 Runtime 行为 |
+|---|---|---|
+| BS-RoFormer checkpoint/YAML | `MyDrive/XinsW_Models/BS-RoFormer/` | 直接复用，不重新下载 |
+| CREPE 模型 | 首次运行后保存至 `MyDrive/XinsW_Models/CREPE/model-full.h5` | 自动从 Drive 恢复 |
+| CUDA 分离环境精确依赖锁 | 首次成功安装后保存至 `MyDrive/XinsW_Runtime/colab-separator-cu130.lock` | 按固定版本锁重建 |
+| 核心环境依赖锁 | 仓库 `requirements/locks/core-cpu.txt` | 按 Git 固定版本重建 |
+| Python 虚拟环境、uv 缓存 | Colab `/content/` 临时磁盘 | 自动重建；不会写入 Drive |
+| Worker 源码包 | Colab `/content/xinsw-worker-bundles/` 临时缓存 | 先校验缓存；缺失时从 API 下载 |
 
-在启动单元中设置：
+第一次运行需要安装依赖，并会把实际成功安装的 CUDA 分离环境版本写入 Drive 锁文件。之后的新 Runtime 仍需重建本地虚拟环境，但会使用同一份精确版本锁；BS-RoFormer 和 CREPE 模型不需要重新下载。LilyPond 是系统程序，Colab 新 Runtime 中若不存在会自动安装。
 
-- `MUSICMASTER_API_URL`：Render API 的 HTTPS 根地址，例如 `https://你的服务.onrender.com`。
-- `MUSICMASTER_WORKER_TOKEN`：已有 Worker API 凭据，从 Colab Secrets 读取，不要打印。
-- `MUSICMASTER_BOOTSTRAP_TOKEN`：可选的一次性短时凭据；Worker 会调用 `/api/internal/bootstrap` 兑换为长期 Worker 凭据。
-- 可选 `MUSICMASTER_WORKER_ID`：默认自动使用当前 Colab Runtime 的 hostname。
-- `MUSICMASTER_SEP_PYTHON`：必须指向独立分离环境的 Python，例如 `/content/xinsw-sep-venv/bin/python`。
-- 可选 `MUSICMASTER_SEP_MODELS`：默认 `/content/drive/MyDrive/XinsW_Models/BS-RoFormer`。
+## 已验证的 GPU 处理能力
 
-先在 Colab 建立核心环境（本项目既有步骤），并安装系统级简谱排版程序，再用核心环境 Python 创建分离环境：
+2026-11-26，Tesla T4 上使用项目正式流水线：
 
 ```bash
-!apt-get update -qq && apt-get install -y lilypond
+python -m musicmaster.separate.pipeline <audio> --stages 1 --sep-model bs_roformer --out-dir <tmpdir>
 ```
 
-安装完成后确认 `lilypond --version` 可正常返回版本。
+已完成 76.46 秒歌曲的人声/伴奏分离，进程退出码为 0；生成的 vocal.wav 与 accomp.wav 均非空，44.1 kHz、双声道、时长一致。用户试听确认效果满意。原始测试产物保存在 `MyDrive/XinsW_TestResults/BS-RoFormer/`。
 
-```bash
-/content/xinsw-worker-venv/bin/python scripts/setup_sep.py --venv /content/xinsw-sep-venv --device cpu
-```
+这项测试证明 BS-RoFormer 在 T4 上可以完成真实推理；它不等于网站 Worker 的完整任务领取、整曲识别、记谱文件生成和产物回传已经验收。后者仍须通过网页端完整任务测试。
 
-CPU 模式只安装 CPU 版 PyTorch / torchaudio 和 audio-separator[cpu]，不会申请 GPU。若用户主动连接 GPU 并需要 CUDA 分离，可显式指定 `--device cuda --cuda cu124`（CUDA 标签必须与实际运行时匹配）。
+## 网页端任务规则
 
-Launcher 分别检查核心环境和 `MUSICMASTER_SEP_PYTHON` 指向的分离环境；分离子进程通过项目实际的 `_sep_python()` 使用独立解释器。临时工作目录使用 `/content/xinsw-worker-tmp`。
+1. 先启动 Colab Worker，并确认日志出现 `[cloud-worker] registered`。
+2. 在网站首页选择“完整乐曲”并上传。
+3. 点击“开始记谱”后，Worker 才能领取该任务。
+4. 如果没有在线 Worker，网站提示等待，任务保持 queued；不会自动创建或启动 GPU。
+5. 任务完成后，在网页下载结果并检查 MusicXML、简谱 SVG/PDF 和五线谱 SVG。
 
-## 启动命令
+## 更新源码版本
 
-在已经取得私有仓库授权工作副本的 Colab 中执行：
+Worker 启动时以网站 API 配置的 commit 和 SHA-256 为准。发布新的 Worker 代码后，必须先更新开发服务的 Source Bundle 配置并重新发布源码包；之后 Notebook 会自动获取新版本，不需要手工改 Notebook 中的 commit。
 
-```bash
-python scripts/run_colab_cloud_worker.py
-```
+## 安全与限制
 
-启动前会分别检查核心模块（包括 Verovio、jianpu-ly）、LilyPond CLI、项目入口模块，以及独立分离环境中的 PyTorch、torchaudio、audio_separator.separator.Separator；同时检查分离设备、Drive、BS-RoFormer 文件、API URL 和 Worker 凭据。检查失败时不会注册 Worker。
-
-## 页面操作顺序
-
-1. 先在 Colab 连接 CPU Runtime（或用户主动分配的 GPU Runtime）。
-2. 挂载 Google Drive，确认 BS-RoFormer checkpoint 和 YAML 存在。
-3. 确保 Colab 仓库工作副本已更新到当前分支最新提交，再运行 Worker 单元。启动器会先兑换一次性凭据、从 API 获取固定版本源码包、校验 SHA-256 并切换到该源码版本；看到 `[cloud-worker] registered` 后再返回网站。
-4. 在首页“完整乐曲”模式上传歌曲。
-5. 点击“开始记谱”。API 只允许近期有心跳的已登记 Worker 领取已手动启动的任务；没有 Worker 时任务保持 queued，不会创建 GPU。
-6. 任务完成后下载产物；需要停止时在 Colab 中中断 Worker 单元。
-
-## 模型缓存说明
-
-- Launcher 不安装/升级 PyTorch、CUDA、TensorFlow 或其他依赖，不下载任何模型。环境安装由用户单独执行 `scripts/setup_sep.py`。
-- BS-RoFormer 是启动必需模型，必须预先放在 Drive 指定目录。
-- 去和声与降噪模型如果尚未缓存，audio-separator 可能在任务实际运行时联网下载；Launcher 会提示缺失项，但不会代替用户下载。
-- 2026-11-26 已在 Google Colab Tesla T4 上完成 GPU 环境初始化验收：PyTorch 2.11.0+cu130、CUDA 可用、GPU 型号 Tesla T4（compute capability 7.5）；核心环境与分离环境分别通过导入检查。
-
-## 当前限制
-
-- Colab 启动器会从 API 获取已发布的 Worker Source Bundle，验证 commit SHA 与 SHA-256 后安全解包到 `/content/xinsw-worker-bundles/`，再从该固定版本启动。归档中的链接和特殊文件会被拒绝，模型权重不包含在源码包内。仓库公开时发布不需要 GitHub Token；若改为私有仓库，再在 Render 配置只读 Contents Token。
-- 2026-11-26 已使用仓库正式分离流水线 `python -m musicmaster.separate.pipeline` 对 76.46 秒 WAV 执行 `--stages 1 --sep-model bs_roformer`，Tesla T4 GPU 推理退出码为 0，成功生成非空 `vocal.wav` 与 `accomp.wav`。两轨均为 44,100 Hz、双声道、76.46 秒；用户试听确认效果满意。测试产物保存在 Google Drive：`MyDrive/XinsW_TestResults/BS-RoFormer/`。
-- 本 Launcher 不创建、启动、关闭或释放 GPU，也不触碰付费 GPU provisioning。
+- Worker Token 只从 Colab Secrets 读取，不要写入 Notebook 源码、Git、截图或日志。
+- Notebook 不会创建、启动、关闭或释放 GPU，也不调用付费 GPU provisioning。
+- 模型权重不打包进源码归档。
+- 不要把虚拟环境目录复制到 Drive；Python venv 含有指向 Runtime 本地路径的解释器和脚本，跨 Runtime 复用不可靠。
+- V1 当前以 Colab GPU 为唯一验收运行环境；GPU Docker 和其他云 GPU 调度不属于本轮范围。
