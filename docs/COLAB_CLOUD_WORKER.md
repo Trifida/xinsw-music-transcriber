@@ -81,10 +81,10 @@ python scripts/run_colab_cloud_worker.py
 - Launcher 不安装/升级 PyTorch、CUDA、TensorFlow 或其他依赖，不下载任何模型。环境安装由用户单独执行 `scripts/setup_sep.py`。
 - BS-RoFormer 是启动必需模型，必须预先放在 Drive 指定目录。
 - 去和声与降噪模型如果尚未缓存，audio-separator 可能在任务实际运行时联网下载；Launcher 会提示缺失项，但不会代替用户下载。
-- 最近一次 Colab 环境盘点为 CPU-only，且 audio-separator、CREPE 等依赖未安装；该环境当时尚不能启动本 Worker；本版本允许 CPU Runtime，但仍须通过完整依赖导入检查。
+- 2026-11-26 已在 Google Colab Tesla T4 上完成 GPU 环境初始化验收：PyTorch 2.11.0+cu130、CUDA 可用、GPU 型号 Tesla T4（compute capability 7.5）；核心环境与分离环境分别通过导入检查。
 
 ## 当前限制
 
 - Worker 源码必须通过私有仓库的授权副本进入 Colab；不能使用匿名 raw GitHub URL 下载私有仓库文件。
-- 真实 Colab GPU 注册、任务领取、音频处理和产物回传仍未执行；不能视为端到端验收通过。
+- 2026-11-26 已使用仓库正式分离流水线 `python -m musicmaster.separate.pipeline` 对 76.46 秒 WAV 执行 `--stages 1 --sep-model bs_roformer`，Tesla T4 GPU 推理退出码为 0，成功生成非空 `vocal.wav` 与 `accomp.wav`。两轨均为 44,100 Hz、双声道、76.46 秒；用户试听确认效果满意。测试产物保存在 Google Drive：`MyDrive/XinsW_TestResults/BS-RoFormer/`。
 - 本 Launcher 不创建、启动、关闭或释放 GPU，也不触碰付费 GPU provisioning。
