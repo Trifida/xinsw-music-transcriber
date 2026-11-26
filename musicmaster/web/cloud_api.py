@@ -11,6 +11,7 @@ import hmac
 import logging
 import os
 import re
+import secrets
 import time
 import uuid
 from functools import lru_cache
@@ -92,6 +93,11 @@ class WorkerSweepRequest(BaseModel):
 
 class BootstrapRequest(BaseModel):
     bootstrap_token: str = Field(min_length=32, max_length=256)
+
+
+class BootstrapIssueRequest(BaseModel):
+    worker_id: str = Field(min_length=1, max_length=128)
+    expires_seconds: int = Field(default=900, ge=60, le=1800)
 
 
 class PublishWorkerBundleRequest(BaseModel):
@@ -579,6 +585,29 @@ def get_artifact_download_url(job_id: str, artifact_id: int) -> dict:
     except ObjectStoreError:
         raise HTTPException(status_code=503, detail="暂时无法生成文件下载链接。") from None
     return {"url": url, "expires_in": 900, "file_name": artifact["file_name"]}
+
+
+@router.post("/api/internal/bootstrap/issue", dependencies=[Depends(_worker_auth)])
+def issue_worker_bootstrap_token(body: BootstrapIssueRequest) -> dict:
+    """Issue a short-lived, single-use token for a new Colab/remote worker."""
+    raw_token = secrets.token_urlsafe(32)
+    digest = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    store, _ = _components()
+    try:
+        store.issue_bootstrap_token(
+            digest, body.worker_id, expires_seconds=body.expires_seconds
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not issue worker bootstrap token: {type(exc).__name__}",
+        ) from None
+    return {
+        "bootstrap_token": raw_token,
+        "worker_id": body.worker_id,
+        "expires_in": body.expires_seconds,
+        "uses": 1,
+    }
 
 
 @router.post("/api/internal/bootstrap")
