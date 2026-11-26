@@ -8,13 +8,19 @@ stack. It performs import checks but no pip installs and downloads no weights.
 """
 from __future__ import annotations
 
+import hashlib
 import importlib
+import json
 import os
-import socket
+import re
 import shutil
+import socket
 import subprocess
 import sys
-from pathlib import Path
+import tarfile
+import tempfile
+import urllib.request
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
 
@@ -188,7 +194,130 @@ def validate_runtime() -> tuple[str, str] | int:
     return api_url, device_name
 
 
+def _activate_published_source_bundle() -> None:
+    """Fetch, verify and re-exec from the API-pinned immutable source bundle."""
+    if os.environ.get("MUSICMASTER_SOURCE_BUNDLE_ACTIVE", "").strip():
+        return
+
+    api_url = os.environ.get("MUSICMASTER_API_URL", "").strip().rstrip("/")
+    if not api_url:
+        raise RuntimeError("MUSICMASTER_API_URL is required before source bundle activation.")
+
+    # _config exchanges a short-lived bootstrap token when no long-lived token
+    # is present. The credential remains in process memory/environment only.
+    from musicmaster.cloud.worker import _config
+    base, token, _, _ = _config()
+
+    request = urllib.request.Request(
+        base + "/api/internal/worker/bundle",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            manifest = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"Could not obtain published Worker source bundle: {type(exc).__name__}"
+        ) from None
+
+    commit = str(manifest.get("repository_commit") or "").lower()
+    digest = str(manifest.get("sha256") or "").lower()
+    url = str(manifest.get("url") or "")
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise RuntimeError("Published Worker source bundle has an invalid commit SHA.")
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise RuntimeError("Published Worker source bundle has an invalid SHA-256.")
+    if not url.startswith("https://"):
+        raise RuntimeError("Published Worker source bundle URL must use HTTPS.")
+
+    cache_root = Path("/content/xinsw-worker-bundles")
+    target = cache_root / commit
+    marker = target / ".xinsw-bundle-sha256"
+    if marker.is_file() and marker.read_text(encoding="ascii").strip() == digest:
+        bundle_root = target
+    else:
+        cache_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="xinsw-bundle-") as temp:
+            archive_path = Path(temp) / "worker.tar.gz"
+            download = urllib.request.Request(url, headers={"User-Agent": "XinsW-Music-Worker/1"})
+            try:
+                with urllib.request.urlopen(download, timeout=600) as response, archive_path.open("wb") as out:
+                    shutil.copyfileobj(response, out, length=1024 * 1024)
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(
+                    f"Worker source bundle download failed: {type(exc).__name__}"
+                ) from None
+
+            hasher = hashlib.sha256()
+            with archive_path.open("rb") as source:
+                for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                    hasher.update(chunk)
+            if hasher.hexdigest() != digest:
+                raise RuntimeError("Worker source bundle SHA-256 mismatch.")
+
+            staging = Path(temp) / "extracted"
+            staging.mkdir()
+            expanded_bytes = 0
+            try:
+                with tarfile.open(archive_path, "r:gz") as archive:
+                    members = archive.getmembers()
+                    roots = {PurePosixPath(item.name).parts[0] for item in members if PurePosixPath(item.name).parts}
+                    if len(roots) != 1:
+                        raise RuntimeError("Worker source archive has an unexpected root layout.")
+                    root_prefix = next(iter(roots))
+                    for item in members:
+                        member_path = PurePosixPath(item.name)
+                        if member_path.is_absolute() or ".." in member_path.parts:
+                            raise RuntimeError("Worker source archive contains an unsafe path.")
+                        parts = member_path.parts[1:]
+                        if not parts:
+                            continue
+                        destination = staging.joinpath(*parts)
+                        if item.isdir():
+                            destination.mkdir(parents=True, exist_ok=True)
+                        elif item.isfile():
+                            expanded_bytes += int(item.size)
+                            if expanded_bytes > 1024 * 1024 * 1024:
+                                raise RuntimeError("Worker source archive expands beyond 1 GiB.")
+                            destination.parent.mkdir(parents=True, exist_ok=True)
+                            source_file = archive.extractfile(item)
+                            if source_file is None:
+                                raise RuntimeError("Worker source archive contains an unreadable file.")
+                            with source_file, destination.open("wb") as out:
+                                shutil.copyfileobj(source_file, out, length=1024 * 1024)
+                            destination.chmod(item.mode & 0o755)
+                        else:
+                            raise RuntimeError("Worker source archive contains an unsupported link or special file.")
+            except (tarfile.TarError, OSError) as exc:
+                raise RuntimeError(
+                    f"Worker source archive extraction failed: {type(exc).__name__}"
+                ) from None
+
+            if not (staging / "musicmaster/cloud/worker.py").is_file():
+                raise RuntimeError("Published Worker source bundle is missing its worker entrypoint.")
+            if not (staging / "scripts/run_colab_cloud_worker.py").is_file():
+                raise RuntimeError("Published Worker source bundle is missing its Colab launcher.")
+            (staging / ".xinsw-bundle-sha256").write_text(digest, encoding="ascii")
+            if target.exists():
+                shutil.rmtree(target)
+            staging.rename(target)
+            bundle_root = target
+
+    launcher = bundle_root / "scripts/run_colab_cloud_worker.py"
+    if not launcher.is_file():
+        raise RuntimeError("Verified Worker source bundle does not contain its launcher.")
+    env = os.environ.copy()
+    env["MUSICMASTER_SOURCE_BUNDLE_ACTIVE"] = commit
+    env["PYTHONPATH"] = str(bundle_root) + os.pathsep + env.get("PYTHONPATH", "")
+    print(
+        f"[Colab Worker] 已验证并切换到固定源码版本 {commit[:12]}（SHA-256 校验通过）。",
+        flush=True,
+    )
+    os.execve(sys.executable, [sys.executable, str(launcher)], env)
+
+
 def main() -> int:
+    _activate_published_source_bundle()
     result = validate_runtime()
     if isinstance(result, int):
         return result
