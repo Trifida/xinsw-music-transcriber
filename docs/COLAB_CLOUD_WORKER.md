@@ -90,7 +90,7 @@ python scripts/run_colab_cloud_worker.py
 
 1. 先在 Colab 连接 CPU Runtime（或用户主动分配的 GPU Runtime）。
 2. 挂载 Google Drive，确认 BS-RoFormer checkpoint 和 YAML 存在。
-3. 运行 Colab Worker 单元，看到 `[cloud-worker] registered` 后再返回网站。
+3. 确保 Colab 仓库工作副本已更新到当前分支最新提交，再运行 Worker 单元。启动器会先兑换一次性凭据、从 API 获取固定版本源码包、校验 SHA-256 并切换到该源码版本；看到 `[cloud-worker] registered` 后再返回网站。
 4. 在首页“完整乐曲”模式上传歌曲。
 5. 点击“开始记谱”。API 只允许近期有心跳的已登记 Worker 领取已手动启动的任务；没有 Worker 时任务保持 queued，不会创建 GPU。
 6. 任务完成后下载产物；需要停止时在 Colab 中中断 Worker 单元。
@@ -104,6 +104,6 @@ python scripts/run_colab_cloud_worker.py
 
 ## 当前限制
 
-- Colab 当前通过已检出的仓库工作副本启动；发布到对象存储的 Worker Source Bundle 是独立的固定版本归档，使用 SHA-256 校验并通过短时下载 URL 分发。仓库公开时发布不需要 GitHub Token；若改为私有仓库，再在 Render 配置只读 Contents Token。
+- Colab 启动器会从 API 获取已发布的 Worker Source Bundle，验证 commit SHA 与 SHA-256 后安全解包到 `/content/xinsw-worker-bundles/`，再从该固定版本启动。归档中的链接和特殊文件会被拒绝，模型权重不包含在源码包内。仓库公开时发布不需要 GitHub Token；若改为私有仓库，再在 Render 配置只读 Contents Token。
 - 2026-11-26 已使用仓库正式分离流水线 `python -m musicmaster.separate.pipeline` 对 76.46 秒 WAV 执行 `--stages 1 --sep-model bs_roformer`，Tesla T4 GPU 推理退出码为 0，成功生成非空 `vocal.wav` 与 `accomp.wav`。两轨均为 44,100 Hz、双声道、76.46 秒；用户试听确认效果满意。测试产物保存在 Google Drive：`MyDrive/XinsW_TestResults/BS-RoFormer/`。
 - 本 Launcher 不创建、启动、关闭或释放 GPU，也不触碰付费 GPU provisioning。
