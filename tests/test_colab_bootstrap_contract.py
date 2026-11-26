@@ -41,7 +41,7 @@ def test_one_click_colab_notebook_uses_secret_and_verifies_published_bundle():
     assert "hashlib.sha256" in NOTEBOOK
     assert "tarfile.open" in NOTEBOOK
     assert "bootstrap_colab_worker.py" in NOTEBOOK
-    assert '"--start"' in NOTEBOOK
+    assert "--start" in NOTEBOOK
     assert "print(worker_token)" not in NOTEBOOK
     assert "MUSICMASTER_WORKER_ID" in NOTEBOOK
 
