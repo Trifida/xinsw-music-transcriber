@@ -43,7 +43,8 @@ class PublishedBundle:
 class GitHubSourceBundlePublisher:
     """Fetch a pinned private-repository archive and publish it immutably."""
 
-    API_BASE = "https://api.github.com"
+    # codeload avoids REST API rate limits on shared cloud egress IPs.
+    ARCHIVE_BASE = "https://codeload.github.com"
 
     def __init__(
         self,
@@ -106,20 +107,11 @@ class GitHubSourceBundlePublisher:
         if not _SHA_RE.fullmatch(sha):
             raise ValueError("commit_sha must be a full 40-character Git commit SHA.")
 
-        metadata_raw = self._request(
-            f"{self.API_BASE}/repos/{self.repository}/commits/{sha}",
-            accept="application/vnd.github+json",
-        )
-        try:
-            metadata = json.loads(metadata_raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            raise SourceBundleError("GitHub returned invalid commit metadata.") from None
-        if str(metadata.get("sha", "")).lower() != sha:
-            raise SourceBundleError("GitHub commit metadata did not match the requested SHA.")
-
+        # The URL is pinned to the full immutable commit SHA. Codeload avoids
+        # REST API rate limits on shared cloud egress IPs. This repository is public.
         archive = self._request(
-            f"{self.API_BASE}/repos/{self.repository}/tarball/{sha}",
-            accept="application/vnd.github+json",
+            f"{self.ARCHIVE_BASE}/{self.repository}/tar.gz/{sha}",
+            accept="application/octet-stream",
         )
         if len(archive) < 2 or archive[:2] != b"\x1f\x8b":
             raise SourceBundleError("GitHub did not return a valid gzip source archive.")
