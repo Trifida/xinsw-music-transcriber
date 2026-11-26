@@ -107,7 +107,7 @@ def test_idle_worker_without_stale_eligibility_is_not_touched():
     result = reconcile_idle_worker(
         store=store, autodl_client=provider, worker_id="worker-test"
     )
-    assert result["status"] == "not_stale_or_not_idle"
+    assert result["status"] == "not_stale_or_not_reconcilable"
     assert provider.events == []
 
 
