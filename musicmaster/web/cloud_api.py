@@ -23,6 +23,7 @@ from fastapi.encoders import jsonable_encoder
 
 from musicmaster.cloud.job_store import DispatchCapacityError, JobStoreError, PostgresJobStore
 from musicmaster.cloud.object_store import ObjectStoreError, S3ObjectStore
+from musicmaster.cloud.source_bundle import GitHubSourceBundlePublisher, SourceBundleError
 from musicmaster.cloud.autodl_pro import AutoDLProClient
 from musicmaster.cloud.dispatcher import create_autodl_worker, worker_instance_name
 from musicmaster.cloud.lifecycle import reconcile_idle_worker
@@ -91,6 +92,10 @@ class WorkerSweepRequest(BaseModel):
 
 class BootstrapRequest(BaseModel):
     bootstrap_token: str = Field(min_length=32, max_length=256)
+
+
+class PublishWorkerBundleRequest(BaseModel):
+    commit_sha: str = Field(pattern=r"^[0-9a-fA-F]{40}$")
 
 
 class WorkerRegister(BaseModel):
@@ -622,6 +627,24 @@ def get_worker_source_bundle() -> dict:
         "url": url,
         "expires_in": 600,
     }
+
+
+@router.post("/api/internal/worker/bundle/publish", dependencies=[Depends(_worker_auth)])
+def publish_worker_source_bundle(body: PublishWorkerBundleRequest) -> dict:
+    """Publish one pinned private GitHub commit using API-host credentials."""
+    try:
+        published = GitHubSourceBundlePublisher().publish(body.commit_sha)
+    except ValueError:
+        raise HTTPException(
+            status_code=503,
+            detail="Worker source publishing requires a valid GitHub read token and repository setting.",
+        ) from None
+    except (SourceBundleError, ObjectStoreError):
+        raise HTTPException(
+            status_code=502,
+            detail="Worker source bundle could not be fetched or uploaded.",
+        ) from None
+    return published.as_dict()
 
 
 @router.post("/api/internal/workers/register", dependencies=[Depends(_worker_auth)])
