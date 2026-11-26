@@ -61,7 +61,8 @@ def main():
 
     print("\n[完成] 启动界面: 双击 启动.bat")
     print(f"       或运行: {py} -m musicmaster.web.server")
-    print("简谱源稿无需 LilyPond；本机若未配置 LilyPond，PDF 将由部署服务器提供排版服务。")
+    print("简谱源稿无需 LilyPond；但完整歌曲云端 Worker 必须安装 LilyPond CLI 才能生成简谱 SVG/PDF。")
+    print("Colab Worker 请先执行：!apt-get update -qq && apt-get install -y lilypond；未安装时 Worker 预检会拒绝注册。")
 
 
 if __name__ == "__main__":
