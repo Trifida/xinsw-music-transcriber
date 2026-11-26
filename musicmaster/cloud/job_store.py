@@ -701,14 +701,35 @@ class PostgresJobStore:
         if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
             raise ValueError("token_hash must be a SHA-256 hex digest.")
         expiry = max(60, min(int(expires_seconds), 1800))
+        worker = str(worker_id).strip()
         with self._connect() as conn, conn.cursor() as cur:
+            # A bootstrap token belongs to a worker record. Create that record
+            # in the non-live "starting" state before inserting the token.
+            # This deliberately does not make has_live_worker() return true:
+            # only a later successful worker registration/heartbeat can do so.
+            cur.execute(
+                """
+                INSERT INTO music_workers (worker_id, status)
+                VALUES (%s, 'starting')
+                ON CONFLICT (worker_id) DO UPDATE
+                SET status = 'starting', last_seen_at = now(), updated_at = now()
+                WHERE music_workers.status IN ('starting', 'stopped', 'error')
+                  AND music_workers.active_job_id IS NULL
+                RETURNING worker_id
+                """,
+                (worker,),
+            )
+            if cur.fetchone() is None:
+                raise JobStoreError(
+                    "The worker ID is already active or cannot be restarted safely."
+                )
             cur.execute(
                 """
                 INSERT INTO music_worker_bootstrap_tokens
                     (token_hash, worker_id, expires_at)
                 VALUES (%s, %s, now() + (%s * interval '1 second'))
                 """,
-                (digest, str(worker_id).strip(), expiry),
+                (digest, worker, expiry),
             )
 
     def set_bootstrap_instance(self, token_hash: str, instance_uuid: str) -> bool:
