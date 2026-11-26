@@ -65,7 +65,39 @@ python -m musicmaster.separate.pipeline <audio> --stages 1 --sep-model bs_roform
 
 ## 更新源码版本
 
-Worker 启动时以网站 API 配置的 commit 和 SHA-256 为准。发布新的 Worker 代码后，必须先更新开发服务的 Source Bundle 配置并重新发布源码包；之后 Notebook 会自动获取新版本，不需要手工改 Notebook 中的 commit。
+Worker 启动时以网站 API 配置的 commit 和 SHA-256 为准。发布新的 Worker 代码后，按以下步骤更新一次；之后 Notebook 会自动获取新版本，不需要手工改 Notebook 中的 commit：
+
+1. 从 GitHub 复制 `feat/manual-start-existing-gpu` 分支最新的完整 commit SHA。
+2. 在 Colab 中运行下面的单元。将 `COMMIT_SHA` 替换为刚复制的完整 SHA；Worker Token 从 Colab Secrets 读取，不要打印或粘贴到聊天中。
+
+```python
+from google.colab import userdata
+import json
+import urllib.request
+
+API = "https://xinsw-transcriber-dev.onrender.com"
+COMMIT_SHA = "替换为最新的40位commit SHA"
+token = userdata.get("MUSICMASTER_WORKER_TOKEN")
+request = urllib.request.Request(
+    API + "/api/internal/worker/bundle/publish",
+    data=json.dumps({"commit_sha": COMMIT_SHA}).encode("utf-8"),
+    headers={
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request, timeout=600) as response:
+    print(json.dumps(json.loads(response.read().decode("utf-8")), ensure_ascii=False, indent=2))
+```
+
+3. 将接口返回的 `repository_commit`、`sha256` 和 `object_key` 分别设置到 Render 开发服务的环境变量：
+   - `MUSICMASTER_WORKER_BUNDLE_COMMIT`
+   - `MUSICMASTER_WORKER_BUNDLE_SHA256`
+   - `MUSICMASTER_WORKER_BUNDLE_KEY`
+4. 等待 Render 开发服务重新部署完成，再运行 Colab 一键启动 Notebook。
+
+Notebook 会拒绝启动缺少本次稳定启动标记的旧源码包，避免误启动旧版 Worker。
 
 ## 安全与限制
 
