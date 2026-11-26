@@ -80,6 +80,31 @@ def test_publish_pins_commit_hashes_archive_and_uploads_immutable_key(monkeypatc
     assert all(call[1]["Authorization"] == "Bearer github-secret" for call in calls)
 
 
+def test_publish_supports_public_github_without_authorization_header(monkeypatch):
+    commit = "f" * 40
+    archive = gzip.compress(b"public source archive")
+    objects = FakeObjects()
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(dict(request.header_items()))
+        if request.full_url.endswith(f"/commits/{commit}"):
+            return FakeResponse(json.dumps({"sha": commit}).encode())
+        if request.full_url.endswith(f"/tarball/{commit}"):
+            return FakeResponse(archive)
+        raise AssertionError(request.full_url)
+
+    monkeypatch.setattr("musicmaster.cloud.source_bundle.urllib.request.urlopen", fake_urlopen)
+    publisher = GitHubSourceBundlePublisher(
+        objects=objects, token="", repository="Trifida/xinsw-music-transcriber"
+    )
+    result = publisher.publish(commit)
+
+    assert result.commit_sha == commit
+    assert objects.uploaded[1] == result.object_key
+    assert all("Authorization" not in headers for headers in calls)
+
+
 def test_publish_rejects_short_or_non_hex_commit_sha():
     publisher = GitHubSourceBundlePublisher(
         objects=FakeObjects(), token="secret", repository="owner/repo"
