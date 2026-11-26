@@ -53,7 +53,7 @@ def test_full_workflow_separates_then_transcribes_and_writes_manifest(tmp_path, 
     def fake_transcribe(job, audio_path, engine, key, lyrics_text=""):
         calls.append(("transcribe", audio_path, engine, key, lyrics_text))
         d = Path(job.job_dir)
-        for name in ("notes.json", "out.mid", "out.musicxml"):
+        for name in ("notes.json", "out.mid", "out.musicxml", "staff.svg", "jianpu.pdf"):
             (d / name).write_bytes(b"artifact")
         job.set_stage("CREPE progress", 49)
         return {"ok": True}
