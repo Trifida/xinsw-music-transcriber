@@ -188,12 +188,19 @@ def main() -> int:
     if args.start:
         if not env.get("MUSICMASTER_API_URL", "").strip():
             raise RuntimeError("缺少 MUSICMASTER_API_URL 环境变量。")
-        if not env.get("MUSICMASTER_WORKER_TOKEN", "").strip():
-            raise RuntimeError("缺少 MUSICMASTER_WORKER_TOKEN；请从 Colab Secrets 注入。")
+        if not (
+            env.get("MUSICMASTER_WORKER_TOKEN", "").strip()
+            or env.get("MUSICMASTER_BOOTSTRAP_TOKEN", "").strip()
+        ):
+            raise RuntimeError(
+                "缺少 Worker 凭据；请从 Colab Secrets 注入 MUSICMASTER_WORKER_TOKEN "
+                "或短时 MUSICMASTER_BOOTSTRAP_TOKEN。"
+            )
         print("[Colab Bootstrap] 正在启动 Worker；按 Colab 停止按钮可结束。", flush=True)
         os.execve(str(core_py), [str(core_py), str(ROOT / "scripts/run_colab_cloud_worker.py")], env)
 
-    print("\n下一步：设置 MUSICMASTER_API_URL 和 MUSICMASTER_WORKER_TOKEN 后，")
+    print("\n下一步：设置 MUSICMASTER_API_URL，以及以下任一凭据：")
+    print("MUSICMASTER_WORKER_TOKEN（长期 Worker 凭据）或 MUSICMASTER_BOOTSTRAP_TOKEN（一次性短时凭据）。")
     print("重新运行本脚本并加参数 --start，即可启动 Worker。")
     return 0
 
