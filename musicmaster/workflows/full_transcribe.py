@@ -147,8 +147,20 @@ def run_full_transcription(
     if missing:
         raise RuntimeError("扒谱流程未生成必要产物：" + "、".join(missing))
 
+    # A successful full-song job must contain both requested score formats.
+    # Do not mark a MIDI/MusicXML-only result as a completed score job.
+    required_scores = ("staff.svg", "jianpu.pdf")
+    missing_scores = [name for name in required_scores
+                      if not (transcription_dir / name).is_file()
+                      or (transcription_dir / name).stat().st_size <= 0]
+    if missing_scores:
+        raise RuntimeError(
+            "完整曲谱未生成：缺少 " + "、".join(missing_scores)
+            + "。请检查 Verovio 与 LilyPond 是否已安装并可用。"
+        )
+
     optional = (
-        "staff.svg", "jianpu.pdf", "jianpu.ly", "confidence.json", "报告.md",
+        "staff.svg", "jianpu.svg", "jianpu.pdf", "jianpu.ly", "confidence.json", "报告.md",
         "lyrics.txt", "lyrics_alignment.json",
     )
     transcription_files = {
@@ -156,6 +168,10 @@ def run_full_transcription(
         for name in (*required, *optional)
         if (transcription_dir / name).is_file()
     }
+    # LilyPond may emit page-suffixed SVG names for a multi-page numbered score.
+    for svg_path in sorted(transcription_dir.glob("jianpu*.svg")):
+        if svg_path.is_file() and svg_path.stat().st_size > 0:
+            transcription_files[svg_path.name] = _relative(svg_path, root)
     separation_files = sorted(
         _relative(path, root) for path in separation_dir.rglob("*") if path.is_file()
     )
