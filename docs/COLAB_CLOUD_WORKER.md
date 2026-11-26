@@ -8,7 +8,7 @@
 2. Google Drive 已挂载。
 3. 已有 Worker API 凭据通过 Colab Secrets 注入环境变量 `MUSICMASTER_WORKER_TOKEN`；不要把 token 写进 Notebook 源码、输出或 Git。
 4. `MUSICMASTER_API_URL` 指向已部署服务的 HTTPS 根地址，不要附加 `/api`。
-5. 核心 Python 3.11 环境必须能导入 NumPy、librosa、soundfile、TensorFlow、CREPE、hmmlearn、music21；人声分离使用独立 Python 环境，导入 PyTorch、torchaudio 和 audio-separator。两套环境不能混装：核心 TensorFlow 2.15 需要 NumPy <2，而当前 audio-separator 需要 NumPy 2。
+5. 核心 Python 3.11 环境必须能导入 NumPy、librosa、soundfile、TensorFlow、CREPE、hmmlearn、music21、Verovio、jianpu-ly；同时系统必须安装 LilyPond CLI，供整曲任务生成简谱 SVG/PDF。人声分离使用独立 Python 环境，导入 PyTorch、torchaudio 和 audio-separator。两套环境不能混装：核心 TensorFlow 2.15 需要 NumPy <2，而当前 audio-separator 需要 NumPy 2。
 6. Drive 中必须存在 BS-RoFormer checkpoint 和 YAML。
 7. 私有仓库工作副本必须已在 Colab 中取得授权并检出本分支代码。
 
@@ -22,7 +22,13 @@
 - `MUSICMASTER_SEP_PYTHON`：必须指向独立分离环境的 Python，例如 `/content/xinsw-sep-venv/bin/python`。
 - 可选 `MUSICMASTER_SEP_MODELS`：默认 `/content/drive/MyDrive/XinsW_Models/BS-RoFormer`。
 
-先在 Colab 建立核心环境（本项目既有步骤），再用核心环境 Python 创建分离环境：
+先在 Colab 建立核心环境（本项目既有步骤），并安装系统级简谱排版程序，再用核心环境 Python 创建分离环境：
+
+```bash
+!apt-get update -qq && apt-get install -y lilypond
+```
+
+安装完成后确认 `lilypond --version` 可正常返回版本。
 
 ```bash
 /content/xinsw-worker-venv/bin/python scripts/setup_sep.py --venv /content/xinsw-sep-venv --device cpu
@@ -40,7 +46,7 @@ Launcher 分别检查核心环境和 `MUSICMASTER_SEP_PYTHON` 指向的分离环
 python scripts/run_colab_cloud_worker.py
 ```
 
-启动前会分别检查核心模块、项目入口模块，以及独立分离环境中的 PyTorch、torchaudio、audio_separator.separator.Separator；同时检查分离设备、Drive、BS-RoFormer 文件、API URL 和 Worker 凭据。检查失败时不会注册 Worker。
+启动前会分别检查核心模块（包括 Verovio、jianpu-ly）、LilyPond CLI、项目入口模块，以及独立分离环境中的 PyTorch、torchaudio、audio_separator.separator.Separator；同时检查分离设备、Drive、BS-RoFormer 文件、API URL 和 Worker 凭据。检查失败时不会注册 Worker。
 
 ## 页面操作顺序
 
