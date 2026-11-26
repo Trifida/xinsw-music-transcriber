@@ -25,7 +25,7 @@ def test_colab_bootstrap_persists_exact_separator_lock_and_skips_repeated_core_s
     assert 'uv, "pip", "freeze"' in BOOTSTRAP
     assert 'uv, "pip", "sync"' in BOOTSTRAP
     assert "跳过重复安装" in BOOTSTRAP
-    assert "已将分离环境精确版本保存到 Drive" in BOOTSTRAP
+    assert "已将精确版本锁定到 Drive" in BOOTSTRAP
 
 
 def test_colab_bootstrap_persists_crepe_model_but_requires_bs_roformer_from_drive():
