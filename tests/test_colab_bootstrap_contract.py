@@ -20,6 +20,8 @@ def test_colab_bootstrap_keeps_core_and_separator_dependency_stacks_isolated():
 def test_colab_bootstrap_persists_exact_separator_lock_and_skips_repeated_core_sync():
     assert 'SEP_LOCK_FILE = RUNTIME_DRIVE / "colab-separator-cu130.lock"' in BOOTSTRAP
     assert 'core_stamp = RUNTIME / "core-lock-sha256"' in BOOTSTRAP
+    assert 'PYTHON_VERSION_FILE = RUNTIME_DRIVE / "colab-python-version.txt"' in BOOTSTRAP
+    assert "actual_python_version" in BOOTSTRAP
     assert 'uv, "pip", "freeze"' in BOOTSTRAP
     assert 'uv, "pip", "sync"' in BOOTSTRAP
     assert "跳过重复安装" in BOOTSTRAP
