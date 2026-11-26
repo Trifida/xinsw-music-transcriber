@@ -6,7 +6,7 @@
 
 1. Colab 当前运行时必须已经连接；CPU 和 GPU Runtime 均可注册为计算 Worker。CPU 处理速度会明显慢于 GPU。
 2. Google Drive 已挂载。
-3. 已有 Worker API 凭据通过 Colab Secrets 注入环境变量 `MUSICMASTER_WORKER_TOKEN`；不要把 token 写进 Notebook 源码、输出或 Git。
+3. 已有 Worker API 凭据通过 Colab Secrets 注入环境变量 `MUSICMASTER_WORKER_TOKEN`；不要把 token 写进 Notebook 源码、输出或 Git。启动器也支持由该凭据签发的短时一次性 `MUSICMASTER_BOOTSTRAP_TOKEN`。
 4. `MUSICMASTER_API_URL` 指向已部署服务的 HTTPS 根地址，不要附加 `/api`。
 5. 核心 Python 3.11 环境必须能导入 NumPy、librosa、soundfile、TensorFlow、CREPE、hmmlearn、music21、Verovio、jianpu-ly；同时系统必须安装 LilyPond CLI，供整曲任务生成简谱 SVG/PDF。人声分离使用独立 Python 环境，导入 PyTorch、torchaudio 和 audio-separator。两套环境不能混装：核心 TensorFlow 2.15 需要 NumPy <2，而当前 audio-separator 需要 NumPy 2。
 6. Drive 中必须存在 BS-RoFormer checkpoint 和 YAML。
@@ -16,14 +16,32 @@
 
 仓库提供统一初始化脚本 `scripts/bootstrap_colab_worker.py`。它会在 Colab 本地 `/content` 下安装并配置 Python 3.11、核心环境、CUDA 13.0 分离环境和 LilyPond，最后检查 TensorFlow/CREPE、PyTorch、torchaudio、audio-separator、CUDA 与 BS-RoFormer 模型。uv 缓存、Python 和虚拟环境都不写入 Google Drive；Drive 只保存模型权重。
 
-在已授权并检出本分支的仓库目录中，先在 Colab 的 Secrets 中添加 `MUSICMASTER_WORKER_TOKEN`，然后运行一个单元：
+在已检出本分支代码的仓库目录中，先在 Colab 的 Secrets 中添加 `MUSICMASTER_WORKER_TOKEN`，然后运行一个单元。该单元先用长期凭据在 API 上签发 15 分钟、单次使用的 Bootstrap Token，再把它交给 Worker 启动流程；不会打印任何凭据：
 
 ```python
 from google.colab import userdata
+import json
 import os
+import urllib.request
 
-os.environ["MUSICMASTER_API_URL"] = "https://xinsw-transcriber-dev.onrender.com"
-os.environ["MUSICMASTER_WORKER_TOKEN"] = userdata.get("MUSICMASTER_WORKER_TOKEN")
+api = "https://xinsw-transcriber-dev.onrender.com"
+worker_token = userdata.get("MUSICMASTER_WORKER_TOKEN")
+os.environ["MUSICMASTER_API_URL"] = api
+
+request = urllib.request.Request(
+    api + "/api/internal/bootstrap/issue",
+    data=json.dumps({"worker_id": "colab-t4", "expires_seconds": 900}).encode(),
+    headers={
+        "Authorization": "Bearer " + worker_token,
+        "Content-Type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request, timeout=30) as response:
+    bootstrap = json.loads(response.read().decode())["bootstrap_token"]
+
+os.environ["MUSICMASTER_BOOTSTRAP_TOKEN"] = bootstrap
+del worker_token
 !python scripts/bootstrap_colab_worker.py --start
 ```
 
@@ -37,6 +55,7 @@ os.environ["MUSICMASTER_WORKER_TOKEN"] = userdata.get("MUSICMASTER_WORKER_TOKEN"
 
 - `MUSICMASTER_API_URL`：Render API 的 HTTPS 根地址，例如 `https://你的服务.onrender.com`。
 - `MUSICMASTER_WORKER_TOKEN`：已有 Worker API 凭据，从 Colab Secrets 读取，不要打印。
+- `MUSICMASTER_BOOTSTRAP_TOKEN`：可选的一次性短时凭据；Worker 会调用 `/api/internal/bootstrap` 兑换为长期 Worker 凭据。
 - 可选 `MUSICMASTER_WORKER_ID`：默认自动使用当前 Colab Runtime 的 hostname。
 - `MUSICMASTER_SEP_PYTHON`：必须指向独立分离环境的 Python，例如 `/content/xinsw-sep-venv/bin/python`。
 - 可选 `MUSICMASTER_SEP_MODELS`：默认 `/content/drive/MyDrive/XinsW_Models/BS-RoFormer`。
@@ -85,6 +104,6 @@ python scripts/run_colab_cloud_worker.py
 
 ## 当前限制
 
-- Worker 源码必须通过私有仓库的授权副本进入 Colab；不能使用匿名 raw GitHub URL 下载私有仓库文件。
+- Colab 当前通过已检出的仓库工作副本启动；发布到对象存储的 Worker Source Bundle 是独立的固定版本归档，使用 SHA-256 校验并通过短时下载 URL 分发。仓库公开时发布不需要 GitHub Token；若改为私有仓库，再在 Render 配置只读 Contents Token。
 - 2026-11-26 已使用仓库正式分离流水线 `python -m musicmaster.separate.pipeline` 对 76.46 秒 WAV 执行 `--stages 1 --sep-model bs_roformer`，Tesla T4 GPU 推理退出码为 0，成功生成非空 `vocal.wav` 与 `accomp.wav`。两轨均为 44,100 Hz、双声道、76.46 秒；用户试听确认效果满意。测试产物保存在 Google Drive：`MyDrive/XinsW_TestResults/BS-RoFormer/`。
 - 本 Launcher 不创建、启动、关闭或释放 GPU，也不触碰付费 GPU provisioning。
