@@ -12,6 +12,25 @@
 6. Drive 中必须存在 BS-RoFormer checkpoint 和 YAML。
 7. 私有仓库工作副本必须已在 Colab 中取得授权并检出本分支代码。
 
+## 一键初始化（推荐）
+
+仓库提供统一初始化脚本 `scripts/bootstrap_colab_worker.py`。它会在 Colab 本地 `/content` 下安装并配置 Python 3.11、核心环境、CUDA 13.0 分离环境和 LilyPond，最后检查 TensorFlow/CREPE、PyTorch、torchaudio、audio-separator、CUDA 与 BS-RoFormer 模型。uv 缓存、Python 和虚拟环境都不写入 Google Drive；Drive 只保存模型权重。
+
+在已授权并检出本分支的仓库目录中，先在 Colab 的 Secrets 中添加 `MUSICMASTER_WORKER_TOKEN`，然后运行一个单元：
+
+```python
+from google.colab import userdata
+import os
+
+os.environ["MUSICMASTER_API_URL"] = "https://xinsw-transcriber-dev.onrender.com"
+os.environ["MUSICMASTER_WORKER_TOKEN"] = userdata.get("MUSICMASTER_WORKER_TOKEN")
+!python scripts/bootstrap_colab_worker.py --start
+```
+
+首次运行会安装依赖并启动 Worker；Colab Runtime 重启后再次运行同一单元即可重建本地环境并启动。安装缓存只在当前 Runtime 生命周期内有效，因此重启后可能重新下载依赖；不要将虚拟环境或 uv 缓存放进 Drive。若只想安装和检查环境、不启动 Worker，去掉命令末尾的 `--start`。
+
+该脚本的 CUDA 分离环境固定使用 PyTorch 2.11.0 / torchvision 0.26.0 / torchaudio 2.11.0 的 cu130 轮子。若 Colab GPU 驱动不兼容或 CUDA 不可用，脚本会在 Worker 注册前失败，不会把 CPU 伪装成 GPU Worker。
+
 ## Colab 环境变量
 
 在启动单元中设置：
