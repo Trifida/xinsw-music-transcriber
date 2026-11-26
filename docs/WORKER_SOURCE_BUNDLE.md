@@ -8,10 +8,13 @@ worker receives only a short-lived presigned download URL.
 
 Configure these secrets on the API host (for example, Render):
 
-- `MUSICMASTER_GITHUB_READ_TOKEN`: fine-grained GitHub token with read-only
-  Contents access to this private repository.
 - `MUSICMASTER_GITHUB_REPOSITORY`: `Trifida/xinsw-music-transcriber`.
 - The normal private object-storage settings already used by `S3ObjectStore`.
+
+The repository is currently public, so a GitHub token is optional. If the
+repository is made private later, configure `MUSICMASTER_GITHUB_READ_TOKEN`
+with read-only Contents access on the trusted API host. Never pass that token
+to a GPU worker or browser.
 
 The API host also exposes a worker-authenticated publish endpoint, so an
 operator does not need shell access to the Render container:
