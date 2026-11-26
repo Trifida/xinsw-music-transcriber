@@ -28,6 +28,7 @@ CONFIG = "model_bs_roformer_ep_317_sdr_12.9755.yaml"
 TORCH_INDEX = "https://download.pytorch.org/whl/cu130"
 RUNTIME_DRIVE = DRIVE / "XinsW_Runtime"
 SEP_LOCK_FILE = RUNTIME_DRIVE / "colab-separator-cu130.lock"
+PYTHON_VERSION_FILE = RUNTIME_DRIVE / "colab-python-version.txt"
 CREPE_MODEL_DRIVE = DRIVE / "XinsW_Models" / "CREPE" / "model-full.h5"
 
 
@@ -84,14 +85,31 @@ def main() -> int:
     if not uv:
         raise RuntimeError("uv 安装失败；请检查 Colab 网络和 pip。")
 
-    # Python and package cache deliberately stay on the ephemeral local disk.
-    run([uv, "python", "install", "3.11"], env=env)
+    # Pin the exact Python 3.11 patch version after the first successful
+    # resolution. The interpreter remains local to this Runtime; only its
+    # version string is persisted in Drive.
+    if PYTHON_VERSION_FILE.is_file():
+        python_version = PYTHON_VERSION_FILE.read_text(encoding="ascii").strip()
+        parts = python_version.split(".")
+        if len(parts) != 3 or parts[:2] != ["3", "11"] or not parts[2].isdigit():
+            raise RuntimeError("Drive 中记录的 Python 版本无效：" + python_version)
+    else:
+        python_version = "3.11"
+    run([uv, "python", "install", python_version], env=env)
     py311 = subprocess.check_output(
-        [uv, "python", "find", "3.11"], cwd=ROOT, env=env, text=True
+        [uv, "python", "find", python_version], cwd=ROOT, env=env, text=True
     ).strip()
     if not py311 or not Path(py311).is_file():
         raise RuntimeError("uv 未能定位 Python 3.11。")
-    print(f"\n[Colab Bootstrap] Python 3.11: {py311}", flush=True)
+    actual_python_version = subprocess.check_output(
+        [py311, "-c", "import platform; print(platform.python_version())"],
+        cwd=ROOT, env=env, text=True,
+    ).strip()
+    if PYTHON_VERSION_FILE.is_file() and actual_python_version != python_version:
+        raise RuntimeError("Python 版本与 Drive 中固定的版本不一致。")
+    if not PYTHON_VERSION_FILE.is_file():
+        PYTHON_VERSION_FILE.write_text(actual_python_version + "\\n", encoding="ascii")
+    print(f"\n[Colab Bootstrap] Python：{actual_python_version}（版本已记录到 Drive）", flush=True)
 
     core_py = python_in(CORE_VENV)
     if not core_py.is_file():
