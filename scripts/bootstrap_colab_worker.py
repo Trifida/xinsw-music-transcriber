@@ -8,6 +8,7 @@ Google Drive is used only for persistent model weights.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import shutil
 import subprocess
@@ -25,6 +26,9 @@ MODEL_DIR = DRIVE / "XinsW_Models" / "BS-RoFormer"
 CHECKPOINT = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
 CONFIG = "model_bs_roformer_ep_317_sdr_12.9755.yaml"
 TORCH_INDEX = "https://download.pytorch.org/whl/cu130"
+RUNTIME_DRIVE = DRIVE / "XinsW_Runtime"
+SEP_LOCK_FILE = RUNTIME_DRIVE / "colab-separator-cu130.lock"
+CREPE_MODEL_DRIVE = DRIVE / "XinsW_Models" / "CREPE" / "model-full.h5"
 
 
 def run(command: list[str], *, env: dict[str, str], cwd: Path = ROOT) -> None:
@@ -61,7 +65,9 @@ def main() -> int:
     if not ROOT.joinpath("musicmaster/cloud/worker.py").is_file():
         raise RuntimeError("未找到项目源码；请从仓库根目录运行此脚本。")
 
+    ensure_drive()
     RUNTIME.mkdir(parents=True, exist_ok=True)
+    RUNTIME_DRIVE.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env.update({
         "UV_PYTHON_INSTALL_DIR": str(PYTHON_INSTALL),
@@ -94,18 +100,39 @@ def main() -> int:
     if not sep_py.is_file():
         run([uv, "venv", "--python", py311, str(SEP_VENV)], env=env)
 
-    # Reconcile the core environment to the repository's validated lock.
-    run([uv, "pip", "install", "--python", str(core_py), "setuptools<81", "wheel"], env=env)
-    run([
-        uv, "pip", "sync", "--python", str(core_py),
-        str(ROOT / "requirements/locks/core-cpu.txt"),
-    ], env=env)
-    # pip sync may remove bootstrap/build tools not listed in the runtime lock.
-    run([uv, "pip", "install", "--python", str(core_py), "setuptools<81", "wheel"], env=env)
-    run([
-        uv, "pip", "install", "--python", str(core_py),
-        "--no-build-isolation", "--no-deps", str(ROOT / "vendor/crepe"),
-    ], env=env)
+    # Reconcile the core environment only when its committed lock changes or
+    # the installed environment fails its import probe. Reruns are then cheap.
+    core_lock = ROOT / "requirements/locks/core-cpu.txt"
+    core_lock_sha = hashlib.sha256(core_lock.read_bytes()).hexdigest()
+    core_stamp = RUNTIME / "core-lock-sha256"
+    core_probe = (
+        "import numpy, librosa, soundfile, tensorflow, hmmlearn, music21, "
+        "verovio, jianpu_ly; "
+        "assert numpy.__version__.startswith('1.'); "
+        "assert tensorflow.__version__.startswith('2.15.')"
+    )
+    core_is_ready = (
+        core_py.is_file()
+        and core_stamp.is_file()
+        and core_stamp.read_text(encoding="ascii").strip() == core_lock_sha
+        and subprocess.run(
+            [str(core_py), "-c", core_probe], cwd=ROOT, env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+        ).returncode == 0
+    )
+    if not core_is_ready:
+        print("[Colab Bootstrap] 核心环境首次安装或锁文件已变化，开始同步依赖。", flush=True)
+        run([uv, "pip", "install", "--python", str(core_py), "setuptools<81", "wheel"], env=env)
+        run([uv, "pip", "sync", "--python", str(core_py), str(core_lock)], env=env)
+        # pip sync may remove build tools not listed in the runtime lock.
+        run([uv, "pip", "install", "--python", str(core_py), "setuptools<81", "wheel"], env=env)
+        run([
+            uv, "pip", "install", "--python", str(core_py),
+            "--no-build-isolation", "--no-deps", str(ROOT / "vendor/crepe"),
+        ], env=env)
+        core_stamp.write_text(core_lock_sha, encoding="ascii")
+    else:
+        print("[Colab Bootstrap] 核心环境锁文件未变化且导入检查通过，跳过重复安装。", flush=True)
 
     crepe_model = subprocess.check_output(
         [str(core_py), "-c",
@@ -113,31 +140,77 @@ def main() -> int:
          "print(Path(crepe.core.__file__).parent / 'model-full.h5')"],
         cwd=ROOT, env=env, text=True,
     ).strip()
-    if not Path(crepe_model).is_file() or Path(crepe_model).stat().st_size < 10_000_000:
+    crepe_model_path = Path(crepe_model)
+    if CREPE_MODEL_DRIVE.is_file() and CREPE_MODEL_DRIVE.stat().st_size >= 10_000_000:
+        if (not crepe_model_path.is_file()
+                or crepe_model_path.stat().st_size != CREPE_MODEL_DRIVE.stat().st_size):
+            crepe_model_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(CREPE_MODEL_DRIVE, crepe_model_path)
+        print("[Colab Bootstrap] 已从 Drive 恢复 CREPE 模型缓存。", flush=True)
+    elif not crepe_model_path.is_file() or crepe_model_path.stat().st_size < 10_000_000:
         run([str(core_py), str(ROOT / "scripts/prepare_crepe_model.py")], env=env)
+        if crepe_model_path.is_file() and crepe_model_path.stat().st_size >= 10_000_000:
+            CREPE_MODEL_DRIVE.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(crepe_model_path, CREPE_MODEL_DRIVE)
+            print("[Colab Bootstrap] CREPE 模型已备份到 Google Drive。", flush=True)
 
     # Install LilyPond only when absent; it is required for the final jianpu PDF.
     if not shutil.which("lilypond"):
         run(["apt-get", "update", "-qq"], env=env)
         run(["apt-get", "install", "-y", "lilypond"], env=env)
 
-    # Separate NumPy 2 / PyTorch stack from TensorFlow 2.15 (NumPy <2).
-    # IMPORTANT: an earlier CPU-only torch build may already exist in a reused
-    # venv. Force replacement from the CUDA 13.0 index; a plain version pin
-    # (2.11.0) also accepts local builds such as 2.11.0+cpu.
-    run([
-        uv, "pip", "install", "--python", str(sep_py),
-        "--reinstall", "--index-strategy", "first-index",
-        "--index-url", TORCH_INDEX, "--extra-index-url", "https://pypi.org/simple",
-        "torch==2.11.0", "torchvision==0.26.0", "torchaudio==2.11.0",
-    ], env=env)
-    run([
-        uv, "pip", "install", "--python", str(sep_py),
-        "-r", str(ROOT / "requirements/requirements-sep.txt"),
-    ], env=env)
-    run([
-        uv, "pip", "install", "--python", str(sep_py), "audio-separator[gpu]",
-    ], env=env)
+    # The first successful setup writes an exact dependency lock to Drive.
+    # Every later Runtime rebuilds the ephemeral venv from that same lock.
+    sep_probe_lock = (
+        "import torch, torchaudio, torchvision, numpy; "
+        "from audio_separator.separator import Separator; "
+        "assert torch.__version__.startswith('2.11.0'); "
+        "assert '+cpu' not in torch.__version__; "
+        "assert torch.version.cuda is not None; "
+        "assert torchaudio.__version__.startswith('2.11.0'); "
+        "assert torchvision.__version__.startswith('0.26.0'); "
+        "assert numpy.__version__.split('.')[0] == '2'; "
+        "assert torch.cuda.is_available()"
+    )
+    if SEP_LOCK_FILE.is_file():
+        print("[Colab Bootstrap] 使用 Drive 中固定的 CUDA 分离环境锁文件。", flush=True)
+        run([
+            uv, "pip", "sync", "--python", str(sep_py),
+            "--index-strategy", "first-index",
+            "--index-url", TORCH_INDEX, "--extra-index-url", "https://pypi.org/simple",
+            str(SEP_LOCK_FILE),
+        ], env=env)
+    else:
+        print("[Colab Bootstrap] 首次安装 CUDA 分离环境，完成后将精确版本锁定到 Drive。", flush=True)
+        run([
+            uv, "pip", "install", "--python", str(sep_py),
+            "--reinstall", "--index-strategy", "first-index",
+            "--index-url", TORCH_INDEX, "--extra-index-url", "https://pypi.org/simple",
+            "torch==2.11.0", "torchvision==0.26.0", "torchaudio==2.11.0",
+        ], env=env)
+        run([
+            uv, "pip", "install", "--python", str(sep_py),
+            "-r", str(ROOT / "requirements/requirements-sep.txt"),
+        ], env=env)
+        run([
+            uv, "pip", "install", "--python", str(sep_py), "audio-separator[gpu]",
+        ], env=env)
+        freeze = subprocess.check_output(
+            [uv, "pip", "freeze", "--python", str(sep_py)],
+            cwd=ROOT, env=env, text=True,
+        )
+        if "torch==2.11.0" not in freeze or "torchaudio==2.11.0" not in freeze:
+            raise RuntimeError("分离环境导出的锁文件未包含预期 PyTorch 版本。")
+        SEP_LOCK_FILE.write_text(freeze, encoding="utf-8")
+        print(f"[Colab Bootstrap] 已将分离环境精确版本保存到 Drive：{SEP_LOCK_FILE}", flush=True)
+
+    sep_lock_check = subprocess.run(
+        [str(sep_py), "-c", sep_probe_lock], cwd=ROOT, env=env,
+        capture_output=True, text=True, check=False,
+    )
+    if sep_lock_check.returncode != 0:
+        detail = (sep_lock_check.stderr or sep_lock_check.stdout or "无详细错误").strip()[-1200:]
+        raise RuntimeError("CUDA 分离环境未通过检查：" + detail)
 
     # Verify both isolated environments before attempting Worker registration.
     run([
@@ -168,7 +241,6 @@ def main() -> int:
     )
     run([str(sep_py), "-c", sep_probe], env=env)
 
-    ensure_drive()
     missing = [name for name in (CHECKPOINT, CONFIG) if not (MODEL_DIR / name).is_file()]
     if missing:
         raise RuntimeError(
