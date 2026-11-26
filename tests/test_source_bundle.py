@@ -35,15 +35,17 @@ class FakeObjects:
         self.uploaded = (fileobj.read(), key, content_type)
 
 
-def test_publisher_requires_secret_and_repository(monkeypatch):
+def test_publisher_allows_public_repo_without_token_but_validates_repository(monkeypatch):
     monkeypatch.delenv("MUSICMASTER_GITHUB_READ_TOKEN", raising=False)
     monkeypatch.delenv("MUSICMASTER_GITHUB_REPOSITORY", raising=False)
-    with pytest.raises(ValueError, match="MUSICMASTER_GITHUB_READ_TOKEN"):
-        GitHubSourceBundlePublisher(objects=FakeObjects(), token="", repository="")
+    publisher = GitHubSourceBundlePublisher(
+        objects=FakeObjects(), token="", repository="Trifida/xinsw-music-transcriber"
+    )
+    assert publisher.token == ""
 
     with pytest.raises(ValueError, match="owner/repository"):
         GitHubSourceBundlePublisher(
-            objects=FakeObjects(), token="secret", repository="not-a-repo/path/extra"
+            objects=FakeObjects(), token="", repository="not-a-repo/path/extra"
         )
 
 
