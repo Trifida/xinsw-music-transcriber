@@ -44,6 +44,8 @@ def test_one_click_colab_notebook_uses_secret_and_verifies_published_bundle():
     assert "--start" in NOTEBOOK
     assert "print(worker_token)" not in NOTEBOOK
     assert "MUSICMASTER_WORKER_ID" in NOTEBOOK
+    assert "colab-separator-cu130.lock" in NOTEBOOK
+    assert "colab-python-version.txt" in NOTEBOOK
 
 
 def test_colab_docs_distinguish_persistent_assets_from_ephemeral_venvs():
