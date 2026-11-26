@@ -36,9 +36,10 @@ operations:
 python scripts/publish_worker_bundle.py <commit-sha>
 ```
 
-The publisher validates that GitHub resolves the requested commit, downloads
-the archive for that exact SHA, enforces a 512 MiB maximum, calculates SHA-256,
-and uploads it to an immutable key:
+The publisher downloads the archive directly from GitHub's codeload host using
+the full immutable commit SHA in the URL (avoiding REST API rate limits on
+shared cloud egress IPs), enforces a 512 MiB maximum, calculates SHA-256, and
+uploads it to an immutable key:
 
 ```
 worker-bundles/<commit-sha>/<sha256>.tar.gz
