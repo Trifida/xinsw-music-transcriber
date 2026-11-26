@@ -122,9 +122,12 @@ def main() -> int:
         run(["apt-get", "install", "-y", "lilypond"], env=env)
 
     # Separate NumPy 2 / PyTorch stack from TensorFlow 2.15 (NumPy <2).
-    # The exact PyTorch trio is pinned to the CUDA 13.0 wheel set.
+    # IMPORTANT: an earlier CPU-only torch build may already exist in a reused
+    # venv. Force replacement from the CUDA 13.0 index; a plain version pin
+    # (2.11.0) also accepts local builds such as 2.11.0+cpu.
     run([
         uv, "pip", "install", "--python", str(sep_py),
+        "--reinstall", "--index-strategy", "first-index",
         "--index-url", TORCH_INDEX, "--extra-index-url", "https://pypi.org/simple",
         "torch==2.11.0", "torchvision==0.26.0", "torchaudio==2.11.0",
     ], env=env)
@@ -148,12 +151,20 @@ def main() -> int:
     sep_probe = (
         "import torch, torchaudio, torchvision; "
         "from audio_separator.separator import Separator; "
+        "print('TORCH_VERSION=', torch.__version__); "
+        "print('TORCH_CUDA_BUILD=', torch.version.cuda); "
+        "print('TORCHAUDIO_VERSION=', torchaudio.__version__); "
+        "print('TORCHVISION_VERSION=', torchvision.__version__); "
+        "print('CUDA_AVAILABLE=', torch.cuda.is_available()); "
+        "print('CUDA_DEVICE_COUNT=', torch.cuda.device_count()); "
         "assert torch.__version__.startswith('2.11.0'); "
+        "assert '+cpu' not in torch.__version__, '安装到了 CPU-only PyTorch'; "
+        "assert torch.version.cuda is not None, 'PyTorch 本身不是 CUDA 构建'; "
         "assert torchaudio.__version__.startswith('2.11.0'); "
         "assert torchvision.__version__.startswith('0.26.0'); "
-        "assert torch.cuda.is_available(), 'CUDA 不可用'; "
-        "print('GPU_OK', torch.__version__, torchaudio.__version__, "
-        "torch.cuda.get_device_name(0))"
+        "assert torch.cuda.is_available(), 'CUDA 构建已安装，但驱动/GPU 不可用'; "
+        "print('GPU_OK', torch.cuda.get_device_name(0), "
+        "torch.cuda.get_device_capability(0))"
     )
     run([str(sep_py), "-c", sep_probe], env=env)
 
