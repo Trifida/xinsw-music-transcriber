@@ -271,7 +271,7 @@ def test_manual_start_requires_existing_live_gpu_and_never_provisions(api, monke
 
     waiting = client.post(f"/api/cloud/jobs/{job_id}/start")
     assert waiting.status_code == 409
-    assert "不会创建新的 GPU" in waiting.json()["detail"]
+    assert "不会自动创建或启动 GPU" in waiting.json()["detail"]
     assert store.jobs[job_id]["status"] == "queued"
     assert store.jobs[job_id]["options"]["manual_start_requested"] is not True
     assert store.jobs[job_id]["options"]["auto_dispatch_requested"] is False
@@ -780,6 +780,9 @@ def test_dispatcher_endpoint_requires_idempotency_key(api, monkeypatch):
 def test_dispatcher_endpoint_rechecks_idempotency_after_capacity_lock(api, monkeypatch):
     client, store, _ = api
     monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    monkeypatch.setenv("MUSICMASTER_API_URL", "https://api.example.test")
+    monkeypatch.setenv("MUSICMASTER_AUTODL_IMAGE_UUID", "configured-image")
+    monkeypatch.setenv("MUSICMASTER_AUTODL_CUDA_V_FROM", "124")
     key = "request-key-race-check-01"
     worker_id = cloud_api._idempotent_worker_id(key)
     original_get_worker = store.get_worker
@@ -906,6 +909,7 @@ def test_idle_worker_batch_endpoint_defaults_to_read_only_dry_run(api, monkeypat
     assert denied.status_code == 401
     response = client.post(
         "/api/internal/dispatcher/workers/reconcile-idle",
+        json={"dry_run": True},
         headers={"Authorization": "Bearer " + "d" * 40},
     )
     assert response.status_code == 200
