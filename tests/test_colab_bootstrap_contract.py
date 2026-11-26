@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,3 +49,11 @@ def test_colab_docs_distinguish_persistent_assets_from_ephemeral_venvs():
     assert "colab-separator-cu130.lock" in DOC
     assert "不会自动创建或启动 GPU" in DOC
     assert "notebooks/XinsW_Colab_GPU_Worker_V1.ipynb" in DOC
+
+
+def test_one_click_notebook_is_valid_json_and_its_startup_cell_compiles():
+    notebook = json.loads(NOTEBOOK)
+    assert notebook["nbformat"] == 4
+    code_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
+    assert len(code_cells) == 1
+    compile("".join(code_cells[0]["source"]), "XinsW_Colab_GPU_Worker_V1.ipynb", "exec")
