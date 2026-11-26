@@ -194,6 +194,34 @@ def test_bootstrap_token_issue_requires_worker_auth_and_stores_only_hash(api, mo
     ).hexdigest()
 
 
+def test_worker_config_exchanges_one_time_bootstrap_token(monkeypatch):
+    import json
+
+    monkeypatch.setenv("MUSICMASTER_API_URL", "https://example.test")
+    monkeypatch.delenv("MUSICMASTER_WORKER_TOKEN", raising=False)
+    monkeypatch.setenv("MUSICMASTER_BOOTSTRAP_TOKEN", "one-time-bootstrap-secret")
+
+    class Response:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def read(self):
+            return json.dumps({
+                "worker_token": "long-lived-worker-secret",
+                "worker_id": "colab-t4",
+                "instance_uuid": None,
+            }).encode()
+
+    monkeypatch.setattr(worker.urllib.request, "urlopen", lambda request, timeout: Response())
+    base, token, worker_id, instance_id = worker._config()
+    assert base == "https://example.test"
+    assert token == "long-lived-worker-secret"
+    assert worker_id == "colab-t4"
+    assert instance_id is None
+    assert __import__("os").environ["MUSICMASTER_WORKER_TOKEN"] == token
+
+
 def test_worker_auth_rejects_missing_token_and_accepts_valid_token(api):
     client, _, _ = api
     body = {"worker_id": "gpu-1", "lease_seconds": 300}
