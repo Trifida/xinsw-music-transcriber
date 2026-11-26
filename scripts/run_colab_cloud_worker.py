@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib
 import os
 import socket
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -33,6 +34,8 @@ REQUIRED_MODULES = (
     "crepe",
     "hmmlearn",
     "music21",
+    "verovio",
+    "jianpu_ly",
 )
 PROJECT_MODULES = (
     "musicmaster.cloud.worker",
@@ -71,6 +74,11 @@ def validate_runtime() -> tuple[str, str] | int:
         return _fail(
             "完整乐曲流程依赖导入失败：" + "；".join(import_errors)
             + "。请按已核验的 Colab 环境方案修复；本脚本不会自动安装或升级依赖。"
+        )
+    if not shutil.which("lilypond"):
+        return _fail(
+            "未找到 LilyPond。完整歌曲必须生成简谱 PDF；请先在 Colab 单元执行 "
+            "`!apt-get update -qq && apt-get install -y lilypond`，再重新启动 Worker。"
         )
     if not DRIVE_ROOT.is_dir():
         return _fail("Google Drive 尚未挂载，找不到 /content/drive/MyDrive。")
