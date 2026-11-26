@@ -58,8 +58,6 @@ class GitHubSourceBundlePublisher:
         self.repository = (
             repository or os.environ.get("MUSICMASTER_GITHUB_REPOSITORY", "")
         ).strip()
-        if not self.token:
-            raise ValueError("MUSICMASTER_GITHUB_READ_TOKEN is required.")
         if not _REPO_RE.fullmatch(self.repository):
             raise ValueError("MUSICMASTER_GITHUB_REPOSITORY must be owner/repository.")
         self.max_bytes = int(max_bytes)
@@ -69,15 +67,14 @@ class GitHubSourceBundlePublisher:
         self.objects = objects or S3ObjectStore()
 
     def _request(self, url: str, *, accept: str) -> bytes:
-        request = urllib.request.Request(
-            url,
-            headers={
-                "Authorization": f"Bearer {self.token}",
-                "Accept": accept,
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "XinsW-Music-Source-Bundle/1.0",
-            },
-        )
+        headers = {
+            "Accept": accept,
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "XinsW-Music-Source-Bundle/1.0",
+        }
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        request = urllib.request.Request(url, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 chunks: list[bytes] = []
