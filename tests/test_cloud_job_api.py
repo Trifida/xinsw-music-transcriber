@@ -57,6 +57,12 @@ class FakeStore:
     def register_worker(self, worker_id, instance_uuid=None):
         return {"worker_id": worker_id, "status": "idle"}
 
+    def issue_bootstrap_token(self, token_hash, worker_id, *, expires_seconds=900):
+        self.issued_bootstrap = {
+            "token_hash": token_hash, "worker_id": worker_id,
+            "expires_seconds": expires_seconds,
+        }
+
     def set_worker_status(self, worker_id, status):
         return True
 
@@ -158,6 +164,34 @@ def test_worker_config_requires_https_and_secret(monkeypatch):
     monkeypatch.delenv("MUSICMASTER_WORKER_TOKEN")
     with pytest.raises(ValueError, match="TOKEN"):
         worker._config()
+
+
+def test_bootstrap_token_issue_requires_worker_auth_and_stores_only_hash(api, monkeypatch):
+    client, store, _ = api
+    denied = client.post(
+        "/api/internal/bootstrap/issue",
+        json={"worker_id": "colab-t4"},
+    )
+    assert denied.status_code == 401
+
+    response = client.post(
+        "/api/internal/bootstrap/issue",
+        headers={"Authorization": "Bearer test-worker-secret"},
+        json={"worker_id": "colab-t4", "expires_seconds": 600},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["worker_id"] == "colab-t4"
+    assert payload["expires_in"] == 600
+    assert payload["uses"] == 1
+    assert len(payload["bootstrap_token"]) >= 32
+    assert store.issued_bootstrap["worker_id"] == "colab-t4"
+    assert store.issued_bootstrap["expires_seconds"] == 600
+    assert store.issued_bootstrap["token_hash"] != payload["bootstrap_token"]
+    import hashlib
+    assert store.issued_bootstrap["token_hash"] == hashlib.sha256(
+        payload["bootstrap_token"].encode()
+    ).hexdigest()
 
 
 def test_worker_auth_rejects_missing_token_and_accepts_valid_token(api):
