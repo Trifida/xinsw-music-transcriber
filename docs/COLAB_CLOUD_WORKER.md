@@ -35,6 +35,7 @@ Colab 的 Python 进程、虚拟环境和本地磁盘属于临时 Runtime，Goog
 |---|---|---|
 | BS-RoFormer checkpoint/YAML | `MyDrive/XinsW_Models/BS-RoFormer/` | 直接复用，不重新下载 |
 | CREPE 模型 | 首次运行后保存至 `MyDrive/XinsW_Models/CREPE/model-full.h5` | 自动从 Drive 恢复 |
+| Python 3.11 补丁版本 | `MyDrive/XinsW_Runtime/colab-python-version.txt` | 首次运行记录，后续按相同版本重建 |
 | CUDA 分离环境精确依赖锁 | 首次成功安装后保存至 `MyDrive/XinsW_Runtime/colab-separator-cu130.lock` | 按固定版本锁重建 |
 | 核心环境依赖锁 | 仓库 `requirements/locks/core-cpu.txt` | 按 Git 固定版本重建 |
 | Python 虚拟环境、uv 缓存 | Colab `/content/` 临时磁盘 | 自动重建；不会写入 Drive |
