@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import gzip
-import json
 
 import pytest
 
@@ -127,10 +126,7 @@ def test_publish_rejects_non_gzip_archive(monkeypatch):
 
 def test_publish_enforces_archive_size_limit(monkeypatch):
     commit = "e" * 40
-    responses = [
-        FakeResponse(json.dumps({"sha": commit}).encode()),
-        FakeResponse(b"\\x1f\\x8b" + b"x" * 200),
-    ]
+    responses = [FakeResponse(b"\x1f\x8b" + b"x" * 200)]
 
     def fake_urlopen(request, timeout):
         return responses.pop(0)
