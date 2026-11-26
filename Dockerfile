@@ -22,7 +22,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
     && python -m pip install --no-cache-dir -r requirements/requirements-core.txt \
     && python -m pip install --no-cache-dir -e .
 
-EXPOSE 7860
+EXPOSE 10000
 
 # Render and other container platforms supply PORT at runtime.
 CMD ["sh", "-c", "export MUSICMASTER_PORT=${PORT:-7860}; exec python -m musicmaster.web.server"]

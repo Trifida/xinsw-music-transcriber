@@ -11,18 +11,20 @@ import hmac
 import logging
 import os
 import re
+import secrets
+import time
 import uuid
-from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from fastapi.encoders import jsonable_encoder
 
 from musicmaster.cloud.job_store import DispatchCapacityError, JobStoreError, PostgresJobStore
 from musicmaster.cloud.object_store import ObjectStoreError, S3ObjectStore
+from musicmaster.cloud.source_bundle import GitHubSourceBundlePublisher, SourceBundleError
 from musicmaster.cloud.autodl_pro import AutoDLProClient
 from musicmaster.cloud.dispatcher import create_autodl_worker, worker_instance_name
 from musicmaster.cloud.lifecycle import reconcile_idle_worker
@@ -46,7 +48,7 @@ def _components() -> tuple[PostgresJobStore, S3ObjectStore]:
 def _worker_auth(authorization: str | None = Header(default=None)) -> None:
     expected = os.environ.get("MUSICMASTER_WORKER_TOKEN", "").strip()
     if not expected:
-        raise HTTPException(status_code=503, detail="GPU worker API 尚未配置。")
+        raise HTTPException(status_code=503, detail="Worker API 尚未配置。")
     supplied = (authorization or "").strip()
     if not supplied.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Worker authentication required.")
@@ -91,6 +93,15 @@ class WorkerSweepRequest(BaseModel):
 
 class BootstrapRequest(BaseModel):
     bootstrap_token: str = Field(min_length=32, max_length=256)
+
+
+class BootstrapIssueRequest(BaseModel):
+    worker_id: str = Field(min_length=1, max_length=128)
+    expires_seconds: int = Field(default=900, ge=60, le=1800)
+
+
+class PublishWorkerBundleRequest(BaseModel):
+    commit_sha: str = Field(pattern=r"^[0-9a-fA-F]{40}$")
 
 
 class WorkerRegister(BaseModel):
@@ -235,79 +246,13 @@ def provision_cloud_worker(
     return result
 
 
-def _auto_dispatch_enabled() -> bool:
-    return os.environ.get("MUSICMASTER_AUTODL_AUTO_DISPATCH", "").strip().lower() in {
-        "1", "true", "yes", "on",
-    }
-
-
 @router.post(
     "/api/internal/dispatcher/dispatch-queued",
     dependencies=[Depends(_dispatcher_auth)],
 )
 def dispatch_queued_cloud_jobs() -> dict:
-    """Durable periodic fallback for queued jobs missed by an API background task."""
-    if not _auto_dispatch_enabled():
-        return {"enabled": False, "status": "disabled", "queued_jobs": 0}
-
-    store, _ = _components()
-    queued_jobs = store.count_queued_jobs()
-    if queued_jobs <= 0:
-        return {"enabled": True, "status": "no_queued_jobs", "queued_jobs": 0}
-
-    # One deterministic key per UTC minute makes overlapping scheduled calls
-    # idempotent. The capacity gate prevents creating another GPU when the
-    # configured worker limit is already occupied.
-    minute_key = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
-    try:
-        worker = provision_cloud_worker(idempotency_key=f"queue-sweep-{minute_key}")
-    except HTTPException as exc:
-        if exc.status_code == 409:
-            return {
-                "enabled": True,
-                "status": "waiting_for_existing_worker_or_capacity",
-                "queued_jobs": queued_jobs,
-            }
-        raise
-    return {
-        "enabled": True,
-        "status": "worker_dispatch_requested",
-        "queued_jobs": queued_jobs,
-        "worker_id": worker.get("worker_id"),
-        "worker_status": worker.get("status"),
-    }
-
-
-def _dispatch_cloud_job(job_id: str) -> None:
-    """Provision a worker after upload only when the explicit feature flag is enabled."""
-    if not _auto_dispatch_enabled():
-        return
-    try:
-        result = provision_cloud_worker(idempotency_key=f"cloud-job-{job_id}")
-        logger.info(
-            "Cloud job %s dispatch check: worker=%s status=%s",
-            job_id, result.get("worker_id"), result.get("status"),
-        )
-    except HTTPException as exc:
-        if exc.status_code == 409:
-            # A worker is already being provisioned or the configured worker
-            # capacity is occupied. Its polling loop will pick up queued jobs.
-            logger.info(
-                "Cloud job %s remains queued; dispatcher is busy or at capacity.",
-                job_id,
-            )
-            return
-        logger.exception(
-            "Cloud job %s remains queued after worker dispatch HTTP %s.",
-            job_id, exc.status_code,
-        )
-    except Exception as exc:  # noqa: BLE001
-        # The durable job remains queued. A later dispatch attempt can safely
-        # replay the same idempotency key without creating a duplicate worker.
-        logger.exception(
-            "Cloud job %s remains queued after worker dispatch error: %s",
-            job_id, type(exc).__name__,
-        )
+    """Automatic queue dispatch is intentionally disabled: only existing workers may be used."""
+    return {"enabled": False, "status": "disabled", "queued_jobs": 0}
 
 
 @router.post(
@@ -474,7 +419,6 @@ def reconcile_idle_cloud_workers(request: WorkerSweepRequest) -> dict:
 
 @router.post("/api/cloud/jobs")
 def create_cloud_job(
-    background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     engine: str = Form("crepe"),
     key: str = Form(""),
@@ -506,12 +450,26 @@ def create_cloud_job(
     if size_bytes > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="单个音频文件暂时不能超过 250 MB。")
 
+    request_started = time.monotonic()
+    request_id = uuid.uuid4().hex[:12]
+    content_type = audio.content_type or "application/octet-stream"
+    logger.info(
+        "cloud_upload accepted request_id=%s filename=%s size_bytes=%s content_type=%s",
+        request_id, filename, size_bytes, content_type,
+    )
     store, objects = _components()
     job_id = uuid.uuid4()
     object_key = f"jobs/{job_id}/source/{filename}"
-    content_type = audio.content_type or "application/octet-stream"
     try:
+        stage_started = time.monotonic()
+        logger.info("cloud_upload object_store_start request_id=%s job_id=%s", request_id, job_id)
         objects.upload_fileobj(audio.file, object_key, content_type=content_type)
+        logger.info(
+            "cloud_upload object_store_complete request_id=%s job_id=%s elapsed_ms=%d",
+            request_id, job_id, int((time.monotonic() - stage_started) * 1000),
+        )
+        stage_started = time.monotonic()
+        logger.info("cloud_upload database_create_start request_id=%s job_id=%s", request_id, job_id)
         store.create_job(
             job_id,
             source_object_key=object_key,
@@ -523,12 +481,24 @@ def create_cloud_job(
                 "stages": ",".join(stage_list),
                 "denoise": denoise,
                 "lyrics": lyrics,
+                "auto_dispatch_requested": False,
             },
             max_attempts=2,
         )
         if not store.mark_upload_complete(job_id, size_bytes):
             raise JobStoreError("The uploaded job could not be queued.")
+        logger.info(
+            "cloud_upload queued request_id=%s job_id=%s size_bytes=%s database_elapsed_ms=%d total_elapsed_ms=%d",
+            request_id, job_id, size_bytes,
+            int((time.monotonic() - stage_started) * 1000),
+            int((time.monotonic() - request_started) * 1000),
+        )
     except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "cloud_upload failed request_id=%s job_id=%s error_type=%s total_elapsed_ms=%d",
+            request_id, job_id, type(exc).__name__,
+            int((time.monotonic() - request_started) * 1000),
+        )
         try:
             objects.delete(object_key)
         except Exception:
@@ -536,10 +506,47 @@ def create_cloud_job(
         if isinstance(exc, HTTPException):
             raise
         raise HTTPException(status_code=503, detail=f"任务提交失败：{type(exc).__name__}") from None
-    dispatch = "scheduled" if _auto_dispatch_enabled() else "disabled"
-    if dispatch == "scheduled":
-        background_tasks.add_task(_dispatch_cloud_job, str(job_id))
-    return {"job_id": str(job_id), "status": "queued", "dispatch": dispatch}
+    # Full-song uploads are always manual-start: this route never provisions
+    # or powers on a GPU, even if a legacy auto-dispatch flag is present.
+    return {"job_id": str(job_id), "status": "queued", "dispatch": "manual"}
+
+
+@router.post("/api/cloud/jobs/{job_id}/start")
+def start_cloud_job(job_id: str) -> dict:
+    """Allow a queued job to be claimed by an already-running, recently-heartbeating worker.
+
+    This endpoint never provisions, powers on, or otherwise changes GPU resources.
+    """
+    store, _ = _components()
+    try:
+        job = store.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="未找到这个云端任务。")
+        state = str(job.get("status") or "").lower()
+        if state in {"running", "completed"}:
+            return {"job_id": str(job_id), "status": state, "already_started": True}
+        if state != "queued":
+            raise HTTPException(status_code=409, detail=f"当前任务状态为 {state or 'unknown'}，暂时不能开始记谱。")
+        if not store.has_live_worker(heartbeat_seconds=120):
+            raise HTTPException(
+                status_code=409,
+                detail="当前没有在线计算 Worker，请等待 Colab Worker 连接并上线后再点击「开始记谱」。任务已保留，不会自动创建或启动 GPU。",
+            )
+        store.request_job_start(job_id)
+        latest = store.get_job(job_id) or job
+        latest_state = str(latest.get("status") or "queued").lower()
+        return {
+            "job_id": str(job_id),
+            "status": latest_state,
+            "worker_available": True,
+            "message": "已通知现有计算 Worker 领取任务；没有自动创建或启动 GPU。",
+        }
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=404, detail="无效的任务编号。") from None
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=f"任务启动检查失败：{type(exc).__name__}") from None
 
 
 @router.get("/api/cloud/jobs/{job_id}")
@@ -578,6 +585,29 @@ def get_artifact_download_url(job_id: str, artifact_id: int) -> dict:
     except ObjectStoreError:
         raise HTTPException(status_code=503, detail="暂时无法生成文件下载链接。") from None
     return {"url": url, "expires_in": 900, "file_name": artifact["file_name"]}
+
+
+@router.post("/api/internal/bootstrap/issue", dependencies=[Depends(_worker_auth)])
+def issue_worker_bootstrap_token(body: BootstrapIssueRequest) -> dict:
+    """Issue a short-lived, single-use token for a new Colab/remote worker."""
+    raw_token = secrets.token_urlsafe(32)
+    digest = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    store, _ = _components()
+    try:
+        store.issue_bootstrap_token(
+            digest, body.worker_id, expires_seconds=body.expires_seconds
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not issue worker bootstrap token: {type(exc).__name__}",
+        ) from None
+    return {
+        "bootstrap_token": raw_token,
+        "worker_id": body.worker_id,
+        "expires_in": body.expires_seconds,
+        "uses": 1,
+    }
 
 
 @router.post("/api/internal/bootstrap")
@@ -628,6 +658,34 @@ def get_worker_source_bundle() -> dict:
     }
 
 
+@router.post("/api/internal/worker/bundle/publish", dependencies=[Depends(_worker_auth)])
+def publish_worker_source_bundle(body: PublishWorkerBundleRequest) -> dict:
+    """Publish one pinned private GitHub commit using API-host credentials."""
+    try:
+        published = GitHubSourceBundlePublisher().publish(body.commit_sha)
+    except ValueError:
+        raise HTTPException(
+            status_code=503,
+            detail="Worker source publishing requires a valid GitHub read token and repository setting.",
+        ) from None
+    except SourceBundleError as exc:
+        # SourceBundleError messages are deliberately sanitized and never include
+        # response bodies, request headers, or credentials.
+        logger.warning("worker_source_bundle_publish_failed category=github reason=%s", str(exc))
+        raise HTTPException(
+            status_code=502,
+            detail="Worker source bundle could not be fetched from GitHub.",
+        ) from None
+    except ObjectStoreError as exc:
+        # ObjectStoreError exposes only the operation and exception class.
+        logger.warning("worker_source_bundle_publish_failed category=object_storage reason=%s", str(exc))
+        raise HTTPException(
+            status_code=502,
+            detail="Worker source bundle could not be uploaded to object storage.",
+        ) from None
+    return published.as_dict()
+
+
 @router.post("/api/internal/workers/register", dependencies=[Depends(_worker_auth)])
 def register_worker(body: WorkerRegister) -> dict:
     store, _ = _components()
@@ -657,7 +715,14 @@ def claim_job(body: ClaimRequest) -> dict:
     try:
         source_url = objects.presigned_download(job["source_object_key"], expires_seconds=1800)
     except ObjectStoreError:
-        raise HTTPException(status_code=503, detail="暂时无法为 GPU 节点签发音频下载链接。") from None
+        # The job has already been claimed. Release it back to the queue so a
+        # temporary object-store signing outage cannot strand it until lease expiry.
+        store.fail_job(
+            job["id"], body.worker_id,
+            "暂时无法签发原始音频下载链接，请稍后重试。",
+            retryable=True,
+        )
+        raise HTTPException(status_code=503, detail="暂时无法为 GPU 节点签发音频下载链接，任务已重新排队。") from None
     return {
         "job": {
             "id": str(job["id"]),

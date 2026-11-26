@@ -344,6 +344,7 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
   .player{gap:12px}.player .deck .vinyl{--vs:78px}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+#full-song-start[hidden]{display:none!important}
 </style>
 </head>
 <body>
@@ -502,10 +503,10 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
                 </div>
               <div class="field"><div class="label">这是什么样的声音</div>
                 <div class="opts" role="radiogroup" aria-label="选择声音类型">
-                  <label class="opt"><input type="radio" name="tr" value="crepe" checked><span class="box"><span class="tick"></span><span><span class="ot">歌声 · 哼唱 · 单旋律</span><span class="od">一条线条的旋律,最拿手,还能出简谱<span class="tech">crepe</span></span></span></span></label>
+                  <label class="opt"><input type="radio" name="tr" value="crepe"><span class="box"><span class="tick"></span><span><span class="ot">歌声 · 哼唱 · 单旋律</span><span class="od">一条线条的旋律,最拿手,还能出简谱<span class="tech">crepe</span></span></span></span></label>
                   <label class="opt"><input type="radio" name="tr" value="basic-pitch"><span class="box"><span class="tick"></span><span><span class="ot">乐器 · 和弦 · 多个音</span><span class="od">同时响起的多个音<span class="tech">basic-pitch</span></span></span></span></label>
                   <label class="opt"><input type="radio" name="tr" value="bytedance"><span class="box"><span class="tick"></span><span><span class="ot">干净的钢琴独奏</span><span class="od">清晰录制的真钢琴<span class="tech">bytedance</span></span></span></span></label>
-                  <label class="opt"><input type="radio" name="tr" value="full-song"><span class="box"><span class="tick"></span><span><span class="ot">完整乐曲</span><span class="od">包含人声与伴奏的完整混音歌曲，上传后进入云端处理流程</span></span></span></label>
+                  <label class="opt"><input type="radio" name="tr" value="full-song" checked><span class="box"><span class="tick"></span><span><span class="ot">完整乐曲</span><span class="od">包含人声与伴奏的完整混音歌曲，上传后进入云端处理流程</span></span></span></label>
                 </div></div>
               <div id="single-source-fields">
                 <div class="field"><div class="label">调<span class="opt-mark">选填</span></div>
@@ -531,9 +532,10 @@ footer{margin-top:96px;border-top:1px solid var(--border);padding:60px 0 44px;ba
                 </div>
                 <button type="button" class="cast full-song-submit" id="full-song-submit"><span class="shine"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V3m0 0L7 8m5-5 5 5M4 16v4h16v-4" stroke-linecap="round" stroke-linejoin="round"/></svg>提交完整歌曲任务</button>
                 <div id="full-song-status" class="help" role="status" aria-live="polite" style="margin-top:12px;white-space:pre-wrap"></div>
+                <button type="button" id="full-song-start" class="cast full-song-submit" hidden disabled style="margin-top:12px"><span class="shine"></span>开始记谱</button>
                 <div id="full-song-artifacts" class="help" aria-live="polite" style="margin-top:8px"></div>
                 <button type="button" id="full-song-refresh" class="mm-clear" hidden>查询任务状态</button>
-                <div class="help" style="margin-top:10px">完整乐曲会上传到云端任务队列；是否自动启动 GPU Worker 由服务端调度配置控制，可在下方查询任务状态。</div>
+                <div class="help" style="margin-top:10px">完整乐曲上传后需手动点击「开始记谱」。系统只使用已经运行的 GPU；没有可用 GPU 时会保留任务并提示等待，不会自动启动或创建 GPU。</div>
               </div>
             </div>
             <details class="help"><summary><span class="q">?</span>它怎么知道该用哪种耳朵<span class="chev">⌄</span></summary>

@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS music_job_artifacts (
     role TEXT NOT NULL DEFAULT 'result',
     content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
     size_bytes BIGINT CHECK (size_bytes IS NULL OR size_bytes >= 0),
+    attempt_count INTEGER NOT NULL DEFAULT 1 CHECK (attempt_count >= 1),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

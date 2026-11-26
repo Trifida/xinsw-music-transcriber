@@ -86,6 +86,13 @@ def _safe_extract(archive_path: Path, destination: Path) -> Path:
                 top_levels.add(name.parts[0])
                 if not (member.isdir() or member.isfile()):
                     raise RuntimeError("Worker source archive contains a link or special file.")
+                # Do not trust archived permission bits. Some valid source archives
+                # encode directories without execute permission, which makes their
+                # children inaccessible after extraction. Normalize to safe modes.
+                if member.isdir():
+                    member.mode = 0o755
+                else:
+                    member.mode = 0o755 if member.mode & 0o111 else 0o644
                 target = (destination / Path(*name.parts)).resolve()
                 try:
                     target.relative_to(destination.resolve())

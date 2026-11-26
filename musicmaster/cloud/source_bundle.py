@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import json
 import os
 import re
 import urllib.error
@@ -43,7 +42,8 @@ class PublishedBundle:
 class GitHubSourceBundlePublisher:
     """Fetch a pinned private-repository archive and publish it immutably."""
 
-    API_BASE = "https://api.github.com"
+    # codeload avoids REST API rate limits on shared cloud egress IPs.
+    ARCHIVE_BASE = "https://codeload.github.com"
 
     def __init__(
         self,
@@ -58,8 +58,6 @@ class GitHubSourceBundlePublisher:
         self.repository = (
             repository or os.environ.get("MUSICMASTER_GITHUB_REPOSITORY", "")
         ).strip()
-        if not self.token:
-            raise ValueError("MUSICMASTER_GITHUB_READ_TOKEN is required.")
         if not _REPO_RE.fullmatch(self.repository):
             raise ValueError("MUSICMASTER_GITHUB_REPOSITORY must be owner/repository.")
         self.max_bytes = int(max_bytes)
@@ -69,15 +67,14 @@ class GitHubSourceBundlePublisher:
         self.objects = objects or S3ObjectStore()
 
     def _request(self, url: str, *, accept: str) -> bytes:
-        request = urllib.request.Request(
-            url,
-            headers={
-                "Authorization": f"Bearer {self.token}",
-                "Accept": accept,
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "XinsW-Music-Source-Bundle/1.0",
-            },
-        )
+        headers = {
+            "Accept": accept,
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "XinsW-Music-Source-Bundle/1.0",
+        }
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        request = urllib.request.Request(url, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 chunks: list[bytes] = []
@@ -109,20 +106,11 @@ class GitHubSourceBundlePublisher:
         if not _SHA_RE.fullmatch(sha):
             raise ValueError("commit_sha must be a full 40-character Git commit SHA.")
 
-        metadata_raw = self._request(
-            f"{self.API_BASE}/repos/{self.repository}/commits/{sha}",
-            accept="application/vnd.github+json",
-        )
-        try:
-            metadata = json.loads(metadata_raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            raise SourceBundleError("GitHub returned invalid commit metadata.") from None
-        if str(metadata.get("sha", "")).lower() != sha:
-            raise SourceBundleError("GitHub commit metadata did not match the requested SHA.")
-
+        # The URL is pinned to the full immutable commit SHA. Codeload avoids
+        # REST API rate limits on shared cloud egress IPs. This repository is public.
         archive = self._request(
-            f"{self.API_BASE}/repos/{self.repository}/tarball/{sha}",
-            accept="application/vnd.github+json",
+            f"{self.ARCHIVE_BASE}/{self.repository}/tar.gz/{sha}",
+            accept="application/octet-stream",
         )
         if len(archive) < 2 or archive[:2] != b"\x1f\x8b":
             raise SourceBundleError("GitHub did not return a valid gzip source archive.")

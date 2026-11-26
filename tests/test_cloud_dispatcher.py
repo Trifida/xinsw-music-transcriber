@@ -136,6 +136,9 @@ class FakeCursor:
     def fetchone(self):
         return self.rows.pop(0)
 
+    def fetchall(self):
+        return list(self.rows.pop(0))
+
 
 class FakeConnection:
     def __init__(self, rows):

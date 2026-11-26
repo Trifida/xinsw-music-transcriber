@@ -12,8 +12,9 @@
     var submit = document.getElementById('full-song-submit');
     var status = document.getElementById('full-song-status');
     var refresh = document.getElementById('full-song-refresh');
+    var start = document.getElementById('full-song-start');
     var artifactsContainer = document.getElementById('full-song-artifacts');
-    if (!fileInput || !submit || !status || !refresh) return;
+    if (!fileInput || !submit || !status || !refresh || !start) return;
 
     var sourceOptions = document.querySelectorAll('input[name="tr"]');
     var singleAudioInput = document.getElementById('single-audio-input');
@@ -33,16 +34,68 @@
     });
     showSelectedSource();
 
-    var activeJobId = '';
+    var JOB_STORAGE_KEY = 'xinsw.fullSong.activeJobId';
+
+    function readSavedJobId() {
+      try { return window.sessionStorage.getItem(JOB_STORAGE_KEY) || ''; }
+      catch (_) { return ''; }
+    }
+
+    function saveJobId(jobId) {
+      try {
+        if (jobId) window.sessionStorage.setItem(JOB_STORAGE_KEY, jobId);
+        else window.sessionStorage.removeItem(JOB_STORAGE_KEY);
+      } catch (_) {
+        // The workflow remains usable when browser storage is unavailable.
+      }
+    }
+
+    var activeJobId = readSavedJobId();
     var autoPoll = false;
     var pollTimer = null;
     var queryInFlight = false;
+    var startRequestInFlight = false;
 
     function setBusy(busy) {
       submit.disabled = busy;
       submit.style.opacity = busy ? '.65' : '';
       submit.style.pointerEvents = busy ? 'none' : '';
       submit.setAttribute('aria-busy', busy ? 'true' : 'false');
+    }
+
+    function uploadFullSong(body) {
+      // Keep the transport consistent with the already-working audio modules:
+      // they submit multipart FormData with fetch(), not XMLHttpRequest.
+      // XHR upload-progress listeners are unnecessary here and can leave the
+      // request appearing stalled in some browser/proxy combinations.
+      status.textContent = '正在上传完整歌曲，请稍候…';
+      var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      var timeoutId = controller
+        ? window.setTimeout(function () { controller.abort(); }, 15 * 60 * 1000)
+        : null;
+      var options = { method: 'POST', body: body };
+      if (controller) options.signal = controller.signal;
+      return fetch('/api/cloud/jobs', options)
+        .then(function (response) {
+          return response.json().catch(function () { return {}; }).then(function (data) {
+            if (!response.ok) {
+              throw new Error(data.detail || data.message || ('HTTP ' + response.status));
+            }
+            return data;
+          });
+        })
+        .catch(function (error) {
+          if (error && error.name === 'AbortError') {
+            throw new Error('上传等待超过 15 分钟，连接已中止，请重试。');
+          }
+          if (error instanceof TypeError) {
+            throw new Error('网络连接中断，请检查网络后重试。');
+          }
+          throw error;
+        })
+        .finally(function () {
+          if (timeoutId !== null) window.clearTimeout(timeoutId);
+        });
     }
 
     function renderArtifactLinks(artifacts) {
@@ -88,7 +141,7 @@
         : '';
       var message = '任务编号：' + job.id + '\n任务状态：' + state + stage + pct;
       if (state === 'queued') {
-        message += '\n任务已进入云端队列，等待 GPU Worker 领取；如果长时间没有开始，请检查自动调度配置。';
+        message += '\n任务已排队，等待已经启动的 GPU Worker 领取。';
       } else if (state === 'running') {
         message += '\nGPU Worker 已开始处理，请稍后再次查询。';
       } else if (state === 'completed') {
@@ -101,6 +154,10 @@
       status.textContent = message;
       if (state === 'completed') renderArtifactLinks(artifacts);
       else if (artifactsContainer) artifactsContainer.textContent = '';
+      // Keep the manual action available while a queued job waits. If a worker
+      // disappears after the initial check, the user can retry without re-uploading.
+      start.hidden = state !== 'queued';
+      start.disabled = state !== 'queued' || startRequestInFlight;
     }
 
     fileInput.addEventListener('change', function () {
@@ -135,37 +192,36 @@
       body.append('denoise', 'dereverb');
       body.append('lyrics', lyricsInput ? lyricsInput.value : '');
 
+      var previousJobId = activeJobId;
       if (pollTimer) clearTimeout(pollTimer);
       pollTimer = null;
       autoPoll = false;
-      activeJobId = '';
       setBusy(true);
       refresh.hidden = true;
+      start.hidden = true;
       if (artifactsContainer) artifactsContainer.textContent = '';
       status.textContent = '正在把完整歌曲上传到云端任务队列…';
-      fetch('/api/cloud/jobs', { method: 'POST', body: body })
-        .then(function (response) {
-          return response.json().catch(function () { return {}; }).then(function (data) {
-            if (!response.ok) {
-              throw new Error(data.detail || data.message || ('HTTP ' + response.status));
-            }
-            return data;
-          });
-        })
+      uploadFullSong(body)
         .then(function (data) {
           if (!data.job_id) throw new Error('服务器没有返回任务编号。');
           activeJobId = data.job_id;
+          saveJobId(activeJobId);
           refresh.hidden = false;
-          var dispatchMessage = data.dispatch === 'scheduled'
-            ? '\n后台已安排 GPU Worker 调度检查；这不代表 GPU 已经启动，稍后可查询任务状态。'
-            : '\n当前自动 GPU 调度未启用，本次上传只完成入队，不代表已经开始扒谱。';
           status.textContent = '完整乐曲已上传并进入云端队列。\n任务编号：' + activeJobId
-            + '\n当前状态：' + (data.status || 'queued') + dispatchMessage;
-          autoPoll = data.dispatch === 'scheduled';
-          if (autoPoll) queryJob(false);
+            + '\n当前状态：等待开始记谱。点击下方「开始记谱」后，系统只检查并使用已经运行的 GPU。';
+          start.hidden = false;
+          start.disabled = false;
+          autoPoll = false;
         })
         .catch(function (error) {
           status.textContent = '上传未成功：' + (error && error.message ? error.message : String(error));
+          // Keep the previous task recoverable if this replacement upload fails.
+          if (previousJobId) {
+            activeJobId = previousJobId;
+            saveJobId(previousJobId);
+            refresh.hidden = false;
+            queryJob(false);
+          }
         })
         .finally(function () {
           setBusy(false);
@@ -174,19 +230,24 @@
 
     function queryJob(showLoading) {
       if (!activeJobId || queryInFlight) return;
+      var queriedJobId = activeJobId;
       queryInFlight = true;
       refresh.disabled = true;
       if (showLoading) status.textContent = '正在查询云端任务…';
-      fetch('/api/cloud/jobs/' + encodeURIComponent(activeJobId))
+      fetch('/api/cloud/jobs/' + encodeURIComponent(queriedJobId))
         .then(function (response) {
           return response.json().catch(function () { return {}; }).then(function (data) {
             if (!response.ok) {
-              throw new Error(data.detail || data.message || ('HTTP ' + response.status));
+              var error = new Error(data.detail || data.message || ('HTTP ' + response.status));
+              error.status = response.status;
+              throw error;
             }
             return data;
           });
         })
         .then(function (data) {
+          // A newer upload may have replaced this task while the request was in flight.
+          if (queriedJobId !== activeJobId) return;
           if (!data.job) throw new Error('服务器没有返回任务详情。');
           explainJob(data.job, data.artifacts || []);
           var state = String(data.job.status || '').toLowerCase();
@@ -199,6 +260,18 @@
           }
         })
         .catch(function (error) {
+          if (queriedJobId !== activeJobId) return;
+          if (error && error.status === 404) {
+            activeJobId = '';
+            saveJobId('');
+            autoPoll = false;
+            if (pollTimer) clearTimeout(pollTimer);
+            pollTimer = null;
+            refresh.hidden = true;
+            start.hidden = true;
+            status.textContent = '这条任务记录已不存在或已过期。请重新上传歌曲。';
+            return;
+          }
           status.textContent = '查询失败：' + (error && error.message ? error.message : String(error));
           if (autoPoll) {
             if (pollTimer) clearTimeout(pollTimer);
@@ -211,9 +284,44 @@
         });
     }
 
+    start.addEventListener('click', function () {
+      if (!activeJobId || start.disabled || startRequestInFlight) return;
+      startRequestInFlight = true;
+      start.disabled = true;
+      status.textContent = '正在检查是否有已经运行的 GPU Worker…';
+      fetch('/api/cloud/jobs/' + encodeURIComponent(activeJobId) + '/start', { method: 'POST' })
+        .then(function (response) {
+          return response.json().catch(function () { return {}; }).then(function (data) {
+            if (!response.ok) throw new Error(data.detail || data.message || ('HTTP ' + response.status));
+            return data;
+          });
+        })
+        .then(function (data) {
+          autoPoll = true;
+          refresh.hidden = false;
+          status.textContent = data.message || '已通知正在运行的 GPU Worker 领取任务。';
+          startRequestInFlight = false;
+          queryJob(false);
+        })
+        .catch(function (error) {
+          startRequestInFlight = false;
+          status.textContent = error && error.message ? error.message : String(error);
+          start.disabled = false;
+          start.hidden = false;
+        });
+    });
+
     refresh.addEventListener('click', function () {
       queryJob(true);
     });
+
+    // Restore the most recent task after a page reload so the user can continue
+    // checking status, retry manual start, or download completed artifacts.
+    if (activeJobId) {
+      refresh.hidden = false;
+      status.textContent = '正在恢复上次的完整乐曲任务…';
+      queryJob(false);
+    }
   }
 
   if (document.readyState === 'loading') {

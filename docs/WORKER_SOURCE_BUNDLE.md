@@ -8,19 +8,37 @@ worker receives only a short-lived presigned download URL.
 
 Configure these secrets on the API host (for example, Render):
 
-- `MUSICMASTER_GITHUB_READ_TOKEN`: fine-grained GitHub token with read-only
-  Contents access to this private repository.
 - `MUSICMASTER_GITHUB_REPOSITORY`: `Trifida/xinsw-music-transcriber`.
 - The normal private object-storage settings already used by `S3ObjectStore`.
 
-Run the publisher against a full 40-character commit SHA:
+The repository is currently public, so a GitHub token is optional. If the
+repository is made private later, configure `MUSICMASTER_GITHUB_READ_TOKEN`
+with read-only Contents access on the trusted API host. Never pass that token
+to a GPU worker or browser.
+
+The API host also exposes a worker-authenticated publish endpoint, so an
+operator does not need shell access to the Render container:
+
+```http
+POST /api/internal/worker/bundle/publish
+Authorization: Bearer <MUSICMASTER_WORKER_TOKEN>
+Content-Type: application/json
+
+{"commit_sha":"<full-40-character-commit-sha>"}
+```
+
+The endpoint runs the same publisher on the trusted API host and returns the
+published manifest. The GitHub read token and S3 credentials never leave Render.
+The existing command-line publisher remains available for controlled host-side
+operations:
 
 ```bash
 python scripts/publish_worker_bundle.py <commit-sha>
 ```
 
-The command validates that GitHub resolves the requested commit, downloads the
-archive for that exact SHA, enforces a 512 MiB maximum, calculates SHA-256, and
+The publisher downloads the archive directly from GitHub's codeload host using
+the full immutable commit SHA in the URL (avoiding REST API rate limits on
+shared cloud egress IPs), enforces a 512 MiB maximum, calculates SHA-256, and
 uploads it to an immutable key:
 
 ```

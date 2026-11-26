@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from datetime import datetime, timezone
 from io import BytesIO
 from uuid import uuid4
 from pathlib import Path
@@ -26,6 +25,7 @@ class FakeStore:
         row = {
             "id": job_id, "status": "awaiting_upload",
             "source_filename": kwargs["source_filename"],
+            "options": kwargs.get("options", {}),
         }
         self.jobs[str(job_id)] = row
         return row
@@ -37,6 +37,13 @@ class FakeStore:
 
     def get_job(self, job_id):
         return self.jobs.get(str(job_id))
+
+    def has_live_worker(self, heartbeat_seconds=120):
+        return getattr(self, "live_worker", False)
+
+    def request_job_start(self, job_id):
+        self.jobs[str(job_id)]["options"] = {"manual_start_requested": True}
+        return True
 
     def count_queued_jobs(self):
         return sum(1 for row in self.jobs.values() if row.get("status") == "queued")
@@ -50,6 +57,12 @@ class FakeStore:
     def register_worker(self, worker_id, instance_uuid=None):
         return {"worker_id": worker_id, "status": "idle"}
 
+    def issue_bootstrap_token(self, token_hash, worker_id, *, expires_seconds=900):
+        self.issued_bootstrap = {
+            "token_hash": token_hash, "worker_id": worker_id,
+            "expires_seconds": expires_seconds,
+        }
+
     def set_worker_status(self, worker_id, status):
         return True
 
@@ -61,12 +74,17 @@ class FakeStore:
         return True
 
     def add_artifact(self, job_id, worker_id, **kwargs):
+        for row in self.artifacts:
+            if row.get("object_key") == kwargs.get("object_key"):
+                row.update(kwargs)
+                return row
         row = {"id": len(self.artifacts) + 1, **kwargs}
         self.artifacts.append(row)
         return row
 
     def complete_job(self, job_id, worker_id, result):
         self.completed = True
+        self.jobs[str(job_id)]["status"] = "completed"
         return True
 
     def fail_job(self, job_id, worker_id, error, retryable=False):
@@ -148,6 +166,62 @@ def test_worker_config_requires_https_and_secret(monkeypatch):
         worker._config()
 
 
+def test_bootstrap_token_issue_requires_worker_auth_and_stores_only_hash(api, monkeypatch):
+    client, store, _ = api
+    denied = client.post(
+        "/api/internal/bootstrap/issue",
+        json={"worker_id": "colab-t4"},
+    )
+    assert denied.status_code == 401
+
+    response = client.post(
+        "/api/internal/bootstrap/issue",
+        headers={"Authorization": "Bearer test-worker-secret"},
+        json={"worker_id": "colab-t4", "expires_seconds": 600},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["worker_id"] == "colab-t4"
+    assert payload["expires_in"] == 600
+    assert payload["uses"] == 1
+    assert len(payload["bootstrap_token"]) >= 32
+    assert store.issued_bootstrap["worker_id"] == "colab-t4"
+    assert store.issued_bootstrap["expires_seconds"] == 600
+    assert store.issued_bootstrap["token_hash"] != payload["bootstrap_token"]
+    import hashlib
+    assert store.issued_bootstrap["token_hash"] == hashlib.sha256(
+        payload["bootstrap_token"].encode()
+    ).hexdigest()
+
+
+def test_worker_config_exchanges_one_time_bootstrap_token(monkeypatch):
+    import json
+
+    monkeypatch.setenv("MUSICMASTER_API_URL", "https://example.test")
+    monkeypatch.delenv("MUSICMASTER_WORKER_TOKEN", raising=False)
+    monkeypatch.setenv("MUSICMASTER_BOOTSTRAP_TOKEN", "one-time-bootstrap-secret")
+
+    class Response:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def read(self):
+            return json.dumps({
+                "worker_token": "long-lived-worker-secret",
+                "worker_id": "colab-t4",
+                "instance_uuid": None,
+            }).encode()
+
+    monkeypatch.setattr(worker.urllib.request, "urlopen", lambda request, timeout: Response())
+    base, token, worker_id, instance_id = worker._config()
+    assert base == "https://example.test"
+    assert token == "long-lived-worker-secret"
+    assert worker_id == "colab-t4"
+    assert instance_id is None
+    assert __import__("os").environ["MUSICMASTER_WORKER_TOKEN"] == token
+
+
 def test_worker_auth_rejects_missing_token_and_accepts_valid_token(api):
     client, _, _ = api
     body = {"worker_id": "gpu-1", "lease_seconds": 300}
@@ -174,7 +248,7 @@ def test_cloud_upload_creates_private_object_and_queues_job(api, monkeypatch):
     assert response.status_code == 200
     result = response.json()
     assert result["status"] == "queued"
-    assert result["dispatch"] == "disabled"
+    assert result["dispatch"] == "manual"
     assert objects.uploaded[0] == b"audio-bytes"
     assert objects.uploaded[1].startswith(f"jobs/{result['job_id']}/source/")
     assert store.jobs[result["job_id"]]["status"] == "queued"
@@ -182,71 +256,76 @@ def test_cloud_upload_creates_private_object_and_queues_job(api, monkeypatch):
     assert store.jobs[result["job_id"]]["options"]["lyrics"] == "春风又绿江南岸"
 
 
-def test_cloud_upload_schedules_opt_in_dispatch_with_stable_job_key(api, monkeypatch):
-    client, store, objects = api
-    monkeypatch.setenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", "true")
-    dispatched = []
+def test_manual_start_requires_existing_live_gpu_and_never_provisions(api, monkeypatch):
+    client, store, _ = api
+    monkeypatch.delenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", raising=False)
     monkeypatch.setattr(
         cloud_api, "provision_cloud_worker",
-        lambda *, idempotency_key: dispatched.append(idempotency_key) or {
-            "worker_id": "dispatch-test", "status": "starting",
-        },
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("must not provision a GPU")),
     )
+    created = client.post(
+        "/api/cloud/jobs",
+        files={"audio": ("原曲.mp3", b"audio-bytes", "audio/mpeg")},
+    ).json()
+    job_id = created["job_id"]
 
+    waiting = client.post(f"/api/cloud/jobs/{job_id}/start")
+    assert waiting.status_code == 409
+    assert "不会自动创建或启动 GPU" in waiting.json()["detail"]
+    assert store.jobs[job_id]["status"] == "queued"
+    assert store.jobs[job_id]["options"].get("manual_start_requested") is not True
+    assert store.jobs[job_id]["options"]["auto_dispatch_requested"] is False
+
+    store.live_worker = True
+    started = client.post(f"/api/cloud/jobs/{job_id}/start")
+    assert started.status_code == 200
+    assert started.json()["worker_available"] is True
+    assert store.jobs[job_id]["options"]["manual_start_requested"] is True
+
+
+def test_manual_start_rejects_unknown_job(api):
+    client, _, _ = api
+    response = client.post(f"/api/cloud/jobs/{uuid4()}/start")
+    assert response.status_code == 404
+
+
+def test_cloud_upload_never_provisions_gpu_even_when_legacy_auto_flag_is_enabled(api, monkeypatch):
+    client, store, _ = api
+    monkeypatch.setenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", "true")
+
+    def forbidden_provision(**kwargs):
+        raise AssertionError("full-song upload must never provision a GPU")
+
+    monkeypatch.setattr(cloud_api, "provision_cloud_worker", forbidden_provision)
     response = client.post(
         "/api/cloud/jobs",
         files={"audio": ("原曲.mp3", b"audio-bytes", "audio/mpeg")},
-        data={"engine": "crepe", "lyrics": "手动歌词"},
     )
 
     assert response.status_code == 200
     result = response.json()
     assert result["status"] == "queued"
-    assert result["dispatch"] == "scheduled"
-    assert dispatched == [f"cloud-job-{result['job_id']}"]
+    assert result["dispatch"] == "manual"
     assert store.jobs[result["job_id"]]["status"] == "queued"
 
 
-def test_queued_job_dispatch_sweep_is_opt_in_and_uses_stable_minute_key(api, monkeypatch):
+def test_queued_job_dispatch_sweep_stays_disabled_even_with_legacy_flag(api, monkeypatch):
     client, store, _ = api
     monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
-    headers = {"Authorization": "Bearer " + "d" * 40}
-
-    disabled = client.post(
-        "/api/internal/dispatcher/dispatch-queued", headers=headers
-    )
-    assert disabled.status_code == 200
-    assert disabled.json()["status"] == "disabled"
-
     monkeypatch.setenv("MUSICMASTER_AUTODL_AUTO_DISPATCH", "true")
-
-    class FixedDateTime:
-        @staticmethod
-        def now(tz):
-            return datetime(2026, 11, 25, 12, 30, tzinfo=tz)
-
-    monkeypatch.setattr(cloud_api, "datetime", FixedDateTime)
+    headers = {"Authorization": "Bearer " + "d" * 40}
     store.jobs["queued-job"] = {"id": "queued-job", "status": "queued"}
-    calls = []
-    monkeypatch.setattr(
-        cloud_api, "provision_cloud_worker",
-        lambda *, idempotency_key: calls.append(idempotency_key) or {
-            "worker_id": "dispatch-test", "status": "starting",
-        },
-    )
-    first = client.post(
-        "/api/internal/dispatcher/dispatch-queued", headers=headers
-    )
-    second = client.post(
-        "/api/internal/dispatcher/dispatch-queued", headers=headers
-    )
 
-    assert first.status_code == 200
-    assert first.json()["status"] == "worker_dispatch_requested"
-    assert first.json()["queued_jobs"] == 1
-    assert second.status_code == 200
-    assert calls[0] == calls[1]
-    assert calls[0].startswith("queue-sweep-")
+    def forbidden_provision(**kwargs):
+        raise AssertionError("automatic queue dispatch must not provision a GPU")
+
+    monkeypatch.setattr(cloud_api, "provision_cloud_worker", forbidden_provision)
+    response = client.post("/api/internal/dispatcher/dispatch-queued", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "enabled": False, "status": "disabled", "queued_jobs": 0,
+    }
 
 
 def test_cloud_upload_rejects_oversized_lyrics(api):
@@ -268,6 +347,37 @@ def test_cloud_upload_rejects_unsupported_extension(api):
     )
     assert response.status_code == 415
     assert objects.uploaded is None
+
+
+def test_claim_requeues_job_when_source_url_signing_fails(api):
+    client, store, objects = api
+    job_id = uuid4()
+    store.claim_next = lambda worker_id, lease_seconds=180: {
+        "id": job_id,
+        "source_object_key": f"jobs/{job_id}/source/song.mp3",
+        "source_filename": "song.mp3",
+        "source_content_type": "audio/mpeg",
+        "options": {"engine": "crepe"},
+        "attempt_count": 1,
+    }
+    from musicmaster.cloud.object_store import ObjectStoreError
+    objects.presigned_download = lambda *args, **kwargs: (_ for _ in ()).throw(
+        ObjectStoreError("temporary signing failure")
+    )
+    failed = []
+    store.fail_job = lambda job, worker, error, retryable=False: (
+        failed.append((job, worker, retryable)) or "queued"
+    )
+
+    response = client.post(
+        "/api/internal/jobs/claim",
+        json={"worker_id": "gpu-1"},
+        headers={"Authorization": "Bearer test-worker-secret"},
+    )
+
+    assert response.status_code == 503
+    assert "重新排队" in response.json()["detail"]
+    assert failed == [(job_id, "gpu-1", True)]
 
 
 def test_claim_returns_short_lived_source_url(api, monkeypatch):
@@ -321,6 +431,52 @@ def test_worker_artifact_confirmation_and_completion(api):
     assert store.completed is True
 
 
+def test_worker_artifact_confirmation_is_idempotent(api):
+    client, store, _ = api
+    job_id = uuid4()
+    store.jobs[str(job_id)] = {"id": job_id, "status": "running", "worker_id": "gpu-1"}
+    payload = {
+        "worker_id": "gpu-1",
+        "object_key": f"jobs/{job_id}/artifacts/retry/notes.json",
+        "file_name": "notes.json",
+    }
+    headers = {"Authorization": "Bearer test-worker-secret"}
+
+    first = client.post(
+        f"/api/internal/jobs/{job_id}/artifact-complete", json=payload, headers=headers
+    )
+    second = client.post(
+        f"/api/internal/jobs/{job_id}/artifact-complete", json=payload, headers=headers
+    )
+
+    assert first.status_code == second.status_code == 200
+    assert first.json()["artifact_id"] == second.json()["artifact_id"]
+    assert len(store.artifacts) == 1
+
+
+def test_worker_completion_confirmation_is_idempotent(api):
+    client, store, _ = api
+    job_id = uuid4()
+    store.jobs[str(job_id)] = {"id": job_id, "status": "running", "worker_id": "gpu-1"}
+    store.artifacts.extend([
+        {"id": 1, "file_name": "notes.json"},
+        {"id": 2, "file_name": "out.mid"},
+        {"id": 3, "file_name": "out.musicxml"},
+    ])
+    headers = {"Authorization": "Bearer test-worker-secret"}
+    payload = {"worker_id": "gpu-1", "result": {"status": "completed"}}
+
+    first = client.post(
+        f"/api/internal/jobs/{job_id}/complete", json=payload, headers=headers
+    )
+    second = client.post(
+        f"/api/internal/jobs/{job_id}/complete", json=payload, headers=headers
+    )
+
+    assert first.status_code == second.status_code == 200
+    assert second.json()["status"] == "completed"
+
+
 def test_worker_cannot_confirm_artifact_for_another_job(api):
     client, store, _ = api
     job_id = uuid4()
@@ -342,6 +498,36 @@ def test_worker_upload_role_classification(tmp_path):
     assert worker._artifact_role(tmp_path / "out.musicxml") == "score"
     assert worker._artifact_role(tmp_path / "final.wav") == "audio"
     assert worker._artifact_role(tmp_path / "notes.json") == "metadata"
+
+
+def test_worker_marks_temporary_api_network_errors_retryable(monkeypatch):
+    import urllib.error
+
+    def unavailable(*args, **kwargs):
+        raise urllib.error.URLError("temporary network outage")
+
+    monkeypatch.setattr(worker.urllib.request, "urlopen", unavailable)
+    with pytest.raises(worker.RetryableWorkerError):
+        worker._api(
+            "https://api.example.test", "token", "POST",
+            "/api/internal/jobs/claim", {"worker_id": "gpu-1"},
+        )
+
+
+def test_worker_retries_same_artifact_confirmation_after_temporary_failure(monkeypatch):
+    calls = []
+
+    def flaky():
+        calls.append("call")
+        if len(calls) < 3:
+            raise worker.RetryableWorkerError("temporary response loss")
+        return {"ok": True}
+
+    monkeypatch.setattr(worker.time, "sleep", lambda seconds: None)
+    result = worker._retry_transient(flaky, attempts=3)
+
+    assert result == {"ok": True}
+    assert len(calls) == 3
 
 
 def test_worker_downloads_source_once_and_keeps_lease_through_completion(
@@ -443,6 +629,44 @@ def test_worker_bundle_endpoint_requires_auth_and_returns_pinned_digest(api, mon
     assert response.json()["object_key"] == object_key
     assert response.json()["url"].startswith("https://")
 
+
+
+def test_worker_bundle_publish_endpoint_requires_auth_and_returns_manifest(api, monkeypatch):
+    client, _, _ = api
+    published = {
+        "repository": "Trifida/xinsw-music-transcriber",
+        "commit_sha": "a" * 40,
+        "object_key": "worker-bundles/" + "a" * 40 + "/" + "b" * 64 + ".tar.gz",
+        "sha256": "b" * 64,
+        "size_bytes": 12345,
+    }
+
+    class FakePublisher:
+        def publish(self, commit_sha):
+            assert commit_sha == "a" * 40
+            return type("Published", (), {"as_dict": lambda self: published})()
+
+    monkeypatch.setattr(cloud_api, "GitHubSourceBundlePublisher", FakePublisher)
+    denied = client.post(
+        "/api/internal/worker/bundle/publish",
+        json={"commit_sha": "a" * 40},
+    )
+    assert denied.status_code == 401
+
+    invalid = client.post(
+        "/api/internal/worker/bundle/publish",
+        headers={"Authorization": "Bearer test-worker-secret"},
+        json={"commit_sha": "short"},
+    )
+    assert invalid.status_code == 422
+
+    response = client.post(
+        "/api/internal/worker/bundle/publish",
+        headers={"Authorization": "Bearer test-worker-secret"},
+        json={"commit_sha": "a" * 40},
+    )
+    assert response.status_code == 200
+    assert response.json() == published
 
 
 def test_dispatcher_endpoint_requires_separate_strong_credential(api, monkeypatch):
@@ -556,6 +780,9 @@ def test_dispatcher_endpoint_requires_idempotency_key(api, monkeypatch):
 def test_dispatcher_endpoint_rechecks_idempotency_after_capacity_lock(api, monkeypatch):
     client, store, _ = api
     monkeypatch.setenv("MUSICMASTER_DISPATCHER_TOKEN", "d" * 40)
+    monkeypatch.setenv("MUSICMASTER_API_URL", "https://api.example.test")
+    monkeypatch.setenv("MUSICMASTER_AUTODL_IMAGE_UUID", "configured-image")
+    monkeypatch.setenv("MUSICMASTER_AUTODL_CUDA_V_FROM", "124")
     key = "request-key-race-check-01"
     worker_id = cloud_api._idempotent_worker_id(key)
     original_get_worker = store.get_worker
@@ -682,6 +909,7 @@ def test_idle_worker_batch_endpoint_defaults_to_read_only_dry_run(api, monkeypat
     assert denied.status_code == 401
     response = client.post(
         "/api/internal/dispatcher/workers/reconcile-idle",
+        json={"dry_run": True},
         headers={"Authorization": "Bearer " + "d" * 40},
     )
     assert response.status_code == 200

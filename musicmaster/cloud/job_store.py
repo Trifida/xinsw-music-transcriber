@@ -148,7 +148,8 @@ class PostgresJobStore:
                 WITH candidate AS (
                     SELECT id, worker_id AS previous_worker_id
                     FROM music_jobs
-                    WHERE status = 'queued'
+                    WHERE (status = 'queued' AND
+                               COALESCE((options->>'manual_start_requested')::boolean, false))
                        OR (status = 'running' AND lease_expires_at < now()
                            AND attempt_count < max_attempts)
                     ORDER BY created_at, id
@@ -314,10 +315,17 @@ class PostgresJobStore:
             cur.execute(
                 """
                 INSERT INTO music_job_artifacts
-                    (job_id, object_key, file_name, role, content_type, size_bytes)
-                SELECT j.id, %s, %s, %s, %s, %s
+                    (job_id, object_key, file_name, role, content_type, size_bytes, attempt_count)
+                SELECT j.id, %s, %s, %s, %s, %s, j.attempt_count
                 FROM music_jobs AS j
                 WHERE j.id = %s AND j.worker_id = %s AND j.status = 'running'
+                ON CONFLICT (object_key) DO UPDATE
+                SET file_name = EXCLUDED.file_name,
+                    role = EXCLUDED.role,
+                    content_type = EXCLUDED.content_type,
+                    size_bytes = EXCLUDED.size_bytes,
+                    attempt_count = EXCLUDED.attempt_count
+                WHERE music_job_artifacts.job_id = EXCLUDED.job_id
                 RETURNING *
                 """,
                 (
@@ -336,8 +344,14 @@ class PostgresJobStore:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, object_key, file_name, role, content_type, size_bytes, created_at
-                FROM music_job_artifacts WHERE job_id = %s ORDER BY id
+                SELECT a.id, a.object_key, a.file_name, a.role,
+                       a.content_type, a.size_bytes, a.created_at
+                FROM music_job_artifacts AS a
+                JOIN music_jobs AS j ON j.id = a.job_id
+                WHERE a.job_id = %s
+                  AND a.attempt_count = j.attempt_count
+                  AND j.status IN ('running', 'completed')
+                ORDER BY a.id
                 """,
                 (self._uuid(job_id),),
             )
@@ -361,8 +375,8 @@ class PostgresJobStore:
                     self._uuid(job_id), str(worker_id).strip(),
                 ),
             )
-            updated = cur.fetchone() is not None
-            if updated:
+            transitioned = cur.fetchone() is not None
+            if transitioned:
                 cur.execute(
                     """
                     UPDATE music_workers
@@ -372,7 +386,19 @@ class PostgresJobStore:
                     """,
                     (str(worker_id).strip(),),
                 )
-            return updated
+                return True
+
+            # The completion response may have been lost after the transaction
+            # committed. Treat the same worker's already-completed job as success,
+            # without resetting its worker row (it may already own another job).
+            cur.execute(
+                """
+                SELECT id FROM music_jobs
+                WHERE id = %s AND worker_id = %s AND status = 'completed'
+                """,
+                (self._uuid(job_id), str(worker_id).strip()),
+            )
+            return cur.fetchone() is not None
 
     def fail_job(
         self,
@@ -423,6 +449,39 @@ class PostgresJobStore:
                 return row["status"]
             return None
 
+
+    def has_live_worker(self, *, heartbeat_seconds: int = 120) -> bool:
+        """Return whether a registered worker has sent a recent idle/busy heartbeat."""
+        seconds = max(30, min(int(heartbeat_seconds), 600))
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM music_workers
+                    WHERE status IN ('idle', 'busy')
+                      AND last_seen_at >= now() - (%s * interval '1 second')
+                ) AS available
+                """,
+                (seconds,),
+            )
+            row = cur.fetchone()
+            return bool(row and row["available"])
+
+    def request_job_start(self, job_id: str | UUID) -> bool:
+        """Mark a queued job as user-approved for an already-running worker to claim."""
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE music_jobs
+                SET options = jsonb_set(COALESCE(options, '{}'::jsonb),
+                                        '{manual_start_requested}', 'true'::jsonb, true),
+                    stage = '等待 GPU Worker 领取', updated_at = now()
+                WHERE id = %s AND status = 'queued'
+                RETURNING id
+                """,
+                (self._uuid(job_id),),
+            )
+            return cur.fetchone() is not None
 
     def count_queued_jobs(self) -> int:
         with self._connect() as conn, conn.cursor() as cur:
@@ -642,14 +701,35 @@ class PostgresJobStore:
         if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
             raise ValueError("token_hash must be a SHA-256 hex digest.")
         expiry = max(60, min(int(expires_seconds), 1800))
+        worker = str(worker_id).strip()
         with self._connect() as conn, conn.cursor() as cur:
+            # A bootstrap token belongs to a worker record. Create that record
+            # in the non-live "starting" state before inserting the token.
+            # This deliberately does not make has_live_worker() return true:
+            # only a later successful worker registration/heartbeat can do so.
+            cur.execute(
+                """
+                INSERT INTO music_workers (worker_id, status)
+                VALUES (%s, 'starting')
+                ON CONFLICT (worker_id) DO UPDATE
+                SET status = 'starting', last_seen_at = now(), updated_at = now()
+                WHERE music_workers.status IN ('starting', 'stopped', 'error')
+                  AND music_workers.active_job_id IS NULL
+                RETURNING worker_id
+                """,
+                (worker,),
+            )
+            if cur.fetchone() is None:
+                raise JobStoreError(
+                    "The worker ID is already active or cannot be restarted safely."
+                )
             cur.execute(
                 """
                 INSERT INTO music_worker_bootstrap_tokens
                     (token_hash, worker_id, expires_at)
                 VALUES (%s, %s, now() + (%s * interval '1 second'))
                 """,
-                (digest, str(worker_id).strip(), expiry),
+                (digest, worker, expiry),
             )
 
     def set_bootstrap_instance(self, token_hash: str, instance_uuid: str) -> bool:

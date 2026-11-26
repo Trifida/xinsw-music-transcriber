@@ -9,3 +9,7 @@ output
 *.pyc
 *.pyo
 *.log
+*.egg-info
+vendor/crepe/build
+vendor/.venv-sep
+.venv-sep
