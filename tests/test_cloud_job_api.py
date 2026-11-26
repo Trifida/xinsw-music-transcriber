@@ -273,7 +273,7 @@ def test_manual_start_requires_existing_live_gpu_and_never_provisions(api, monke
     assert waiting.status_code == 409
     assert "不会自动创建或启动 GPU" in waiting.json()["detail"]
     assert store.jobs[job_id]["status"] == "queued"
-    assert store.jobs[job_id]["options"]["manual_start_requested"] is not True
+    assert store.jobs[job_id]["options"].get("manual_start_requested") is not True
     assert store.jobs[job_id]["options"]["auto_dispatch_requested"] is False
 
     store.live_worker = True
