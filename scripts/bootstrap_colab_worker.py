@@ -108,7 +108,7 @@ def main() -> int:
     if PYTHON_VERSION_FILE.is_file() and actual_python_version != python_version:
         raise RuntimeError("Python 版本与 Drive 中固定的版本不一致。")
     if not PYTHON_VERSION_FILE.is_file():
-        PYTHON_VERSION_FILE.write_text(actual_python_version + "\\n", encoding="ascii")
+        PYTHON_VERSION_FILE.write_text(actual_python_version + "\n", encoding="ascii")
     print(f"\n[Colab Bootstrap] Python：{actual_python_version}（版本已记录到 Drive）", flush=True)
 
     core_py = python_in(CORE_VENV)
