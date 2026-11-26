@@ -27,8 +27,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "fastapi>=0.110" "python-multipart>=0.0.9" "httpx>=0.27" "pytest>=7" "psycopg[binary]>=3.2,<4" "boto3>=1.35,<2"
       - name: Compile cloud service modules
-        run: python -m compileall -q musicmaster/cloud musicmaster/web/cloud_api.py musicmaster/web/server.py scripts/bootstrap_worker_bundle.py
+        run: python -m compileall -q musicmaster/cloud musicmaster/web/cloud_api.py musicmaster/web/server.py scripts/bootstrap_worker_bundle.py scripts/bootstrap_colab_worker.py scripts/run_colab_cloud_worker.py
       - name: Check full-song upload script syntax
         run: node --check musicmaster/web/static/js/full-song-upload.js
       - name: Run cloud queue and worker bootstrap tests
-        run: pytest -q tests/test_cloud_job_api.py tests/test_full_transcribe_workflow.py tests/test_autodl_pro.py tests/test_cloud_dispatcher.py tests/test_cloud_lifecycle.py tests/test_source_bundle.py tests/test_worker_bundle_bootstrap.py
+        run: pytest -q tests/test_cloud_job_api.py tests/test_full_transcribe_workflow.py tests/test_autodl_pro.py tests/test_cloud_dispatcher.py tests/test_cloud_lifecycle.py tests/test_source_bundle.py tests/test_worker_bundle_bootstrap.py tests/test_colab_worker_launcher.py
