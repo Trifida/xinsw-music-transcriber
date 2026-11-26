@@ -124,8 +124,9 @@ def main() -> int:
     core_lock_sha = hashlib.sha256(core_lock.read_bytes()).hexdigest()
     core_stamp = RUNTIME / "core-lock-sha256"
     core_probe = (
-        "import numpy, librosa, soundfile, tensorflow, hmmlearn, music21, "
-        "verovio, jianpu_ly; "
+        "import numpy, librosa, soundfile, tensorflow, crepe, hmmlearn, music21, "
+        "verovio, jianpu_ly, musicmaster.cloud.worker, "
+        "musicmaster.workflows.full_transcribe; "
         "assert numpy.__version__.startswith('1.'); "
         "assert tensorflow.__version__.startswith('2.15.')"
     )
@@ -191,6 +192,7 @@ def main() -> int:
         "assert numpy.__version__.split('.')[0] == '2'; "
         "assert torch.cuda.is_available()"
     )
+    new_sep_lock = None
     if SEP_LOCK_FILE.is_file():
         print("[Colab Bootstrap] 使用 Drive 中固定的 CUDA 分离环境锁文件。", flush=True)
         run([
@@ -220,8 +222,7 @@ def main() -> int:
         )
         if "torch==2.11.0" not in freeze or "torchaudio==2.11.0" not in freeze:
             raise RuntimeError("分离环境导出的锁文件未包含预期 PyTorch 版本。")
-        SEP_LOCK_FILE.write_text(freeze, encoding="utf-8")
-        print(f"[Colab Bootstrap] 已将分离环境精确版本保存到 Drive：{SEP_LOCK_FILE}", flush=True)
+        new_sep_lock = freeze
 
     sep_lock_check = subprocess.run(
         [str(sep_py), "-c", sep_probe_lock], cwd=ROOT, env=env,
@@ -230,6 +231,10 @@ def main() -> int:
     if sep_lock_check.returncode != 0:
         detail = (sep_lock_check.stderr or sep_lock_check.stdout or "无详细错误").strip()[-1200:]
         raise RuntimeError("CUDA 分离环境未通过检查：" + detail)
+
+    if new_sep_lock is not None:
+        SEP_LOCK_FILE.write_text(new_sep_lock, encoding="utf-8")
+        print(f"[Colab Bootstrap] CUDA 验收通过，已将精确版本锁定到 Drive：{SEP_LOCK_FILE}", flush=True)
 
     # Verify both isolated environments before attempting Worker registration.
     run([
