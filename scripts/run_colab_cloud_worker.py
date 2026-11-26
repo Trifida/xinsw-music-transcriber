@@ -93,13 +93,15 @@ def validate_runtime() -> tuple[str, str] | int:
 
     api_url = os.environ.get("MUSICMASTER_API_URL", "").strip().rstrip("/")
     token = os.environ.get("MUSICMASTER_WORKER_TOKEN", "").strip()
+    bootstrap_token = os.environ.get("MUSICMASTER_BOOTSTRAP_TOKEN", "").strip()
     parsed = urlsplit(api_url)
     if (parsed.scheme != "https" or not parsed.netloc
             or parsed.path not in ("", "/") or parsed.query or parsed.fragment):
         return _fail("MUSICMASTER_API_URL 必须是 API 根地址，例如 https://你的服务.onrender.com（不要附加 /api 路径）。")
-    if not token:
+    if not token and not bootstrap_token:
         return _fail(
-            "未设置 MUSICMASTER_WORKER_TOKEN。请通过 Colab Secrets 安全提供已有 Worker 凭据；"
+            "未设置 Worker 凭据。请通过 Colab Secrets 提供 MUSICMASTER_WORKER_TOKEN，"
+            "或提供短时一次性的 MUSICMASTER_BOOTSTRAP_TOKEN；"
             "不要把凭据写进 Notebook 单元或提交到 GitHub。"
         )
 
