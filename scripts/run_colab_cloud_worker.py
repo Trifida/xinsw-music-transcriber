@@ -29,6 +29,9 @@ DRIVE_ROOT = Path("/content/drive/MyDrive")
 DEFAULT_MODEL_DIR = DRIVE_ROOT / "XinsW_Models" / "BS-RoFormer"
 CHECKPOINT = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
 CONFIG = "model_bs_roformer_ep_317_sdr_12.9755.yaml"
+BUNDLE_CACHE_ROOT = Path(
+    os.environ.get("MUSICMASTER_WORKER_BUNDLE_CACHE", "/content/xinsw-worker-bundles")
+)
 
 # Modules imported directly by the core transcription / worker process.
 # PyTorch and audio-separator are checked in the dedicated separator venv below.
@@ -230,7 +233,7 @@ def _activate_published_source_bundle() -> None:
     if not url.startswith("https://"):
         raise RuntimeError("Published Worker source bundle URL must use HTTPS.")
 
-    cache_root = Path("/content/xinsw-worker-bundles")
+    cache_root = BUNDLE_CACHE_ROOT
     target = cache_root / commit
     marker = target / ".xinsw-bundle-sha256"
     if marker.is_file() and marker.read_text(encoding="ascii").strip() == digest:
