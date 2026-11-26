@@ -569,6 +569,44 @@ def test_worker_bundle_endpoint_requires_auth_and_returns_pinned_digest(api, mon
 
 
 
+def test_worker_bundle_publish_endpoint_requires_auth_and_returns_manifest(api, monkeypatch):
+    client, _, _ = api
+    published = {
+        "repository": "Trifida/xinsw-music-transcriber",
+        "commit_sha": "a" * 40,
+        "object_key": "worker-bundles/" + "a" * 40 + "/" + "b" * 64 + ".tar.gz",
+        "sha256": "b" * 64,
+        "size_bytes": 12345,
+    }
+
+    class FakePublisher:
+        def publish(self, commit_sha):
+            assert commit_sha == "a" * 40
+            return type("Published", (), {"as_dict": lambda self: published})()
+
+    monkeypatch.setattr(cloud_api, "GitHubSourceBundlePublisher", FakePublisher)
+    denied = client.post(
+        "/api/internal/worker/bundle/publish",
+        json={"commit_sha": "a" * 40},
+    )
+    assert denied.status_code == 401
+
+    invalid = client.post(
+        "/api/internal/worker/bundle/publish",
+        headers={"Authorization": "Bearer test-worker-secret"},
+        json={"commit_sha": "short"},
+    )
+    assert invalid.status_code == 422
+
+    response = client.post(
+        "/api/internal/worker/bundle/publish",
+        headers={"Authorization": "Bearer test-worker-secret"},
+        json={"commit_sha": "a" * 40},
+    )
+    assert response.status_code == 200
+    assert response.json() == published
+
+
 def test_dispatcher_endpoint_requires_separate_strong_credential(api, monkeypatch):
     client, _, _ = api
     monkeypatch.delenv("MUSICMASTER_DISPATCHER_TOKEN", raising=False)
