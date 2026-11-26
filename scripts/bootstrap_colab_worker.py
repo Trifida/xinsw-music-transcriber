@@ -100,6 +100,8 @@ def main() -> int:
         uv, "pip", "sync", "--python", str(core_py),
         str(ROOT / "requirements/locks/core-cpu.txt"),
     ], env=env)
+    # pip sync may remove bootstrap/build tools not listed in the runtime lock.
+    run([uv, "pip", "install", "--python", str(core_py), "setuptools<81", "wheel"], env=env)
     run([
         uv, "pip", "install", "--python", str(core_py),
         "--no-build-isolation", "--no-deps", str(ROOT / "vendor/crepe"),
