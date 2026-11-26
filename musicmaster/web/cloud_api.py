@@ -668,10 +668,20 @@ def publish_worker_source_bundle(body: PublishWorkerBundleRequest) -> dict:
             status_code=503,
             detail="Worker source publishing requires a valid GitHub read token and repository setting.",
         ) from None
-    except (SourceBundleError, ObjectStoreError):
+    except SourceBundleError as exc:
+        # SourceBundleError messages are deliberately sanitized and never include
+        # response bodies, request headers, or credentials.
+        logger.warning("worker_source_bundle_publish_failed category=github reason=%s", str(exc))
         raise HTTPException(
             status_code=502,
-            detail="Worker source bundle could not be fetched or uploaded.",
+            detail="Worker source bundle could not be fetched from GitHub.",
+        ) from None
+    except ObjectStoreError as exc:
+        # ObjectStoreError exposes only the operation and exception class.
+        logger.warning("worker_source_bundle_publish_failed category=object_storage reason=%s", str(exc))
+        raise HTTPException(
+            status_code=502,
+            detail="Worker source bundle could not be uploaded to object storage.",
         ) from None
     return published.as_dict()
 
